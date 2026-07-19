@@ -460,7 +460,16 @@ jobs:
       - name: Zip the .app bundle
         run: ditto -c -k --keepParent build/bin/msgbrowse.app msgbrowse-desktop_darwin_universal.zip
 
+      # Artifacts are for the release pipeline (tags / manual dispatch); a PR
+      # check only needs to prove the build compiles. Skipping the upload on
+      # pull_request keeps these jobs green on the self-hosted Gitea act_runner,
+      # whose artifact backend does not support actions/upload-artifact@v4 (it
+      # reports as GHES and the step exits 1) — while GitHub, which requires v4+,
+      # keeps working on tag/dispatch builds. (Root-caused: the desktop job is
+      # rarely triggered — only on desktop-shell PRs — so this incompatibility
+      # went unnoticed until a desktop-touching PR ran it.)
       - uses: actions/upload-artifact@v4
+        if: github.event_name != 'pull_request'
         with:
           name: msgbrowse-desktop_darwin_universal
           path: cmd/msgbrowse-desktop/msgbrowse-desktop_darwin_universal.zip
@@ -494,7 +503,12 @@ jobs:
       - name: Build Linux desktop binary
         run: make desktop-linux
 
+      # Skip the artifact upload on PRs — see the darwin job's note: the Gitea
+      # act_runner rejects actions/upload-artifact@v4 (GHES-unsupported, exit 1),
+      # and a PR check only needs the build to compile. Tag/dispatch release
+      # builds still upload (GitHub supports v4).
       - uses: actions/upload-artifact@v4
+        if: github.event_name != 'pull_request'
         with:
           name: msgbrowse-desktop_linux_amd64
           path: cmd/msgbrowse-desktop/build/bin/msgbrowse
