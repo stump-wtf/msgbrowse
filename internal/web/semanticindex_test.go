@@ -113,6 +113,13 @@ func TestStatusIndexBuildStartsJob(t *testing.T) {
 	if !contains(rec.Body.String(), "Indexing started") {
 		t.Errorf("build response missing the started banner:\n%s", rec.Body.String())
 	}
+	// The just-built card must begin live-polling immediately — driven by the
+	// in-memory single-flight flag (IndexRunning), NOT the embed_runs heartbeat,
+	// which the detached job (a blocked fakeIndexer here) has not written yet.
+	// Without that bridge the "updates live" promise would wait for a reload.
+	if !contains(rec.Body.String(), `hx-trigger="every 2s"`) {
+		t.Errorf("built card should start the live poll immediately:\n%s", rec.Body.String())
+	}
 	waitFor(t, func() bool { return fi.starts() == 1 })
 	if fi.lastRst.Load() {
 		t.Error("Build must call RunEmbed with reset=false")

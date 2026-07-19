@@ -389,7 +389,9 @@ func keywordResults(hits []store.SearchHit) []searchResult {
 // scoredResult converts a semantic ScoredMessage into a rendered searchResult.
 // The body becomes the snippet (no FTS marks on the semantic path); attachment/
 // link glyphs are omitted (the vector scan doesn't join them) — the score chip
-// is the semantic affordance instead.
+// is the semantic affordance instead. The body is stripped of the FTS highlight
+// sentinels (\x02/\x03) it never legitimately carries here, so a message that
+// literally contained one can't render a stray, unbalanced <mark>.
 func scoredResult(m store.ScoredMessage) searchResult {
 	return searchResult{
 		SearchHit: store.SearchHit{
@@ -403,9 +405,9 @@ func scoredResult(m store.ScoredMessage) searchResult {
 			IsSystem:         m.IsSystem,
 			TS:               m.TS,
 			TSUnix:           m.TSUnix,
-			Snippet:          m.Body,
+			Snippet:          stripSnippetMarks(m.Body),
 		},
-		Score: round2(m.Score),
+		Score: round4(m.Score),
 	}
 }
 
@@ -436,21 +438,42 @@ func fuseSearchResults(kw []store.SearchHit, sem []store.ScoredMessage, limit in
 	for rank, m := range sem {
 		add(m.MessageID, scoredResult(m), rank)
 	}
-	out := make([]searchResult, 0, len(byID))
+	// Rank on the RAW fused score, then round only for display — rounding
+	// before the sort would collapse near-equal RRF scores (which live around
+	// 1/61 ≈ 0.016) into ties that fall back to insertion order.
+	aggs := make([]*agg, 0, len(byID))
 	for _, id := range order {
-		a := byID[id]
-		a.res.Score = round2(a.score)
+		aggs = append(aggs, byID[id])
+	}
+	sort.SliceStable(aggs, func(i, j int) bool { return aggs[i].score > aggs[j].score })
+	out := make([]searchResult, 0, len(aggs))
+	for _, a := range aggs {
+		a.res.Score = round4(a.score)
 		out = append(out, a.res)
 	}
-	sort.SliceStable(out, func(i, j int) bool { return out[i].Score > out[j].Score })
 	if len(out) > limit {
 		out = out[:limit]
 	}
 	return out
 }
 
-// round2 rounds a score to 2 decimals for a stable, compact chip.
-func round2(f float64) float64 { return math.Round(f*100) / 100 }
+// round4 rounds a score to 4 decimals for the display chip. Four (not two)
+// keeps hybrid RRF scores (~0.016–0.03) distinguishable while still reading as
+// a compact relevance number for cosine similarities (0–1).
+func round4(f float64) float64 { return math.Round(f*10000) / 10000 }
+
+// stripSnippetMarks removes the FTS highlight sentinels from a raw body used as
+// a semantic-result snippet. FTS5 emits them as balanced pairs; a raw message
+// body has no marks, so any sentinel it literally contains is spurious and would
+// render an unbalanced <mark> via highlightSnippet. Cheap no-op for the common
+// case (bodies contain no C0 sentinels).
+func stripSnippetMarks(body string) string {
+	if !strings.ContainsAny(body, store.SnippetMarkStart+store.SnippetMarkEnd) {
+		return body
+	}
+	body = strings.ReplaceAll(body, store.SnippetMarkStart, "")
+	return strings.ReplaceAll(body, store.SnippetMarkEnd, "")
+}
 
 // formatElapsed renders a query duration like the brief's "0.04s".
 func formatElapsed(d time.Duration) string {

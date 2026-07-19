@@ -78,6 +78,7 @@ func (s *Server) handleStatusIndexProgress(w http.ResponseWriter, r *http.Reques
 		Embedding:      embedding,
 		History:        history,
 		IndexAvailable: s.indexer != nil,
+		IndexRunning:   s.indexJobRunning(),
 	}
 	if s.indexer != nil {
 		tok, err := s.setupTokens.mint()

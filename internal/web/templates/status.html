@@ -164,7 +164,7 @@
 {{end}}
 {{define "semantic_index_card"}}
     <div id="semantic-index-card" class="status-card" role="status" aria-live="polite"
-         {{- if .Embedding.InProgress}} hx-get="/status/index/progress" hx-trigger="every 2s" hx-target="#semantic-index-card" hx-swap="outerHTML"{{end}}>
+         {{- if or .Embedding.InProgress .IndexRunning}} hx-get="/status/index/progress" hx-trigger="every 2s" hx-target="#semantic-index-card" hx-swap="outerHTML"{{end}}>
       <div class="status-card-title">Semantic search index</div>
 
       {{- if eq .IndexResult "started"}}
@@ -285,12 +285,12 @@
         <form method="post" action="/status/index"
               hx-boost="true" hx-target="#main-content" hx-select="#main-content" hx-swap="outerHTML">
           <input type="hidden" name="setup_token" value="{{.SetupToken}}">
-          <button type="submit" class="setup-btn"{{if .Embedding.InProgress}} disabled{{end}}>Build index</button>
+          <button type="submit" class="setup-btn"{{if or .Embedding.InProgress .IndexRunning}} disabled{{end}}>Build index</button>
         </form>
         <form method="post" action="/status/index/reset"
               hx-boost="true" hx-target="#main-content" hx-select="#main-content" hx-swap="outerHTML">
           <input type="hidden" name="setup_token" value="{{.SetupToken}}">
-          <button type="submit" class="setup-btn setup-btn-ghost"{{if .Embedding.InProgress}} disabled{{end}}>Reset &amp; rebuild</button>
+          <button type="submit" class="setup-btn setup-btn-ghost"{{if or .Embedding.InProgress .IndexRunning}} disabled{{end}}>Reset &amp; rebuild</button>
         </form>
       </div>
       <p class="status-note mt-3">Build embeds the messages that still need a vector; Reset &amp; rebuild

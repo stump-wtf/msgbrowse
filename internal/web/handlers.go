@@ -186,6 +186,13 @@ type statusData struct {
 	// IndexAvailable reports whether an Indexer is wired: false (browser / no-op
 	// mode) hides the Build controls and shows the unavailable note.
 	IndexAvailable bool
+	// IndexRunning is the web layer's in-memory single-flight flag: true from the
+	// instant a Build / Reset starts, BEFORE the detached goroutine writes the
+	// first embed_runs row. The template ORs it with Embedding.InProgress to
+	// start the live poll (and disable the buttons) immediately after a click,
+	// bridging the gap until the heartbeat row exists. Embedding.InProgress still
+	// catches a run started by a separate `msgbrowse embed` process.
+	IndexRunning bool
 	// IndexResult is the post-POST banner state after a Build / Reset: "" (no
 	// action), "started", "reset", "inprogress", "nomodel", "unavailable", or
 	// "error" — a fixed enum mapped to prose by the template.
@@ -575,6 +582,7 @@ func (s *Server) renderStatus(w http.ResponseWriter, r *http.Request, indexResul
 		Embedding:           embedding,
 		History:             history,
 		IndexAvailable:      s.indexer != nil,
+		IndexRunning:        s.indexJobRunning(),
 		IndexResult:         indexResult,
 	}
 	// Arm the Build / Reset forms with a live token, but only when there is an
