@@ -6,7 +6,7 @@ import "context"
 // `user_version` pragma. On Open, the migrations runner brings any older
 // database forward to this version. Bump it and append a migration whenever the
 // schema changes.
-const schemaVersion = 11
+const schemaVersion = 12
 
 // SchemaVersion returns the schema revision this binary expects (and migrates a
 // database forward to on Open). Read-only callers — notably `msgbrowse doctor` —
@@ -50,6 +50,7 @@ var migrations = []string{
 	9:  schemaV9,
 	10: schemaV10,
 	11: schemaV11,
+	12: schemaV12,
 }
 
 // schemaV1 is the initial Signal-only schema. It is preserved verbatim so a
@@ -526,4 +527,27 @@ CREATE TABLE IF NOT EXISTS journal_digests (
     updated_at     TEXT    NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_journal_digests_updated ON journal_digests(updated_at);
+`
+
+// schemaV12 adds the semantic-search index run log (issue #1): a durable record
+// of each `msgbrowse embed` / in-app Build pass — begin row, per-batch progress
+// heartbeat, terminal totals (or abort error). The web Status page reads the
+// latest row for a live in-progress marker and the recent rows for a run
+// history; `msgbrowse embed` and `serve` are separate processes sharing one
+// SQLite file, so this table is their only channel. Like embeddings (v3) it is
+// bookkeeping the embedding data does not depend on — ResetEmbeddings clears
+// both together.
+const schemaV12 = `
+CREATE TABLE IF NOT EXISTS embed_runs (
+    id          INTEGER PRIMARY KEY,
+    model       TEXT    NOT NULL,
+    started_at  TEXT    NOT NULL,
+    updated_at  TEXT    NOT NULL,
+    finished_at TEXT    NOT NULL DEFAULT '',
+    duration_ms INTEGER NOT NULL DEFAULT 0,
+    embedded    INTEGER NOT NULL DEFAULT 0,
+    pruned      INTEGER NOT NULL DEFAULT 0,
+    batches     INTEGER NOT NULL DEFAULT 0,
+    error       TEXT    NOT NULL DEFAULT ''
+);
 `

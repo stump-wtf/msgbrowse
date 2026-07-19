@@ -149,3 +149,66 @@ message.
 - **Given** a request where `mid` belongs to conversation `id`
 - **When** the handler runs
 - **Then** a context window around `mid` is rendered with `mid` highlighted and infinite scroll set to continue.
+
+### REQ-0002-008: Semantic and hybrid search in the web Search UI
+
+The web Search page MUST expose the three search modes to a human — keyword
+(FTS5, always available), semantic (vector), and hybrid — via a mode selector,
+so the built embedding index is queryable from the UI and not only from MCP.
+The semantic path MUST embed the query with the live LLM client and rank via
+`SemanticSearch`; hybrid MUST fuse keyword and semantic with the same
+reciprocal-rank scheme as REQ-0002-006. When no embedding model is configured or
+no indexer is wired (browser mode), selecting semantic/hybrid MUST render an
+explainer pointing to the LLM settings + Status build — never a silent empty
+result — while keyword search keeps working. A query that fails to embed MUST
+degrade to no semantic hits (hybrid falls back to keyword-only) rather than
+erroring. Semantic and hybrid results MUST render through the same result cards
+as keyword, carrying a relevance-score affordance; the results meta MUST include
+elapsed query time.
+
+#### Scenario: Semantic mode unavailable is explained, not silent
+- **Given** no embedding model configured (or no indexer wired)
+- **When** a user selects Semantic or Hybrid and searches
+- **Then** the page explains how to enable semantic search and keyword search still works, with no error.
+
+#### Scenario: Semantic results render with a score and no FTS mark
+- **Given** an embed model, a wired indexer, and a stored embedding for a message
+- **When** a user runs a semantic query whose vector is similar to that message
+- **Then** the message is returned through the result card with a relevance-score chip and without an FTS `<mark>` highlight.
+
+#### Scenario: Failed query embedding degrades gracefully
+- **Given** a wired indexer whose query embedding fails (endpoint down)
+- **When** a user runs a semantic query
+- **Then** the page shows the empty state (no hits) with no 500 and no invented results.
+
+### REQ-0002-009: Semantic index observability + in-app management on Status
+
+The Status page MUST surface the semantic index's live state and track record and
+let the user drive it in-app: a coverage progress bar (embedded of embeddable,
+%), the current run's in-progress / interrupted state (from the `embed_runs`
+heartbeat), a recent-run history table (newest first, bounded) with each run's
+start, outcome (completed / running / interrupted / failed), embedded count,
+duration, and model, and Build / Reset-&-rebuild controls that run the same
+embedding pass `msgbrowse embed` does. Each embedding pass (CLI or in-app) MUST
+record a durable row in `embed_runs` (begin → per-batch heartbeat → terminal
+write, even on abort). While a run is in flight the card MUST refresh itself live
+via a same-origin poll of a fragment endpoint (`GET /status/index/progress`) with
+no inline script (CSP-clean), and MUST stop polling once the run is no longer in
+progress. The Build / Reset controls MUST be privileged same-origin POSTs gated
+by the per-session token, single-flight (a second Build coalesces), and report a
+fixed-enum banner; with no indexer wired they render an "unavailable" note.
+
+#### Scenario: Live progress while indexing
+- **Given** an index run in flight
+- **When** the Status page renders
+- **Then** the semantic-index card shows a coverage progress bar and polls `GET /status/index/progress` until the run finishes, then stops polling.
+
+#### Scenario: Run history reflects recorded runs
+- **Given** one or more recorded `embed_runs`
+- **When** the Status page renders
+- **Then** a recent-runs table lists them newest-first with a status badge, embedded count, duration, and model.
+
+#### Scenario: Build coalesces under single-flight
+- **Given** an index job already in flight
+- **When** a second Build POST arrives
+- **Then** it returns the "in progress" banner and starts no second writer.

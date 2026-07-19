@@ -13,6 +13,7 @@ import (
 
 	"github.com/joestump/msgbrowse/internal/config"
 	"github.com/joestump/msgbrowse/internal/devsync"
+	"github.com/joestump/msgbrowse/internal/embed"
 	"github.com/joestump/msgbrowse/internal/ingest"
 	"github.com/joestump/msgbrowse/internal/onboard"
 	"github.com/joestump/msgbrowse/internal/onboardsvc"
@@ -79,7 +80,12 @@ func newServeCommand() *cobra.Command {
 			// The Settings → LLM tab (#191): saves persist the three llm
 			// keys into the loaded config file and swap the process's live
 			// LLM holder, so a changed endpoint applies without a restart.
-			srv.SetLLMConfig(newLLMApplier(cfg, newLLMHolder(cfg)))
+			// The same holder backs the semantic-index Indexer (issue #1) so
+			// the Status page's Build / Reset and the Search page's semantic
+			// mode use the live endpoint + embed model.
+			llmHolder := newLLMHolder(cfg)
+			srv.SetLLMConfig(newLLMApplier(cfg, llmHolder))
+			srv.SetIndexer(embed.NewIndexer(st, llmHolder, slog.Default()))
 
 			// Device sync (ADR-0021): with device_sync.enabled the
 			// supervised Syncthing engine runs beside the web UI as a

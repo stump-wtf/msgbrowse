@@ -177,6 +177,22 @@ type statusData struct {
 	// REQ "Status and Doctor Surfacing" (#158).
 	DeviceSyncEnabled bool
 	Sync              *devsync.Status
+	// Embedding drives the "Semantic search index" card (issue #1): coverage +
+	// last-run + live in-progress marker, assembled by embeddingStatus.
+	Embedding embedStatusData
+	// History is the recent index-run table (newest first): the track record
+	// beside the single latest-run line.
+	History []embedRunView
+	// IndexAvailable reports whether an Indexer is wired: false (browser / no-op
+	// mode) hides the Build controls and shows the unavailable note.
+	IndexAvailable bool
+	// IndexResult is the post-POST banner state after a Build / Reset: "" (no
+	// action), "started", "reset", "inprogress", "nomodel", "unavailable", or
+	// "error" — a fixed enum mapped to prose by the template.
+	IndexResult string
+	// SetupToken arms the Build / Reset forms with the per-session token gate;
+	// "" when no Indexer is wired (the forms are not rendered then).
+	SetupToken string
 }
 
 // pageSize is the number of messages per transcript page.
@@ -461,6 +477,37 @@ func (s *Server) handleMessages(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
+	s.renderStatus(w, r, "")
+}
+
+// handleStatusIndex is POST /status/index — the privileged "Build" control that
+// embeds every message still missing a vector. Gate FIRST (checkSetupPOST:
+// same-origin + per-session token + body cap, 403 before any work), then start
+// the detached single-flight job and re-render Status with the fixed-enum
+// result banner. reset=false: existing vectors are kept and only the delta is
+// embedded.
+func (s *Server) handleStatusIndex(w http.ResponseWriter, r *http.Request) {
+	if !s.checkSetupPOST(w, r) {
+		return // 403 already written; no job started
+	}
+	s.renderStatus(w, r, s.startReindex(false))
+}
+
+// handleStatusIndexReset is POST /status/index/reset — the privileged "Reset &
+// rebuild" control: it clears every stored vector and the run log, then
+// re-embeds the whole corpus from scratch inside the detached job. Same gate
+// and re-render as handleStatusIndex; reset=true.
+func (s *Server) handleStatusIndexReset(w http.ResponseWriter, r *http.Request) {
+	if !s.checkSetupPOST(w, r) {
+		return // 403 already written; nothing cleared, no job started
+	}
+	s.renderStatus(w, r, s.startReindex(true))
+}
+
+// renderStatus assembles the Status page and renders it (full document or
+// boosted #main-content partial). indexResult is the fixed-enum banner from a
+// just-completed Build / Reset POST, "" on a plain GET.
+func (s *Server) renderStatus(w http.ResponseWriter, r *http.Request, indexResult string) {
 	ctx := r.Context()
 	var (
 		base      baseData
@@ -505,7 +552,17 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 	for _, sn := range snaps {
 		footprint += sn.SizeBytes
 	}
-	s.render(w, r, "status", statusData{
+	embedding, err := s.embeddingStatus(ctx)
+	if err != nil {
+		s.serverError(w, err)
+		return
+	}
+	history, err := s.embedRunHistory(ctx, embedRunHistoryLimit)
+	if err != nil {
+		s.serverError(w, err)
+		return
+	}
+	data := statusData{
 		baseData:            base,
 		ConversationCount:   convCount,
 		Run:                 run,
@@ -515,7 +572,22 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 		HasSnapshotPipeline: len(snaps) > 0 || s.signalSnapshotsDirExists(),
 		DeviceSyncEnabled:   s.deviceSyncEnabled,
 		Sync:                s.syncStatusSnapshot(ctx),
-	})
+		Embedding:           embedding,
+		History:             history,
+		IndexAvailable:      s.indexer != nil,
+		IndexResult:         indexResult,
+	}
+	// Arm the Build / Reset forms with a live token, but only when there is an
+	// Indexer to drive (browser mode renders the unavailable note, no forms).
+	if s.indexer != nil {
+		tok, err := s.setupTokens.mint()
+		if err != nil {
+			s.serverError(w, err)
+			return
+		}
+		data.SetupToken = tok
+	}
+	s.render(w, r, "status", data)
 }
 
 // signalSnapshotsDirExists reports whether the signal archive carries a

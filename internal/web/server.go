@@ -22,6 +22,7 @@ import (
 	"os"
 	"path"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/joestump/msgbrowse/internal/archivepath"
@@ -76,6 +77,13 @@ type Store interface {
 	SourcesPresent(ctx context.Context) ([]string, error)
 	SourceCounts(ctx context.Context) (map[string]store.SourceCount, error)
 	DeleteSourceData(ctx context.Context, src string) (int64, error)
+	// Semantic-search index (issue #1): coverage + run history behind the Status
+	// page's index card, and SemanticSearch behind the Search page's semantic /
+	// hybrid modes (the human-facing counterpart to MCP's semantic_search).
+	LatestEmbedRun(ctx context.Context) (*store.EmbedRun, error)
+	RecentEmbedRuns(ctx context.Context, n int) ([]store.EmbedRun, error)
+	EmbeddingCoverage(ctx context.Context, model string) (store.EmbeddingCoverage, error)
+	SemanticSearch(ctx context.Context, query []float32, model string, opts store.SemanticOptions) ([]store.ScoredMessage, error)
 }
 
 // Server holds the dependencies shared by all handlers.
@@ -163,6 +171,18 @@ type Server struct {
 	// mechanical journal_days was built with — otherwise the message-scanning
 	// stats would leak an excluded conversation's activity (ADR-0023).
 	journalExclude []string
+	// indexer runs the semantic-index embedding job behind the Status page's
+	// Build / Reset controls and embeds queries for the Search page's semantic /
+	// hybrid modes (issue #1): serve and the desktop shell wire an
+	// internal/embed.Indexer over the shared store + llm.Holder via SetIndexer.
+	// nil (browser / no-op mode) renders the controls' "unavailable" state and
+	// makes semantic search report itself unavailable.
+	indexer Indexer
+	// indexMu guards indexing, the single-flight flag for the ONE global index
+	// job the web layer runs at a time. A second Build while a job is in flight
+	// coalesces to a no-op rather than starting a duplicate SQLite writer.
+	indexMu  sync.Mutex
+	indexing bool
 }
 
 // NewServer constructs a Server, parsing templates and wiring routes.
@@ -319,6 +339,9 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("GET /c/{id}/messages", s.handleMessages)
 	mux.HandleFunc("GET /c/{id}/at/{mid}", s.handleConversationAt)
 	mux.HandleFunc("GET /status", s.handleStatus)
+	mux.HandleFunc("POST /status/index", s.handleStatusIndex)
+	mux.HandleFunc("POST /status/index/reset", s.handleStatusIndexReset)
+	mux.HandleFunc("GET /status/index/progress", s.handleStatusIndexProgress)
 	// The Setup surface is presented to the user as "Providers" (its route is
 	// /providers); /setup 301-redirects for compatibility with any existing links
 	// or bookmarks. The privileged POSTs keep the /setup/* prefix — they are

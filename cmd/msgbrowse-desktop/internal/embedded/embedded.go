@@ -31,6 +31,7 @@ import (
 	"time"
 
 	"github.com/joestump/msgbrowse/internal/config"
+	"github.com/joestump/msgbrowse/internal/embed"
 	"github.com/joestump/msgbrowse/internal/llm"
 	"github.com/joestump/msgbrowse/internal/mcp"
 	"github.com/joestump/msgbrowse/internal/onboard"
@@ -209,6 +210,10 @@ func Start(ctx context.Context, cfg *config.Config, log *slog.Logger, opts ...Op
 	// tools return errors — identical degradation.
 	holder := newLLMHolder(cfg)
 	srv.SetLLMConfig(newLLMApplier(cfg, holder))
+	// The same holder backs the semantic-index Indexer (issue #1): the Status
+	// page's Build / Reset and the Search page's semantic mode over the live
+	// store + endpoint.
+	srv.SetIndexer(embed.NewIndexer(st, holder, log))
 	mcpSrv := mcp.NewServer(st, holder, mcp.Options{
 		EmbedModelFunc: holder.EmbedModel,
 		Logger:         log,
