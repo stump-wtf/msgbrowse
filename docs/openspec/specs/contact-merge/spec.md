@@ -1,17 +1,17 @@
 ---
 status: draft
 date: 2026-07-11
-implements: [ADR-0022]
+implements: [ADR-0024]
 requires: [SPEC-0001]
 ---
 
-# SPEC-0015: Contact merging & de-duplication
+# SPEC-0018: Contact merging & de-duplication
 
 - **Capability:** contact-merge
 - **Target packages:** `internal/contacts` (new), `internal/store` (`schema.go`
   v11, merge/reconcile methods), `internal/web` (`SetContactResolver`, settings
   merge section), desktop/cli wiring
-- **Related ADRs:** [ADR-0022 (contact merging & address-book abstraction)](../../../adr/0022-contact-merging-and-address-book-abstraction.md),
+- **Related ADRs:** [ADR-0024 (contact merging & address-book abstraction)](../../../adr/0024-contact-merging-and-address-book-abstraction.md),
   [ADR-0003 (dual-source archive)](../../../adr/0003-dual-source-archive.md),
   [ADR-0011 (contact facts extraction)](../../../adr/0011-contact-facts-extraction.md),
   [ADR-0010 (security & privacy posture)](../../../adr/0010-security-privacy-posture.md)

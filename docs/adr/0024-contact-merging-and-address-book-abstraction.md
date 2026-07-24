@@ -1,4 +1,4 @@
-# ADR-0022: Contact merging and the address-book abstraction
+# ADR-0024: Contact merging and the address-book abstraction
 
 - **Status:** Proposed
 - **Date:** 2026-07-11
@@ -21,7 +21,7 @@
     out of the default build (#20).
 - **Tracking:** epic #8; children #9 (interface + no-op), #10 (macOS provider),
   #11 (merge engine), #12 (settings UI); this ADR is #13.
-- **Requirements:** [SPEC-0015 (contact merging & de-duplication)](../openspec/specs/contact-merge/spec.md)
+- **Requirements:** [SPEC-0018 (contact merging & de-duplication)](../openspec/specs/contact-merge/spec.md)
 
 ## Context and Problem Statement
 
@@ -295,7 +295,7 @@ contact mid-import, and reconcile immediately folds it back.
   with many identifiers across many sources produces O(n·m) rows. Acceptable at
   address-book scale, but it is bookkeeping the UI never shows directly.
 - Two decisions (`macontacts` tag name, exact settings surface) are delegated to
-  the implementing issues and could drift; SPEC-0015 pins the behavior, not the
+  the implementing issues and could drift; SPEC-0018 pins the behavior, not the
   spellings.
 
 ### Neutral
@@ -308,7 +308,7 @@ contact mid-import, and reconcile immediately folds it back.
 ## Requirements
 
 Normative requirements live in
-[SPEC-0015 (contact merging & de-duplication)](../openspec/specs/contact-merge/spec.md)
+[SPEC-0018 (contact merging & de-duplication)](../openspec/specs/contact-merge/spec.md)
 with design rationale in its paired
 [design.md](../openspec/specs/contact-merge/design.md). Implementation is
 tracked by epic #8 (children: #9 interface + no-op, #10 macOS provider, #11

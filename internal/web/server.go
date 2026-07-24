@@ -53,6 +53,12 @@ type Store interface {
 	NewestMessageTS(ctx context.Context) (string, error)
 	GetConversationByID(ctx context.Context, id int64) (*store.ConversationSummary, error)
 	ConversationSourceName(ctx context.Context, id int64) (source, name string, err error)
+	GetContactByID(ctx context.Context, contactID int64) (*store.Contact, error)
+	ContactFacts(ctx context.Context, contactID int64) ([]store.ContactFact, error)
+	ContactStats(ctx context.Context, contactID int64) (store.ContactStats, error)
+	ContactMessageVolume(ctx context.Context, contactID int64) ([]store.MonthBucket, error)
+	ContactMostActiveHour(ctx context.Context, contactID int64) (int, int, bool, error)
+	ContactTopReactions(ctx context.Context, contactID int64, limit int) ([]store.EmojiCount, error)
 	GetMessages(ctx context.Context, convID, cursorTSUnix, cursorID int64, limit int, desc bool) (*store.Page, error)
 	GetContext(ctx context.Context, messageID int64, window int) ([]store.MessageView, error)
 	MessageConversationID(ctx context.Context, messageID int64) (int64, bool, error)
@@ -63,6 +69,12 @@ type Store interface {
 	ListLinks(ctx context.Context, f store.GalleryFilter, cur store.LinkCursor) (*store.LinkPage, error)
 	LatestIngestRun(ctx context.Context) (*store.IngestRun, error)
 	ListSnapshots(ctx context.Context) ([]store.Snapshot, error)
+	LatestJournalDay(ctx context.Context) (string, error)
+	LatestJournalDayInYear(ctx context.Context, year int) (string, bool, error)
+	JournalYears(ctx context.Context) ([]int, error)
+	JournalMonth(ctx context.Context, year int, month time.Month) ([]store.JournalMonthDay, error)
+	JournalStats(ctx context.Context, year int, exclude []string) (store.JournalStats, error)
+	GetJournalDay(ctx context.Context, day string) (store.JournalDayView, bool, error)
 	SourcesPresent(ctx context.Context) ([]string, error)
 	SourceCounts(ctx context.Context) (map[string]store.SourceCount, error)
 	LastSyncTimes(ctx context.Context) (map[string]time.Time, error)
@@ -183,6 +195,11 @@ type Server struct {
 	// contactResolver(), so consumers never nil-check and the merge path
 	// never errors for "no address book".
 	addressBook contacts.Resolver
+	// journalExclude mirrors journal.exclude_conversations so the /journal stat
+	// tiles (most-active weekday, peak hour) honor the same denylist the
+	// mechanical journal_days was built with — otherwise the message-scanning
+	// stats would leak an excluded conversation's activity (ADR-0023).
+	journalExclude []string
 }
 
 // NewServer constructs a Server, parsing templates and wiring routes.
@@ -211,6 +228,7 @@ func NewServer(st Store, cfg *config.Config, log *slog.Logger) (*Server, error) 
 		log:               log,
 		deviceSyncEnabled: cfg.DeviceSync.Enabled,
 		setupTokens:       newSetupTokens(),
+		journalExclude:    cfg.Journal.ExcludeConversations,
 		llmBoot: llm.Settings{
 			BaseURL:    cfg.LLM.BaseURL,
 			EmbedModel: cfg.LLM.EmbedModel,
@@ -377,7 +395,14 @@ func (s *Server) routes() http.Handler {
 	// never shadows the attachment route below ("GET /media/{id}/{path...}").
 	mux.HandleFunc("GET /media", s.handleGallery)
 	mux.HandleFunc("GET /gallery/items", s.handleGalleryItems)
+	// The editorialized journal (ADR-0023): a mood-tinted month calendar + an
+	// editorial day card. Navigation is by query params (?year&month&day), all
+	// boosted — no separate continuation route.
+	mux.HandleFunc("GET /journal", s.handleJournal)
 	mux.HandleFunc("GET /c/{id}", s.handleConversation)
+	// Per-person Contact + AI Facts + Profile page (redesign Phase 1), keyed by
+	// contact id (the merged-person grain), reached from the transcript header.
+	mux.HandleFunc("GET /contact/{id}", s.handleContact)
 	mux.HandleFunc("POST /c/{id}/pin", s.handlePin)
 	mux.HandleFunc("GET /c/{id}/messages", s.handleMessages)
 	mux.HandleFunc("GET /c/{id}/at/{mid}", s.handleConversationAt)

@@ -1,0 +1,110 @@
+{{define "journal"}}{{template "page_start" .}}{{template "journal_content" .}}{{template "page_end" .}}{{end}}
+
+{{/* journal_content is the boosted-swap unit (SPEC-0016 / ADR-0023): the mood-
+     tinted month calendar navigator plus an editorial reading card for the
+     selected day. All navigation is query-param <a> links (year tabs, month
+     chevrons, day cells) with inherited hx-boost, so #main-content swaps with no
+     client JS state. Every structured-digest field is model-derived and
+     untrusted → printed through html/template auto-escaping (never raw href). */}}
+{{define "journal_content"}}<title>{{.Title}}</title>
+    <main id="main-content" class="flex-1" tabindex="0">
+  <div class="px-6 lg:px-10 py-10">
+    <div class="screen-col">
+      <header class="mb-6 flex items-baseline justify-between gap-3 flex-wrap">
+        <h1 class="home-hero-title">Journal</h1>
+        {{- if .Years}}
+        <div class="flex gap-1.5">
+          {{- range .Years}}
+          <a href="/journal?year={{.}}" class="journal-year-tab{{if eq . $.ActiveYear}} journal-year-tab-active{{end}}"
+             hx-boost="true" hx-target="#main-content" hx-select="#main-content" hx-swap="outerHTML" hx-push-url="true">{{.}}</a>
+          {{- end}}
+        </div>
+        {{- end}}
+      </header>
+
+      {{- if .Empty}}
+      <div class="notice-card">
+        <p class="link-card-title">No journal yet.</p>
+        <p class="link-card-sub">Run <code class="font-mono">msgbrowse journal</code> to build the day-by-day journal and its editorial digests.</p>
+      </div>
+      {{- else}}
+
+      {{/* Mood-tinted month calendar navigator */}}
+      <section class="journal-cal mb-8">
+        <div class="journal-cal-head">
+          <a class="journal-cal-nav" href="{{.PrevURL}}" title="Previous month" aria-label="Previous month"
+             hx-boost="true" hx-target="#main-content" hx-select="#main-content" hx-swap="outerHTML" hx-push-url="true">‹</a>
+          <span class="journal-cal-month">{{.MonthLabel}}</span>
+          <a class="journal-cal-nav" href="{{.NextURL}}" title="Next month" aria-label="Next month"
+             hx-boost="true" hx-target="#main-content" hx-select="#main-content" hx-swap="outerHTML" hx-push-url="true">›</a>
+        </div>
+        <div class="journal-cal-grid">
+          <div class="journal-cal-dow">S</div><div class="journal-cal-dow">M</div><div class="journal-cal-dow">T</div><div class="journal-cal-dow">W</div><div class="journal-cal-dow">T</div><div class="journal-cal-dow">F</div><div class="journal-cal-dow">S</div>
+          {{- range .Grid}}{{- range .}}
+          {{- if .InMonth}}
+          {{- if .HasContent}}
+          <a class="cal-day {{.MoodClass}}{{if .Selected}} cal-day--selected{{end}}" href="{{.URL}}"
+             hx-boost="true" hx-target="#main-content" hx-select="#main-content" hx-swap="outerHTML" hx-push-url="true">
+            <span class="cal-day-num">{{.DayNum}}</span><span class="cal-day-count font-mono">{{num .Count}}</span>
+          </a>
+          {{- else}}
+          <span class="cal-day cal-day--none"><span class="cal-day-num">{{.DayNum}}</span></span>
+          {{- end}}
+          {{- else}}<span class="cal-day cal-day--blank"></span>{{- end}}
+          {{- end}}{{- end}}
+        </div>
+        <div class="journal-cal-legend">
+          <span class="opacity-50">Mood</span>
+          {{- range .Moods}}<span class="journal-legend-item"><span class="cal-dot cal-day--{{.}}"></span>{{.}}</span>{{- end}}
+        </div>
+        <div class="journal-stats">
+          <div class="journal-stat"><span class="journal-stat-value">{{num .Stats.DaysWithEntries}}</span><span class="journal-stat-label">days with entries</span></div>
+          <div class="journal-stat"><span class="journal-stat-value">{{num .Stats.LongestStreakDays}}</span><span class="journal-stat-label">longest streak</span></div>
+          {{- if .WeekdayLabel}}<div class="journal-stat"><span class="journal-stat-value">{{.WeekdayLabel}}</span><span class="journal-stat-label">most active</span></div>{{- end}}
+          {{- if .PeakHourLabel}}<div class="journal-stat"><span class="journal-stat-value">{{.PeakHourLabel}}</span><span class="journal-stat-label">peak hour</span></div>{{- end}}
+        </div>
+      </section>
+
+      {{/* Editorial reading card for the selected day */}}
+      {{- with .Selected}}
+      <section class="journal-day-card">
+        <div class="journal-eyebrow">{{template "icon-sparkles" $}} This day, editorialized</div>
+        <h2 class="journal-day-title">{{.DateLabel}}</h2>
+        <div class="journal-day-meta">
+          <span class="font-mono">{{num .MessageCount}}</span> messages · <span class="font-mono">{{num .ConversationCount}}</span> conversations
+          {{- if .Mood}} · <span class="journal-mood {{.MoodClass}}">{{.Mood}}</span>{{end}}
+        </div>
+        {{- if .Digest}}
+        <p class="journal-summary">{{.Digest.Summary}}</p>
+        {{- if .Digest.Highlights}}
+        <div class="journal-section-label">Highlights</div>
+        <ul class="journal-highlights">
+          {{- range .Digest.Highlights}}<li>{{.Text}}{{if .Time}} <span class="font-mono opacity-50">{{.Time}}</span>{{end}}</li>{{- end}}
+        </ul>
+        {{- end}}
+        {{- if .Digest.People}}<div class="journal-chips"><span class="journal-section-label">People</span>{{range .Digest.People}}<span class="journal-chip">{{.}}</span>{{end}}</div>{{- end}}
+        {{- if .Digest.Themes}}<div class="journal-chips"><span class="journal-section-label">Themes</span>{{range .Digest.Themes}}<span class="journal-chip">{{.}}</span>{{end}}</div>{{- end}}
+        {{- if .Digest.StandoutMedia}}<div class="journal-chips"><span class="journal-section-label">Media</span>{{range .Digest.StandoutMedia}}<span class="journal-chip font-mono">{{.}}</span>{{end}}</div>{{- end}}
+        {{- if .Digest.NotableLinks}}
+        <div class="journal-section-label">Notable links</div>
+        <ul class="journal-links">{{range .Digest.NotableLinks}}<li class="font-mono">{{.}}</li>{{end}}</ul>
+        {{- end}}
+        {{- else if .Body}}
+        <p class="journal-summary">{{.Body}}</p>
+        {{- else}}
+        <p class="journal-day-mechanical">
+          {{- if .TopSenders}}Most with {{range $i, $s := .TopSenders}}{{if $i}}, {{end}}{{humanName $s.Name}}{{end}}.
+          {{- else}}A quiet day.{{end}}
+          <span class="opacity-50">Run <code class="font-mono">msgbrowse journal</code> to editorialize this day.</span>
+        </p>
+        {{- end}}
+      </section>
+      {{- else}}
+      <p class="opacity-50 text-sm">Pick a highlighted day above to read its editorial.</p>
+      {{- end}}
+
+      {{- end}}
+    </div>
+  </div>
+    </main>
+{{end}}

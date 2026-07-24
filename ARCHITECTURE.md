@@ -23,6 +23,7 @@ cmd/msgbrowse-desktop    Wails v2 desktop shell + systray, embedding the same we
     ├── internal/llm     OpenAI-compatible client (the only internet egress)
     ├── internal/embed   batch embedding orchestration
     ├── internal/facts   incremental, cited contact-fact extraction (LLM)
+    ├── internal/journal per-day mechanical rollup + optional LLM digest (ADR-0023)
     ├── internal/imageconv  transcode HEIC/TIFF → cached JPEG (external converter, ADR-0014)
     ├── internal/archivepath shared, traversal-safe attachment path resolution
     ├── internal/contacts pluggable address-book Resolver seam + identifier normalization (contact merging)
@@ -62,6 +63,13 @@ desktop's embedded server.
   — AI-extracted, cited facts deduped per contact (`UNIQUE(contact_id, fact_hash)`),
   no FK to messages (provenance by stable hash; see ADR-0011). `fact_state` is the
   per-conversation incremental cursor (last message hash + model).
+- `journal_days`, `journal_digests` (schemaV11) — the day-keyed AI-editorialized
+  journal (ADR-0023): `journal_days` is the deterministic mechanical rollup
+  (message/conversation counts, per-source counts, top senders), `journal_digests`
+  the optional cached LLM prose digest, versioned by `(model, prompt_version)` so a
+  model swap or `journal.digest_prompt` edit re-derives affected days. Days are
+  bucketed in UTC; no FK to messages (same rationale as embeddings/contact_facts —
+  re-ingest rewrites message rowids).
 - `snapshots`, `ingest_state`, `ingest_runs` — backup inventory + incremental
   bookkeeping + per-run summaries.
 - `paired_devices`, `sync_state` — device sync (ADR-0021): the explicitly
@@ -142,7 +150,7 @@ the UI loads — CSS, htmx, the theme script, icons — is same-origin.
 - [ADR-0017](docs/adr/0017-desktop-shell-wails.md) — desktop shell: Wails v2 window over the embedded web server.
 - [ADR-0020](docs/adr/0020-bundled-exporters-guided-setup.md) — bundled exporter toolchain in the `.app` + guided setup.
 - [ADR-0021](docs/adr/0021-syncthing-sync-engine.md) — device sync: supervised Syncthing engine (supersedes ADR-0018).
-- [ADR-0022](docs/adr/0022-contact-merging-and-address-book-abstraction.md) — contact merging + address-book abstraction (pure-Go resolver seam, macOS provider behind a build tag).
+- [ADR-0024](docs/adr/0024-contact-merging-and-address-book-abstraction.md) — contact merging + address-book abstraction (pure-Go resolver seam, macOS provider behind a build tag).
 
 The full set (ADR-0001–0022) lives in [`docs/adr/`](docs/adr/).
 

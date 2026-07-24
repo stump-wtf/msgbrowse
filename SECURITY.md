@@ -28,7 +28,7 @@ device — and device-sync traffic, when enabled, never leaves your LAN.
 
 **Disabling a source is not a full erase.** Disable removes a source's imported
 conversations, messages, and contact identifiers from the store, but the
-cross-provider merge journal (`contact_links`, ADR-0022) is deliberately kept so
+cross-provider merge journal (`contact_links`, ADR-0024) is deliberately kept so
 a later re-import re-folds the same people automatically. Those rows store the
 raw `(source, identifier)` tuples — i.e. phone numbers and emails — so a
 disabled source's identifiers persist in `contact_links` (and accumulate across
@@ -45,7 +45,7 @@ hosted provider. What is sent, and when:
 | --- | --- |
 | `embed` | Message text (per message), to compute embeddings. |
 | MCP `semantic_search` / hybrid `search_messages` | Your **query** text (to embed it). |
-| Journal digests *(Slice 6)* | A day's message text, to write the digest. |
+| Journal digests (ADR-0023) | A day's message text, to write the digest. |
 | Journal image captions *(Slice 6, opt-in)* | **Image bytes** of received photos. |
 | Journal audio transcripts *(Slice 6, opt-in)* | **Audio bytes** of voice messages. |
 
@@ -55,7 +55,12 @@ sends raw media off-device. The default local route keeps it on the machine.
 
 **Privacy controls:**
 - `journal.exclude_conversations` is a denylist of conversations whose content is
-  **never** sent to any LLM, for any feature.
+  **never** sent to any LLM, for any feature — the privacy control that keeps named
+  conversations out of every journal digest.
+- The journal's **mechanical rollup** (per-day counts, top senders) is built locally
+  and **never** leaves the machine; only the optional digest pass is egress — the
+  same `llm.base_url` posture as fact extraction — and `journal.digest_enabled`
+  (default on) gates it (ADR-0023 / SPEC-0016).
 - Keep the default local LiteLLM route. Routing to a hosted provider must be a
   deliberate edit to `litellm.config.yaml` and is documented as off-device.
 - The API key is never baked into the image. It comes from `MSGBROWSE_LLM_API_KEY`

@@ -1,13 +1,13 @@
 ---
 status: draft
 date: 2026-07-11
-implements: [ADR-0022]
+implements: [ADR-0024]
 ---
 
-# SPEC-0015 Design: Contact merging & de-duplication
+# SPEC-0018 Design: Contact merging & de-duplication
 
 - **Capability:** contact-merge
-- **Related ADRs:** [ADR-0022](../../../adr/0022-contact-merging-and-address-book-abstraction.md),
+- **Related ADRs:** [ADR-0024](../../../adr/0024-contact-merging-and-address-book-abstraction.md),
   [ADR-0003](../../../adr/0003-dual-source-archive.md),
   [ADR-0011](../../../adr/0011-contact-facts-extraction.md),
   [ADR-0010](../../../adr/0010-security-privacy-posture.md)
@@ -71,7 +71,7 @@ Merging repoints `contact_identifiers.contact_id`,
 `conversations.contact_id`, and `contact_facts.contact_id` to the winner and
 deletes the loser — the mechanics [ADR-0003](../../../adr/0003-dual-source-archive.md)
 §Consequences anticipated. A `canonical_id` alias column or a second person
-table was rejected (ADR-0022 Considered Options): every existing query joins
+table was rejected (ADR-0024 Considered Options): every existing query joins
 `contacts(id)` directly, and an alias hop would tax all of them to solve a
 problem the identifier-keyed journal solves better. Fact repointing rides the
 existing dedup: `UPDATE OR IGNORE contact_facts SET contact_id = :winner WHERE

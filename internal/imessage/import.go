@@ -117,8 +117,8 @@ func Run(ctx context.Context, st *store.Store, opts Options) (store.IngestRun, e
 	if _, err := st.RecordIngestRun(ctx, run); err != nil {
 		return run, err
 	}
-	// Fold re-imported identities back onto their merged person (ADR-0022 /
-	// SPEC-0015). Idempotent, local-only; nil resolver = no address book.
+	// Fold re-imported identities back onto their merged person (ADR-0024 /
+	// SPEC-0018). Idempotent, local-only; nil resolver = no address book.
 	// Best-effort: the import is committed and hash-idempotent, and reconcile
 	// re-runs next import, so a failure is logged rather than failing the import.
 	if err := st.ReconcileContacts(ctx, nil); err != nil {

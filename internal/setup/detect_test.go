@@ -197,12 +197,20 @@ func TestDetectEmptyHome(t *testing.T) {
 }
 
 func TestNewDetectorUsesHome(t *testing.T) {
-	// NewDetector reads the real HOME; on this box the ~/Library stores do not
-	// exist, so it must still return without panicking and report NotDetected.
+	// NewDetector reads the real HOME (via os.UserHomeDir → $HOME on Unix/macOS).
+	// Point HOME at an empty temp dir so the probe is hermetic regardless of what
+	// messaging apps the host actually has installed: an empty home means every
+	// ~/Library store is absent, so every source must read NotDetected. Without
+	// this, the test fails on a real macOS dev box with Signal/iMessage/WhatsApp
+	// present while passing in CI's app-less Linux.
+	t.Setenv("HOME", t.TempDir())
 	d := NewDetector()
+	if d.Home == "" {
+		t.Fatal("NewDetector did not pick up HOME")
+	}
 	for _, det := range d.DetectAll() {
 		if det.State != NotDetected {
-			t.Errorf("%s on this host = %v, want NotDetected", det.Source, det.State)
+			t.Errorf("%s with empty HOME = %v, want NotDetected", det.Source, det.State)
 		}
 	}
 }

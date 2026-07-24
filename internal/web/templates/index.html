@@ -109,30 +109,26 @@
         <p class="status-note mt-4"><a href="/status" class="link link-hover">Manage index →</a></p>
       </div>
 
-      {{/* Quick-links: bordered cards with accent icons + dim subtitles. Boosted
-           (same scoped #main-content swap as the sidebar nav) for instant loads. */}}
-      <div class="grid grid-cols-1 sm:grid-cols-3 gap-3"
+      {{/* Quick-links: compact square icon tiles (accent icon + label) that fit
+           four across inside the 780px reading column. Boosted (same scoped
+           #main-content swap as the sidebar nav) for instant loads. */}}
+      <div class="grid grid-cols-2 sm:grid-cols-4 gap-3"
            hx-boost="true" hx-target="#main-content" hx-select="#main-content" hx-swap="outerHTML" hx-push-url="true">
         <a href="/search" class="link-card">
           <span class="link-card-icon">{{template "icon-search" .}}</span>
-          <span class="min-w-0">
-            <span class="link-card-title block">Search</span>
-            <span class="link-card-sub block">Full-text, filtered</span>
-          </span>
+          <span class="link-card-title">Search</span>
         </a>
         <a href="/gallery" class="link-card">
           <span class="link-card-icon">{{template "icon-photo" .}}</span>
-          <span class="min-w-0">
-            <span class="link-card-title block">Media</span>
-            <span class="link-card-sub block">Images, files &amp; links</span>
-          </span>
+          <span class="link-card-title">Media</span>
+        </a>
+        <a href="/journal" class="link-card">
+          <span class="link-card-icon">{{template "icon-book" .}}</span>
+          <span class="link-card-title">Journal</span>
         </a>
         <a href="/status" class="link-card">
           <span class="link-card-icon">{{template "icon-server" .}}</span>
-          <span class="min-w-0">
-            <span class="link-card-title block">Status</span>
-            <span class="link-card-sub block">Ingest &amp; sync health</span>
-          </span>
+          <span class="link-card-title">Status</span>
         </a>
       </div>
       {{else}}

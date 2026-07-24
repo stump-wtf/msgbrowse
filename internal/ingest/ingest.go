@@ -136,7 +136,7 @@ func Run(ctx context.Context, st *store.Store, opts Options) (store.IngestRun, e
 	}
 
 	// Re-apply durable contact merge/split decisions so a re-ingested identity
-	// folds straight back onto its person (ADR-0022 / SPEC-0015). Reconcile is
+	// folds straight back onto its person (ADR-0024 / SPEC-0018). Reconcile is
 	// idempotent and local-only; the nil resolver means "no address book",
 	// which is all reconcile needs — stored decisions re-apply without it, and
 	// address-book hints never auto-merge.

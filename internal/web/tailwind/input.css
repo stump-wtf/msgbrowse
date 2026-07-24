@@ -1202,12 +1202,19 @@ a.meta-chip:hover {
   }
 }
 
-/* --- Bordered link/quick-link cards (Home) ------------------------------- */
+/* --- Quick-link icon tiles (Home) ---------------------------------------- */
+/* Compact square tiles (icon + label) that sit four across in the 780px
+   reading column. The .notice-card empty state still uses .link-card-title /
+   .link-card-sub, so those rules stay below. */
 .link-card {
   display: flex;
-  align-items: flex-start;
-  gap: 0.75rem;
-  padding: 0.95rem 1rem;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  gap: 0.5rem;
+  padding: 0.95rem 0.6rem;
+  min-height: 92px;
   border: 1px solid var(--color-neutral);
   border-radius: 0.75rem;
   background: var(--color-base-200);
@@ -1219,19 +1226,19 @@ a.meta-chip:hover {
   background: color-mix(in oklab, var(--color-primary) 6%, var(--color-base-200));
   border-color: color-mix(in oklab, var(--color-primary) 40%, var(--color-neutral));
 }
-/* Accent icon disc on a card. */
+/* Accent icon disc on a tile. */
 .link-card-icon {
   flex-shrink: 0;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 34px;
-  height: 34px;
+  width: 40px;
+  height: 40px;
   border-radius: 0.5rem;
   color: var(--color-primary);
   background: color-mix(in oklab, var(--color-primary) 10%, transparent);
   border: 1px solid color-mix(in oklab, var(--color-primary) 25%, transparent);
-  font-size: 16px;
+  font-size: 20px;
 }
 .link-card-title {
   font-size: 14px;
@@ -1242,6 +1249,285 @@ a.meta-chip:hover {
   margin-top: 0.15rem;
   font-size: 12px;
   color: color-mix(in oklab, var(--color-base-content) 50%, transparent);
+}
+
+/* --- Contact profile message-volume sparkline (redesign Phase 1) ---------- */
+/* The bars/labels inherit currentColor (the accent) via fill="currentColor";
+   geometry + opacity are presentational SVG attributes (CSP forbids inline
+   style=). */
+.spark {
+  display: block;
+  width: 100%;
+  height: auto;
+  max-height: 64px;
+  color: var(--color-primary);
+}
+
+/* --- Journal (day-by-day digests, ADR-0023) ------------------------------ */
+.journal-day {
+  padding: 1rem 1.1rem;
+  border: 1px solid var(--color-neutral);
+  border-radius: 0.75rem;
+  background: var(--color-base-200);
+}
+.journal-day-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+.journal-day-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--color-base-content);
+}
+.journal-day-meta {
+  font-size: 12px;
+  color: color-mix(in oklab, var(--color-base-content) 55%, transparent);
+}
+/* Digest bodies are untrusted model text rendered as escaped plain text;
+   pre-wrap preserves the model's paragraph breaks without any markup. */
+.journal-digest {
+  white-space: pre-wrap;
+  font-size: 14px;
+  line-height: 1.55;
+  color: color-mix(in oklab, var(--color-base-content) 88%, transparent);
+}
+.journal-day-mechanical {
+  font-size: 13px;
+  color: color-mix(in oklab, var(--color-base-content) 60%, transparent);
+}
+
+/* --- Journal calendar navigator + editorial day card (redesign Phase 2) --- */
+/* Mood palette (v2 design frame): upbeat teal, neutral slate-blue, quiet dim
+   slate, tense muted rose. Day cells are subtle tints of these over the card
+   surface; legend dots + the mood pill use the solid hue. All tints are CSS
+   classes (CSP forbids inline style=), keyed by the fixed journal.Moods enum. */
+:root {
+  --mood-upbeat: #3aa088;
+  --mood-neutral: #6f93d6;
+  --mood-quiet: #566072;
+  --mood-tense: #c26b7a;
+}
+.journal-year-tab {
+  padding: 0.15rem 0.6rem;
+  border-radius: 0.5rem;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  color: color-mix(in oklab, var(--color-base-content) 55%, transparent);
+  border: 1px solid transparent;
+}
+.journal-year-tab:hover {
+  color: var(--color-base-content);
+  background: var(--color-base-200);
+}
+.journal-year-tab-active {
+  color: var(--color-primary);
+  border-color: color-mix(in oklab, var(--color-primary) 40%, var(--color-neutral));
+  background: color-mix(in oklab, var(--color-primary) 8%, transparent);
+}
+.journal-cal {
+  border: 1px solid var(--color-neutral);
+  border-radius: 0.875rem;
+  background: var(--color-base-200);
+  padding: 1rem 1.1rem 1.1rem;
+}
+.journal-cal-head {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+  margin-bottom: 0.75rem;
+}
+.journal-cal-month {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--color-base-content);
+}
+.journal-cal-nav {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 0.5rem;
+  font-size: 18px;
+  line-height: 1;
+  color: color-mix(in oklab, var(--color-base-content) 55%, transparent);
+  border: 1px solid var(--color-neutral);
+}
+.journal-cal-nav:hover {
+  color: var(--color-base-content);
+  background: var(--color-base-100);
+}
+.journal-cal-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 4px;
+}
+.journal-cal-dow {
+  text-align: center;
+  font-size: 10.5px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: color-mix(in oklab, var(--color-base-content) 38%, transparent);
+  padding-bottom: 2px;
+}
+.cal-day {
+  aspect-ratio: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1px;
+  border-radius: 0.45rem;
+  border: 1px solid transparent;
+  min-height: 34px;
+}
+.cal-day-num {
+  font-size: 12px;
+  color: color-mix(in oklab, var(--color-base-content) 70%, transparent);
+}
+.cal-day-count {
+  font-size: 9px;
+  color: color-mix(in oklab, var(--color-base-content) 45%, transparent);
+}
+.cal-day--blank {
+  border: 0;
+}
+.cal-day--none {
+  background: color-mix(in oklab, var(--color-base-content) 3%, transparent);
+}
+a.cal-day:hover {
+  border-color: color-mix(in oklab, var(--color-primary) 45%, transparent);
+}
+.cal-day--selected {
+  box-shadow: 0 0 0 2px var(--color-primary);
+}
+/* Mood tints — subtle background over the card surface. */
+.cal-day--upbeat  { background: color-mix(in oklab, var(--mood-upbeat) 24%, var(--color-base-200)); }
+.cal-day--neutral { background: color-mix(in oklab, var(--mood-neutral) 24%, var(--color-base-200)); }
+.cal-day--quiet   { background: color-mix(in oklab, var(--mood-quiet) 28%, var(--color-base-200)); }
+.cal-day--tense   { background: color-mix(in oklab, var(--mood-tense) 24%, var(--color-base-200)); }
+.journal-cal-legend {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
+  margin-top: 0.85rem;
+  font-size: 11px;
+  color: color-mix(in oklab, var(--color-base-content) 55%, transparent);
+}
+.journal-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+.cal-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 2px;
+  display: inline-block;
+}
+.journal-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1.6rem;
+  margin-top: 0.9rem;
+  padding-top: 0.85rem;
+  border-top: 1px solid color-mix(in oklab, var(--color-neutral) 60%, transparent);
+}
+.journal-stat {
+  display: flex;
+  flex-direction: column;
+}
+.journal-stat-value {
+  font-size: 17px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--color-base-content);
+}
+.journal-stat-label {
+  font-size: 10.5px;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: color-mix(in oklab, var(--color-base-content) 42%, transparent);
+}
+.journal-day-card {
+  border: 1px solid var(--color-neutral);
+  border-radius: 1rem;
+  background: var(--color-base-200);
+  padding: 1.3rem 1.4rem;
+}
+.journal-eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--color-primary);
+  margin-bottom: 0.5rem;
+}
+.journal-mood {
+  padding: 0.05rem 0.45rem;
+  border-radius: 0.4rem;
+  font-size: 11.5px;
+  color: var(--color-base-content);
+}
+.journal-mood.cal-day--upbeat  { background: color-mix(in oklab, var(--mood-upbeat) 30%, var(--color-base-200)); }
+.journal-mood.cal-day--neutral { background: color-mix(in oklab, var(--mood-neutral) 30%, var(--color-base-200)); }
+.journal-mood.cal-day--quiet   { background: color-mix(in oklab, var(--mood-quiet) 34%, var(--color-base-200)); }
+.journal-mood.cal-day--tense   { background: color-mix(in oklab, var(--mood-tense) 30%, var(--color-base-200)); }
+.journal-summary {
+  white-space: pre-wrap; /* preserve paragraph breaks in the prose-fallback body */
+  font-size: 15px;
+  line-height: 1.6;
+  color: color-mix(in oklab, var(--color-base-content) 90%, transparent);
+  margin-top: 0.3rem;
+}
+.journal-section-label {
+  font-size: 10.5px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: color-mix(in oklab, var(--color-base-content) 42%, transparent);
+  margin-top: 1rem;
+  margin-bottom: 0.4rem;
+}
+.journal-highlights {
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: color-mix(in oklab, var(--color-base-content) 82%, transparent);
+  list-style: disc;
+  padding-left: 1.1rem;
+}
+.journal-highlights li {
+  margin-bottom: 0.2rem;
+}
+.journal-chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.4rem;
+  margin-top: 0.75rem;
+}
+.journal-chips .journal-section-label {
+  margin: 0 0.2rem 0 0;
+}
+.journal-chip {
+  padding: 0.1rem 0.5rem;
+  border-radius: 0.4rem;
+  font-size: 12px;
+  color: color-mix(in oklab, var(--color-base-content) 78%, transparent);
+  background: color-mix(in oklab, var(--color-base-content) 7%, transparent);
+  border: 1px solid var(--color-neutral);
+}
+.journal-links {
+  font-size: 12px;
+  color: color-mix(in oklab, var(--color-base-content) 60%, transparent);
+  word-break: break-all;
 }
 
 /* --- Search ------------------------------------------------------------- */

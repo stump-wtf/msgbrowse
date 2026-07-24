@@ -35,10 +35,10 @@ messages. Full documentation lives at
 > reaction badges), FTS + semantic search, media & links gallery, AI contact
 > facts, the MCP server, a web UI that answers boosted navigations in ~20 ms
 > on a 400k-message archive, the [desktop app](#desktop-app) with menubar
-> residency ([#97](https://github.com/joestump/msgbrowse/issues/97)), and
+> residency ([#97](https://github.com/joestump/msgbrowse/issues/97)),
 > [QR device pairing + archive sync](#device-sync)
-> ([#98](https://github.com/joestump/msgbrowse/issues/98)). In development:
-> the editorialized journal and Gitea-primary release publishing
+> ([#98](https://github.com/joestump/msgbrowse/issues/98)), and the
+> AI-editorialized journal. In development: Gitea-primary release publishing
 > ([#99](https://github.com/joestump/msgbrowse/issues/99)).
 
 > [!WARNING]
@@ -275,8 +275,6 @@ Signal-Archive/
 │   └── <ChatName>/
 │       ├── chat.md              # the conversation, plaintext markdown
 │       └── media/               # attachments for this conversation
-├── journal/                     # day-by-day Markdown journal (msgbrowse owns this)
-│   └── <YYYY>/<YYYY-MM-DD>.md
 └── .snapshots/                  # timestamped RAW encrypted DB backups
     └── db-YYYYMMDD-HHMMSS.tar   # SQLCipher-encrypted; LISTED, never decrypted
 ```
@@ -305,7 +303,7 @@ covers all three end to end, including the macOS WhatsApp-app route
 | `msgbrowse serve` | Run the local HTMX web UI. `--port`/`--host` (or `--listen-addr`); `--open=false` for headless. Default `127.0.0.1:8787`. |
 | `msgbrowse mcp` | Run the MCP server (stdio by default; `--http` for streamable HTTP). |
 | `msgbrowse devices` | Manage [device-sync](#device-sync) peers: `list` paired devices, `unpair <device-id>` (stop syncing; local data stays), `status` (engine, peer connections, folder completion). |
-| `msgbrowse journal` | Rebuild the journal + LLM digests *(in development)*. |
+| `msgbrowse journal` | Build the per-day journal: a deterministic local rollup (message/conversation counts, per-source counts, top senders) plus one optional LLM prose digest per day (cached, versioned by model+prompt), surfaced at `/journal` and from the home-page **Journal** tile. Incremental (only days without a current digest) and resumable. `--since YYYY-MM-DD` floors the range; `--backfill` digests oldest-first; `--regenerate` clears cached digests and re-derives every day; `--dry-run` reports the eligible day count + a rough token estimate without calling the LLM. |
 | `msgbrowse version` | Print version. |
 
 ## Connecting Claude (MCP)
@@ -374,7 +372,10 @@ flags. See [`config.example.yaml`](config.example.yaml) and the
 | `device_sync.listen_addr` | `MSGBROWSE_DEVICE_SYNC_LISTEN_ADDR` | `:8788` | Syncthing P2P listener — the one socket beyond loopback |
 | `device_sync.device_name` | `MSGBROWSE_DEVICE_SYNC_DEVICE_NAME` | hostname | this node's name as shown on paired peers |
 | `device_sync.syncthing_bin` | `MSGBROWSE_DEVICE_SYNC_SYNCTHING_BIN` | — | Syncthing path for `serve` (else PATH); the `.app` uses its bundled copy |
+| `journal.digest_enabled` | — | `true` | gate the LLM digest pass (mechanical rollup is always built) |
+| `journal.digest_prompt` | — | built-in | digest instruction; editing it re-derives affected days |
 | `journal.exclude_conversations` | — | `[]` | never sent to the LLM |
+| `journal.max_days_per_run` | — | `0` | cap days digested per run (`0` = unbounded); runs resume |
 | `log_level` | `MSGBROWSE_LOG_LEVEL` | `info` | debug/info/warn/error |
 
 ## Security

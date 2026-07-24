@@ -24,6 +24,11 @@ type ConversationSummary struct {
 	ImageCount   int
 	FileCount    int
 	LinkCount    int
+	// ContactID is the linked contact (0 when the conversation has none — e.g.
+	// a group, or a source thread not yet merged). Populated by
+	// GetConversationByID; 0 in the sidebar list. Drives the transcript header's
+	// link to the person's /contact/{id} profile.
+	ContactID int64
 	// Identifiers are the contact's cross-source handles (e.g. an iMessage
 	// phone/email merged onto a Signal contact), excluding the conversation's
 	// own source-side identity. Populated for the single-conversation view
@@ -313,7 +318,7 @@ func (s *Store) GetConversation(ctx context.Context, name string) (*Conversation
 func (s *Store) GetConversationByID(ctx context.Context, id int64) (*ConversationSummary, error) {
 	cs := ConversationSummary{ID: id}
 	err := s.db.QueryRowContext(ctx,
-		`SELECT c.name, c.source, c.pinned,
+		`SELECT c.name, c.source, c.pinned, COALESCE(c.contact_id, 0),
 		        (SELECT COUNT(*) FROM messages m WHERE m.conversation_id = c.id),
 		        COALESCE((SELECT m.ts FROM messages m WHERE m.conversation_id = c.id
 		                   ORDER BY m.ts_unix ASC,  m.id ASC  LIMIT 1), ''),
@@ -323,7 +328,7 @@ func (s *Store) GetConversationByID(ctx context.Context, id int64) (*Conversatio
 		                   ORDER BY m.ts_unix DESC, m.id DESC LIMIT 1), 0)
 		   FROM conversations c
 		  WHERE c.id = ?`, id).
-		Scan(&cs.Name, &cs.Source, &cs.Pinned, &cs.MessageCount, &cs.FirstTS, &cs.LastTS, &cs.LastTSUnix)
+		Scan(&cs.Name, &cs.Source, &cs.Pinned, &cs.ContactID, &cs.MessageCount, &cs.FirstTS, &cs.LastTS, &cs.LastTSUnix)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}

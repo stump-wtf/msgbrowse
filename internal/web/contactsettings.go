@@ -1,5 +1,5 @@
 // The Settings → Contacts tab (issue #12, epic #8): the user-facing surface
-// over the cross-provider contact merge engine (#11, ADR-0022 / SPEC-0015). It
+// over the cross-provider contact merge engine (#11, ADR-0024 / SPEC-0018). It
 // exposes three things:
 //
 //   - The merge RULES — which identifier kinds to trust for candidates and

@@ -171,11 +171,25 @@ type JournalConfig struct {
 }
 
 // DefaultDigestPrompt is the built-in journal digest instruction. Its text is
-// part of the digest cache key (prompt version), so edits here are intentional.
-const DefaultDigestPrompt = "You are summarizing one day of a personal Signal message archive. " +
-	"Write a concise digest with: a 1-3 sentence summary, the key people involved, " +
-	"a short list of themes/tags, and any notable decisions or links. " +
-	"Be factual and neutral; do not invent details that are not in the transcript."
+// part of the digest cache key (prompt version), so edits here are intentional
+// and automatically re-derive every cached digest on the next run.
+//
+// It demands a single JSON object (parsed tolerantly in internal/journal,
+// mirroring the strict-JSON contract in internal/facts). The mood enum here MUST
+// stay in sync with internal/journal.Moods — an unknown mood is coerced to
+// "neutral" on parse, so drift degrades gracefully rather than failing.
+const DefaultDigestPrompt = "You are summarizing one day of a personal message archive (Signal, iMessage, WhatsApp). " +
+	"Return ONLY a single JSON object, no prose, no markdown fences, with exactly these keys: " +
+	`"summary" (a 1-3 sentence factual summary, string), ` +
+	`"people" (array of strings, the key participants by the names they appear under), ` +
+	`"themes" (array of short topic-tag strings), ` +
+	`"mood" (one of: upbeat, neutral, quiet, tense), ` +
+	`"highlights" (array of objects {"text": string, "time": "HH:MM"} for notable moments, 24-hour time from the transcript), ` +
+	`"standout_media" (array of notable attachment filenames), ` +
+	`"notable_links" (array of URLs copied verbatim from the transcript). ` +
+	"Rules: be factual and neutral; do NOT invent details, names, times, or links not in the transcript. " +
+	`If a field has nothing, use an empty array (or "" for summary, "neutral" for mood). ` +
+	"Mood reflects the overall tone of the whole day, not any single message."
 
 // SetDefaults registers every default value on the given Viper instance. It is
 // the single source of truth for built-in defaults and is also used by tests.

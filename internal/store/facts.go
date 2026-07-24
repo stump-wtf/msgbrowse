@@ -37,15 +37,21 @@ type FactInput struct {
 // ContactFact is a stored fact as rendered for the UI. SourceMessageID is the
 // current rowid of the supporting message (for a jump-to-context link), or 0 if
 // that message no longer exists (e.g. removed by a re-ingest).
+// SourceConversationID is the conversation that owns the supporting message
+// (0 when the message is gone) — the contact page spans multiple conversations,
+// so a fact's jump-to-context link must target the message's OWN conversation,
+// not a single active one. It is left 0 by ContactFactsByConversation (whose
+// caller already knows the conversation).
 type ContactFact struct {
-	Fact              string
-	Category          string
-	Source            string
-	SourceMessageHash string
-	SourceMessageID   int64
-	SourceTS          string
-	SourceTSUnix      int64
-	Model             string
+	Fact                 string
+	Category             string
+	Source               string
+	SourceMessageHash    string
+	SourceMessageID      int64
+	SourceConversationID int64
+	SourceTS             string
+	SourceTSUnix         int64
+	Model                string
 }
 
 // factHash is the stable dedup key for a fact: a digest of its normalized text.

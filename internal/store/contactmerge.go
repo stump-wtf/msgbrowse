@@ -1,5 +1,5 @@
-// Cross-provider contact merge / de-dup engine (issue #11, ADR-0022 /
-// SPEC-0015). The pure matching core lives in internal/contacts; this file is
+// Cross-provider contact merge / de-dup engine (issue #11, ADR-0024 /
+// SPEC-0018). The pure matching core lives in internal/contacts; this file is
 // the persistence + transaction half: the merge-rules settings, candidate
 // detection over the stored identifiers, the manual merge/split transactions,
 // and the idempotent reconcile pass that re-applies durable decisions after
@@ -32,7 +32,7 @@ import (
 type MergeRules struct {
 	// AutoMerge enables applying exact-normalized-identifier merges during
 	// reconcile. Off by default: msgbrowse only ever suggests unless the user
-	// opts in (ADR-0003 / ADR-0022).
+	// opts in (ADR-0003 / ADR-0024).
 	AutoMerge bool
 	// MatchPhone trusts phone-number equality for candidates and (when
 	// AutoMerge is on) auto-merge.
@@ -257,7 +257,7 @@ SELECT c.id, c.display_name, ci.source, ci.identifier
 // winner (facts deduplicating via UNIQUE(contact_id, fact_hash)), and deletes
 // the loser's contacts row. It returns the surviving (winner) contact id.
 //
-// The winner is chosen by the ordered rule (ADR-0022 / REQ-0015-007): the
+// The winner is chosen by the ordered rule (ADR-0024 / REQ-0015-007): the
 // contact with a user-meaningful display_name (differs from all its
 // identifiers) wins; otherwise the lower id wins. Merging a pair that was
 // previously split replaces the split records — the latest manual action wins.
@@ -429,7 +429,7 @@ func (s *Store) ReconcileContacts(ctx context.Context, resolver contacts.Resolve
 	}
 	// The resolver is accepted for API symmetry with MergeCandidates and the
 	// on-demand settings path, but reconcile deliberately does not consult the
-	// address book: hints only ever *suggest* (ADR-0022), they never
+	// address book: hints only ever *suggest* (ADR-0024), they never
 	// auto-merge, so no address-book snapshot can change reconcile's outcome.
 	_ = resolver
 
@@ -785,7 +785,7 @@ func loadContactRow(ctx context.Context, tx *sql.Tx, id int64) (string, []idPair
 	return name, ids, nil
 }
 
-// pickWinner implements the deterministic winner rule (ADR-0022 /
+// pickWinner implements the deterministic winner rule (ADR-0024 /
 // REQ-0015-007): if exactly one contact has a user-meaningful display_name
 // (differs from all its identifiers), it wins; otherwise the lower id wins.
 func pickWinner(aID int64, aName string, aIDs []idPair, bID int64, bName string, bIDs []idPair) (winner, loser int64) {

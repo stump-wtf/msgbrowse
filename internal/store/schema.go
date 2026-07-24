@@ -6,7 +6,7 @@ import "context"
 // `user_version` pragma. On Open, the migrations runner brings any older
 // database forward to this version. Bump it and append a migration whenever the
 // schema changes.
-const schemaVersion = 12
+const schemaVersion = 14
 
 // SchemaVersion returns the schema revision this binary expects (and migrates a
 // database forward to on Open). Read-only callers — notably `msgbrowse doctor` —
@@ -51,6 +51,8 @@ var migrations = []string{
 	10: schemaV10,
 	11: schemaV11,
 	12: schemaV12,
+	13: schemaV13,
+	14: schemaV14,
 }
 
 // schemaV1 is the initial Signal-only schema. It is preserved verbatim so a
@@ -475,7 +477,7 @@ CREATE TABLE sync_state (
 );
 `
 
-// schemaV11 adds embed_runs — the durable log of semantic-search indexing
+// schemaV12 adds embed_runs — the durable log of semantic-search indexing
 // runs, the embeddings analogue of ingest_runs (issue #1: the Overview needs
 // "last index run" and an in-progress marker, and internal/embed's
 // run-time Summary evaporates with the CLI process that produced it).
@@ -492,7 +494,7 @@ CREATE TABLE sync_state (
 // terminal write) and is reported as such rather than spinning forever.
 //
 // All timestamps are RFC3339 UTC strings, matching ingest_runs.
-const schemaV11 = `
+const schemaV12 = `
 CREATE TABLE IF NOT EXISTS embed_runs (
     id          INTEGER PRIMARY KEY,
     model       TEXT    NOT NULL,
@@ -507,11 +509,12 @@ CREATE TABLE IF NOT EXISTS embed_runs (
 );
 `
 
-// schemaV12 adds the cross-provider contact-merge decision journal and its
-// rules (ADR-0022 / SPEC-0015, issue #11). Note the version: ADR-0022 wrote
-// "migration v11", but embed_runs (issue #1) claimed v11 first, so the merge
-// tables land at v12 — the tables and behavior are exactly as the ADR pins,
-// only the migration number moved.
+// schemaV13 adds the cross-provider contact-merge decision journal and its
+// rules (ADR-0024 / SPEC-0018, issue #11). Note the version: the ADR draft
+// wrote "migration v11", then embed_runs claimed v11 on this lineage, and the
+// v11 slot ultimately went to the journal tables that shipped on main (issue
+// #217) — so the merge tables land at v13. The tables and behavior are exactly
+// as the ADR pins; only the migration number moved.
 //
 // contact_links is a DECISION JOURNAL, not a pointer graph: one row per
 // merge/split decision keyed by a canonical-ordered pair of stable
@@ -538,10 +541,10 @@ CREATE TABLE IF NOT EXISTS embed_runs (
 // contact_merge_rules is a single-row settings table (CHECK id = 1) owned by
 // the settings UI (#12); it lives in the store, not the config file, because
 // the web layer has no config-file write path. Defaults are conservative
-// (ADR-0022): auto-merge OFF (suggestions only), phone+email trusted once
+// (ADR-0024): auto-merge OFF (suggestions only), phone+email trusted once
 // enabled, address-book hints on (they only ever suggest, and the provider is
 // permission-gated). The default row is seeded here idempotently.
-const schemaV12 = `
+const schemaV13 = `
 CREATE TABLE IF NOT EXISTS contact_links (
     id           INTEGER PRIMARY KEY,
     kind         TEXT    NOT NULL,          -- 'merge' | 'split'
@@ -568,3 +571,94 @@ INSERT INTO contact_merge_rules (id, auto_merge, match_phone, match_email, use_a
     VALUES (1, 0, 1, 1, 1, strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
     ON CONFLICT(id) DO NOTHING;
 `
+
+// schemaV11 adds the AI-editorialized journal (ADR-0023): a two-layer feature
+// over the archive, both layers keyed by calendar DAY ('YYYY-MM-DD').
+//
+// journal_days is the MECHANICAL layer — a deterministic per-day rollup
+// (message/conversation counts, per-source counts, top senders) derived purely
+// from messages. It is a cache/index: always rebuildable from the source rows,
+// so stale entries are harmless and a DELETE+rebuild is cheap. source_counts
+// and top_senders are JSON blobs (the shapes are tiny and always read whole).
+//
+// journal_digests is the LLM layer — one digest per day. It is versioned by
+// (model, prompt_version) so switching llm.chat_model or editing
+// journal.digest_prompt invalidates the cached digest and re-runs make that day
+// eligible again. prompt_version is a sha256 of the normalized effective prompt,
+// the same recipe contact_facts uses (internal/store/facts.go factHash).
+//
+// body holds the plain-text summary (also the empty-response guard + the
+// fallback when structured parsing fails). structured is the canonical JSON of
+// the editorial digest (summary/people/themes/highlights/standout_media/
+// notable_links) — a read-whole blob, like journal_days.source_counts. mood is
+// denormalized out of the digest into its own column so the calendar/heatmap can
+// tint up to 366 day cells with one bounded range query, never unmarshaling 366
+// blobs (the schemaV7/V8 denormalization rationale). Both default ” so a
+// pre-structured (prose-only) digest row and a legacy DB read cleanly.
+//
+// Like embeddings (schemaV3) and contact_facts (schemaV4), NEITHER table has a
+// foreign key to messages: ReplaceConversationMessages deletes and re-inserts a
+// conversation's message rows on every re-ingest (rowids change, content does
+// not), so a CASCADE would wipe every derived journal row on each import. Both
+// tables are day-keyed and FK-less, so the migration's foreign_key_check passes
+// trivially. Day bucketing is UTC (substr(ts,1,10) == date(ts_unix,'unixepoch'))
+// because ts_unix is the wall-clock string parsed AS UTC — any 'localtime'
+// conversion would double-shift and misfile messages across day boundaries.
+const schemaV11 = `
+CREATE TABLE IF NOT EXISTS journal_days (
+    day                TEXT    PRIMARY KEY,
+    message_count      INTEGER NOT NULL,
+    conversation_count INTEGER NOT NULL,
+    source_counts      TEXT    NOT NULL DEFAULT '{}',
+    top_senders        TEXT    NOT NULL DEFAULT '[]',
+    updated_at         TEXT    NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS journal_digests (
+    day            TEXT    PRIMARY KEY,
+    model          TEXT    NOT NULL,
+    prompt_version TEXT    NOT NULL,
+    body           TEXT    NOT NULL,
+    structured     TEXT    NOT NULL DEFAULT '',
+    mood           TEXT    NOT NULL DEFAULT '',
+    updated_at     TEXT    NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_journal_digests_updated ON journal_digests(updated_at);
+`
+
+// schemaV14 is the LINEAGE REPAIR migration (issue #217).
+//
+// Between 2026-07-07 and 2026-07-24 two lineages independently defined a
+// migration numbered v11 and both were applied to real databases:
+//
+//	main lineage  v11 = journal_days + journal_digests   (shipped in #213)
+//	fork lineage  v11 = embed_runs                       (shipped in #29's branch)
+//	fork lineage  v12 = contact_links + contact_merge_rules
+//
+// The reconciliation above gives main's journal tables the v11 slot they
+// already occupy in the wild and renumbers the fork's pair to v12/v13. That
+// alone is NOT sufficient, because migrate() only ever runs versions
+// current+1 … schemaVersion: a fork-lineage database stamped 11 or 12 is
+// already "past" v11 and would never receive the journal tables, while a
+// main-lineage database stamped 11 would never receive embed_runs. Both would
+// arrive at v13 reporting a schema they do not actually have.
+//
+// v14 closes that hole by re-asserting the union of all three contested
+// migrations. Every database converges here regardless of the path it took:
+//
+//	v10 (common ancestor) → v11, v12, v13 applied normally, v14 a no-op
+//	main lineage @ v11    → v12, v13 create the fork tables, v14 a no-op
+//	fork lineage @ v11    → v12 no-op, v13 contacts, v14 creates the journal
+//	fork lineage @ v12    → v13 no-op, v14 creates the journal
+//
+// This is safe to re-run because all three constants are written to be
+// idempotent within their version transition (the invariant documented on
+// `migrations` above): every statement is CREATE … IF NOT EXISTS, and the one
+// seed row uses ON CONFLICT DO NOTHING. It is composed from the constants
+// rather than copied so it can never drift from what it repairs — which holds
+// precisely because shipped migrations are immutable (enforced by
+// scripts/check-migrations.sh).
+//
+// Databases created after this migration never exercise the repair path; they
+// walk 1…14 in order and v14 is a no-op on a schema that is already complete.
+const schemaV14 = schemaV11 + schemaV12 + schemaV13

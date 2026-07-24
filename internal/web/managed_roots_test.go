@@ -11,6 +11,7 @@ import (
 
 	"github.com/joestump/msgbrowse/internal/config"
 	"github.com/joestump/msgbrowse/internal/ingest"
+	"github.com/joestump/msgbrowse/internal/setup"
 	"github.com/joestump/msgbrowse/internal/store"
 )
 
@@ -55,6 +56,13 @@ func newManagedRootServer(t *testing.T) (*Server, *store.Store, string) {
 	if err != nil {
 		t.Fatalf("new server: %v", err)
 	}
+	// Inject a detector rooted at an empty HOME so source detection is hermetic:
+	// without this, the real HOME-rooted setup.NewDetector() reports whatever
+	// messaging apps the host actually has installed, which flips the extra cards
+	// to actionable and breaks the "all detected sources are enabled" footer on a
+	// real macOS dev box (while passing in CI's app-less Linux). Signal still
+	// reads Enabled via store-presence — that signal is independent of detection.
+	srv.SetDetector(setup.Detector{Home: t.TempDir()})
 	return srv, st, managed
 }
 

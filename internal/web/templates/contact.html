@@ -1,0 +1,118 @@
+{{define "contact"}}{{template "page_start" .}}{{template "contact_content" .}}{{template "page_end" .}}{{end}}
+
+{{/* contact_content is the boosted-swap unit (SPEC-0008 REQ-0008-006): <title> +
+     <main id="main-content"> only, so a partial response carries no shell. The
+     per-person profile (redesign Phase 1): merged identity, a message-volume
+     sparkline, derivable stat tiles, top reactions, and the AI-gathered facts
+     grouped by category — each cited fact deep-links to its OWN source
+     conversation. Fact text and identifiers are model/archive-derived and
+     untrusted → printed through html/template auto-escaping. */}}
+{{define "contact_content"}}<title>{{.Title}}</title>
+    <main id="main-content" class="flex-1" tabindex="0">
+  <div class="px-6 lg:px-10 py-10">
+    <div class="screen-col">
+
+      {{/* Identity header — merged handles, source presence, message span. */}}
+      <header class="mb-8">
+        <div class="conv-header-top">
+          <span class="avatar-mono {{avatarColor .C.DisplayName}}" aria-hidden="true">
+            {{initials .C.DisplayName}}
+            {{- if .PrimarySource}}<span class="presence-dot {{sourceSlug .PrimarySource}}" title="{{humanSource .PrimarySource}}"></span>{{end}}
+          </span>
+          <div class="min-w-0 flex-1">
+            <h1 class="conv-title">{{humanName .C.DisplayName}}</h1>
+            <p class="link-card-sub">
+              {{- if gt .C.SourceCount 1}}Same person across {{.C.SourceCount}} sources · merged
+              {{- else if .PrimarySource}}{{humanSource .PrimarySource}}{{end}}
+              {{- if .C.FirstTS}} · <span class="font-mono">{{num .Stats.TotalMessages}}</span> messages since {{dateLabel .C.FirstTS}}{{end}}
+            </p>
+          </div>
+        </div>
+        {{- if .C.Identifiers}}
+        <div class="conv-ids mt-3">
+          {{- range .C.Identifiers}}
+          <span class="id-chip font-mono" title="{{humanSource .Source}}">{{template "icon-identity" $}}<span>{{.Identifier}}</span></span>
+          {{- end}}
+        </div>
+        {{- end}}
+      </header>
+
+      {{/* Message-volume sparkline — data-driven inline SVG (attributes only, no
+           inline style; CSP-safe). Bars rolled up to years, accent-tinted. */}}
+      {{- if .Bars}}
+      <section class="mb-8">
+        <div class="stat-cell-label mb-2">Message volume</div>
+        <svg class="spark" viewBox="0 0 {{.SparkW}} {{.SparkH}}" width="100%" role="img" aria-label="Messages per year">
+          {{- range .Bars}}
+          <rect x="{{.X}}" y="{{.Y}}" width="{{.W}}" height="{{.H}}" rx="2" fill="currentColor" fill-opacity="{{.Opacity}}"></rect>
+          <text x="{{.LabelX}}" y="{{.LabelY}}" text-anchor="middle" font-size="7" fill="currentColor" fill-opacity="0.5">{{.Label}}</text>
+          {{- end}}
+        </svg>
+      </section>
+      {{- end}}
+
+      {{/* Derivable Profile stat tiles (two slate stat-strips). Deferred tiles
+           — words, median reply, streak, sentiment, vocabulary — are Phase 2+. */}}
+      <div class="stat-strip mb-3">
+        <div class="stat-cell"><div class="stat-cell-label">Messages</div><div class="stat-cell-value">{{num .Stats.TotalMessages}}</div></div>
+        <div class="stat-cell"><div class="stat-cell-label">You sent</div><div class="stat-cell-value">{{num .Stats.SentMessages}}</div></div>
+        <div class="stat-cell"><div class="stat-cell-label">Received</div><div class="stat-cell-value">{{num .Stats.ReceivedMessages}}</div></div>
+      </div>
+      <div class="stat-strip mb-8">
+        <div class="stat-cell"><div class="stat-cell-label">Messages / day</div><div class="stat-cell-value">{{num .Pace}}</div></div>
+        <div class="stat-cell"><div class="stat-cell-label">Photos shared</div><div class="stat-cell-value">{{num .Stats.Photos}}</div></div>
+        <div class="stat-cell"><div class="stat-cell-label">Most active hour</div><div class="stat-cell-value stat-cell-value-sm">{{if .ActiveHourLabel}}{{.ActiveHourLabel}}{{else}}—{{end}}</div></div>
+      </div>
+
+      {{/* Top reactions across all the contact's threads. */}}
+      {{- if .Reactions}}
+      <section class="mb-8">
+        <div class="stat-cell-label mb-2">Top reactions</div>
+        <div class="flex flex-wrap gap-5">
+          {{- range .Reactions}}
+          <span class="flex items-baseline gap-1"><span class="text-xl">{{.Emoji}}</span><span class="font-mono opacity-60 text-sm">×{{num .Count}}</span></span>
+          {{- end}}
+        </div>
+      </section>
+      {{- end}}
+
+      {{/* AI-gathered facts, grouped by category, each deep-linking to the
+           message it was drawn from (in that message's own conversation). */}}
+      <section class="mb-4">
+        <div class="flex items-baseline gap-2 mb-4">
+          <h2 class="text-lg font-semibold">AI-gathered facts</h2>
+          {{- if .FactGroups}}<span class="badge badge-sm badge-neutral">{{num .FactCount}} cited</span>{{end}}
+        </div>
+        {{- if .FactGroups}}
+        {{- range .FactGroups}}
+        <div class="mb-4">
+          <div class="stat-cell-label mb-2">{{.Category}}</div>
+          <ul class="space-y-1.5">
+            {{- range .Facts}}
+            <li class="flex flex-wrap items-baseline gap-2 text-sm">
+              <span>{{.Fact}}</span>
+              {{- if and (gt .SourceMessageID 0) (gt .SourceConversationID 0)}}
+              <a class="opacity-50 hover:opacity-100 link link-hover text-xs font-mono"
+                 href="/c/{{.SourceConversationID}}/at/{{.SourceMessageID}}#m{{.SourceMessageID}}"
+                 title="Jump to the message this came from">{{dateLabel .SourceTS}}</a>
+              {{- else}}
+              <span class="opacity-40 text-xs font-mono">{{dateLabel .SourceTS}}</span>
+              {{- end}}
+            </li>
+            {{- end}}
+          </ul>
+        </div>
+        {{- end}}
+        <p class="mt-2 text-xs opacity-50">AI-generated from messages — may be incomplete or wrong. Each fact links to its source.</p>
+        {{- else}}
+        <div class="notice-card">
+          <p class="link-card-title">No AI facts yet.</p>
+          <p class="link-card-sub">Run <code class="font-mono">msgbrowse facts</code> to extract cited facts about this person.</p>
+        </div>
+        {{- end}}
+      </section>
+
+    </div>
+  </div>
+    </main>
+{{end}}
