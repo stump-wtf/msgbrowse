@@ -8,7 +8,7 @@ sidebar_position: 0
 
 msgbrowse is a self-hosted, local-only browser, search engine, and (upcoming)
 AI-editorialized journal over your personal Signal, iMessage, and WhatsApp
-archives. It is a single pure-Go binary (`go install`, no C toolchain) that
+archives. It is a single pure-Go binary (`brew install`, no C toolchain) that
 renders a clean local UI over the output of three upstream exporters
 ([`signal-export`](https://github.com/carderne/signal-export),
 [`imessage-exporter`](https://github.com/ReagentX/imessage-exporter), and

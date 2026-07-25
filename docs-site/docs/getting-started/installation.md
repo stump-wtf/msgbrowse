@@ -1,16 +1,31 @@
 ---
 title: Installation
 sidebar_position: 2
-description: Install msgbrowse with a single go install (pure-Go SQLite, no C toolchain), or run it in Docker.
+description: Install msgbrowse with Homebrew (preferred) or a single go install — pure-Go SQLite, no C toolchain.
 ---
 
 # Installation
 
-msgbrowse installs with a single `go install`. The SQLite driver is pure Go
-(with FTS5 built in), so `CGO_ENABLED=0` is the normal build — there is **no C
-toolchain, no build tag, and no shared library** to set up.
+The SQLite driver is pure Go (with FTS5 built in), so `CGO_ENABLED=0` is the
+normal build — there is **no C toolchain, no build tag, and no shared library**
+to set up either way.
 
 ## Install the binary
+
+### Homebrew (preferred)
+
+```sh
+brew tap stump-wtf/tap
+brew install msgbrowse
+msgbrowse version
+```
+
+The formula builds from source, so the binary is compiled on your machine. It
+therefore never carries macOS's `com.apple.quarantine` attribute — no Gatekeeper
+prompt and no `xattr -d com.apple.quarantine` step, which is what you would hit
+with a downloaded prebuilt binary.
+
+### `go install`
 
 Requires **Go 1.25+** and nothing else:
 
@@ -25,6 +40,13 @@ that directory is on your `PATH`:
 export PATH="$PATH:$(go env GOPATH)/bin"
 msgbrowse version
 ```
+
+:::note macOS Full Disk Access
+Reading **live** iMessage data means reading `~/Library/Messages/chat.db`, which
+requires **Full Disk Access** for your terminal (System Settings → Privacy &
+Security → Full Disk Access). That is macOS TCC, a different mechanism from
+Gatekeeper — no install method avoids it.
+:::
 
 ## Install the exporters
 
