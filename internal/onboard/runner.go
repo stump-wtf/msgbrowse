@@ -500,6 +500,12 @@ func (r *Runner) execute(jobCtx context.Context, src string, mode jobMode) {
 		return
 	}
 	out, err := r.runExec(jobCtx, tool, env, args...)
+	// Strip known always-benign exporter warnings (e.g. imessage-exporter's
+	// "No MOV converter found…", irrelevant under `-c clone`) before the output
+	// is recorded or classified, so the card/Logs viewer never surfaces a false
+	// alarm that once read as a missing dependency. Every meaningful line — real
+	// errors, the permission-wall hint — is preserved (see noise.go).
+	out = stripExporterNoise(out)
 	// Capture the exporter's argv + combined output + exit status regardless of
 	// outcome, so the Logs viewer can show WHY a run failed (issue #151), not just
 	// "exit status N". This is TOOL output only, never message content.
