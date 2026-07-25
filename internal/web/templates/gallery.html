@@ -7,8 +7,10 @@
     <main id="main-content" class="flex-1" tabindex="0">
   {{/* Media (REQ-0006-009, brief §5): H1 + Images/Files/Links tabs with count
        badges and an accent underline on the active tab; a filter row; an Images
-       responsive square cover grid with a bottom scrim + mono filename (keeps the
-       imgRenderable placeholder logic and the CSS :target lightbox); Files/Links
+       responsive square cover grid with a bottom scrim + mono filename (tiles
+       branch on the three-state imgTileState — img / no-preview download
+       placeholder / inert missing placeholder — with the CSS :target lightbox);
+       Files/Links
        re-skinned to slate cards (Links grouped by domain). Each tab renders one
        keyset page plus an hx-trigger="revealed" load-more sentinel — the same
        infinite-scroll contract as the transcript (SPEC-0008 REQ-0008-009). */}}
@@ -16,20 +18,28 @@
     <h1 class="screen-h1 mb-1">Media</h1>
     <p class="screen-sub mb-5">Images, files, and links across your archive.</p>
 
-    <form class="filter-row mb-4" action="/gallery" method="get">
+    <form class="filter-row filter-row-media mb-4" action="/gallery" method="get">
       <input type="hidden" name="tab" value="{{.Filter.Tab}}">
-      <label class="filter-control">
-        <span class="filter-label">Conversation</span>
-        {{/* FilterConversations is the lightweight id+name listing — NOT the
-             sidebar summaries — so partial renders never pay for the full
-             listing (REQ-0008-006). */}}
-        <select name="conversation" class="filter-input">
-          <option value="">All conversations</option>
-          {{- range .FilterConversations}}
-          <option value="{{.ID}}" {{if eq .ID $.Filter.ConversationID}}selected{{end}}>{{humanName .Name}}</option>
-          {{- end}}
-        </select>
-      </label>
+      <div class="filter-control filter-control-conv">
+        <span class="filter-label" id="conv-filter-label">Conversation</span>
+        {{/* Multi-select conversation filter (issue #6): a CSS-only
+             <details> dropdown of checkboxes — no inline JS (CSP script-src
+             'self'), keyboard-operable natively (Enter/Space toggles the
+             summary, Tab walks the checkboxes). Every checked box submits a
+             repeated ?conversation= param; none checked means all. The
+             summary caps + ellipsizes so long names never widen the bar
+             (issue #7). FilterConversations is the lightweight id+name
+             listing — NOT the sidebar summaries — so partial renders never
+             pay for the full listing (REQ-0008-006). */}}
+        <details class="filter-multi">
+          <summary class="filter-input filter-multi-summary" aria-labelledby="conv-filter-label conv-filter-value"><span class="filter-multi-value" id="conv-filter-value">{{.ConversationFilterLabel}}</span></summary>
+          <ul class="filter-multi-panel">
+            {{- range .FilterConversations}}
+            <li><label class="filter-multi-option"><input type="checkbox" name="conversation" value="{{.ID}}"{{if $.Filter.HasConversation .ID}} checked{{end}}><span class="filter-multi-name">{{humanName .Name}}</span></label></li>
+            {{- end}}
+          </ul>
+        </details>
+      </div>
       <label class="filter-control">
         <span class="filter-label">Source</span>
         <select name="source" class="filter-input">
@@ -41,6 +51,21 @@
       </label>
       <label class="filter-control"><span class="filter-label">From</span><input type="date" name="start" value="{{.Filter.Start}}" class="filter-input"></label>
       <label class="filter-control"><span class="filter-label">To</span><input type="date" name="end" value="{{.Filter.End}}" class="filter-input"></label>
+      {{/* Sort steers the Images/Files walk (Links stay domain-grouped); the
+           value round-trips through parseGalleryFilter and rides tab + load-more
+           URLs so infinite scroll keeps the order. Hidden on the Links tab where
+           it is inert, so a stale selection can't read as a broken Apply — but a
+           hidden input still carries a non-default choice, so Apply from Links
+           doesn't silently drop it (PR #16 review nit). */}}
+      {{if ne .Filter.Tab "links"}}
+      <label class="filter-control">
+        <span class="filter-label">Sort</span>
+        <select name="sort" class="filter-input">
+          <option value="desc" {{if eq .Filter.Sort "desc"}}selected{{end}}>Newest first</option>
+          <option value="asc" {{if eq .Filter.Sort "asc"}}selected{{end}}>Oldest first</option>
+        </select>
+      </label>
+      {{else}}{{if eq .Filter.Sort "asc"}}<input type="hidden" name="sort" value="asc">{{end}}{{end}}
       <button type="submit" class="btn-search">Apply</button>
     </form>
 
@@ -88,7 +113,8 @@
      download when their lightbox is opened, not with the page. */}}
 {{define "gallery_images_page"}}
   {{- range .Images}}
-  {{- if imgRenderable .Source .ConversationName .RelPath}}
+  {{- $state := imgTileState .Source .ConversationName .RelPath}}
+  {{- if eq $state "img"}}
   <a class="media-tile" href="#lb-{{.ID}}" title="{{.OriginalName}}">
     <img loading="lazy" src="{{mediaURL .ConversationID .RelPath}}" alt="{{.OriginalName}}">
     <span class="media-tile-scrim"><span class="media-tile-name">{{if .OriginalName}}{{.OriginalName}}{{else}}{{.RelPath}}{{end}}</span></span>
@@ -103,11 +129,25 @@
       · <span class="font-mono">{{.TS}}</span> · <span class="source-pill {{sourceSlug .Source}}">{{humanSource .Source}}</span>
     </div>
   </div>
+  {{- else if eq $state "missing"}}
+  {{/* Attachment row exists but the file is absent from the archive on this
+       machine (issue #15: partial export, moved archive, synced replica
+       without media). An <img> would 404 into the browser's broken-image
+       glyph and a download link would save an error page, so this tile is
+       inert: msgbrowse's own labeled placeholder. */}}
+  <div class="media-tile media-tile-placeholder media-tile-missing" title="{{if .OriginalName}}{{.OriginalName}} — {{end}}not in the archive on this machine">
+    {{template "icon-photo" $}}
+    <span class="ph-name">{{if .OriginalName}}{{.OriginalName}}{{else}}{{.RelPath}}{{end}}</span>
+    <span class="ph-tag">missing</span>
+  </div>
   {{- else}}
   {{/* Non-web format (e.g. HEIC) with no transcoded derivative: show a
        striped placeholder linking to the original for download, not a
        broken img. */}}
-  <a class="media-tile media-tile-placeholder" href="{{mediaURL .ConversationID .RelPath}}" title="{{.OriginalName}} (download)" download="{{if .OriginalName}}{{.OriginalName}}{{end}}">
+  {{/* hx-boost="false" (issue #4): same download contract as the Files tab —
+       this placeholder links straight at /media for a download, so it must
+       stay a native navigation and never be turned into an htmx swap. */}}
+  <a class="media-tile media-tile-placeholder" hx-boost="false" href="{{mediaURL .ConversationID .RelPath}}" title="{{.OriginalName}} (download)" download="{{if .OriginalName}}{{.OriginalName}}{{end}}">
     {{template "icon-photo" $}}
     <span class="ph-name">{{if .OriginalName}}{{.OriginalName}}{{else}}{{.RelPath}}{{end}}</span>
     <span class="ph-tag">no preview</span>
@@ -128,9 +168,27 @@
 {{define "gallery_files_page"}}
   {{- range .Files}}
   <li class="media-list-card">
+    {{- if .Missing}}
+    {{/* The DB row exists but the file is absent from the archive on this
+         machine (issues #4/#15): a download link here fetches a 404 under a
+         `download` attribute, which browsers surface as a silently failed
+         download — i.e. "clicking does nothing". Render an inert labeled
+         card instead. */}}
+    <span class="media-file-name media-file-missing" title="not in the archive on this machine">{{template "icon-document" .}} {{if .OriginalName}}{{.OriginalName}}{{else}}{{.RelPath}}{{end}} <span class="ph-tag">missing</span></span>
+    {{- else}}
     {{/* download (issue #161): file cards save the file — the webview never
-         navigates to a raw response. */}}
-    <a class="media-file-name" href="{{mediaURL .ConversationID .RelPath}}" download="{{if .OriginalName}}{{.OriginalName}}{{end}}">{{template "icon-document" .}} {{if .OriginalName}}{{.OriginalName}}{{else}}{{.RelPath}}{{end}}</a>
+         navigates to a raw response. hx-boost="false" (issue #4): this anchor
+         MUST stay a native browser navigation so the server's
+         Content-Disposition: attachment (media.go) drives a real download.
+         The app boosts navigation by container (the header nav, the sidebar
+         aside), so any future change that wraps #main-content — or moves these
+         cards — in a boosted region would make htmx AJAX the click and try to
+         swap the binary attachment body into #main-content; htmx can't swap a
+         non-HTML/error response, so the click would read as "nothing happens"
+         (the reported bug). The explicit opt-out makes the download contract
+         immune to that, in the initial page and every infinite-scroll page. */}}
+    <a class="media-file-name" hx-boost="false" href="{{mediaURL .ConversationID .RelPath}}" download="{{if .OriginalName}}{{.OriginalName}}{{end}}">{{template "icon-document" .}} {{if .OriginalName}}{{.OriginalName}}{{else}}{{.RelPath}}{{end}}</a>
+    {{- end}}
     <div class="media-card-meta">
       {{- if .ContentType}}<span class="font-mono">{{.ContentType}}</span>{{else}}<span class="font-mono">unknown</span>{{end}}
       {{- if .SizeHuman}} · <span class="font-mono">{{.SizeHuman}}</span>{{end}}
@@ -163,7 +221,13 @@
     <ul class="media-list">
       {{- range .Links}}
       <li class="media-list-card">
-        <a class="media-link-url" href="{{.URL}}" target="_blank" rel="noopener noreferrer nofollow">{{.URL}}</a>
+        {{/* The URL links out; the sibling icon-only copy button copies the same
+             full URL via copy.js (data-copy-value). Sibling, not child, so the
+             copy click never navigates (#14). */}}
+        <div class="media-link-row">
+          <a class="media-link-url" href="{{.URL}}" target="_blank" rel="noopener noreferrer nofollow">{{.URL}}</a>
+          <button type="button" class="copy-btn copy-btn-inline" data-copy-value="{{.URL}}" data-copy-announce="Link copied" aria-label="Copy link"><span class="icon-copy">{{template "icon-copy" $}}</span><span class="icon-check">{{template "icon-check" $}}</span></button>
+        </div>
         <div class="media-card-meta">
           {{- if gt .Count 1}}<span class="font-mono">×{{num .Count}}</span> · {{end}}
           <a href="/c/{{.ConversationID}}/at/{{.MessageID}}#m{{.MessageID}}">{{humanName .ConversationName}}</a>

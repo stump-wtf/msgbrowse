@@ -19,12 +19,22 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # check-latest so builds pick up Go patch releases (stdlib security
+      # fixes land there — see security.yml) instead of the runner's cache.
       - uses: actions/setup-go@v5
         with:
           go-version: "1.25"
+          check-latest: true
           cache: true
 
-      # make check runs gofmt -l, go vet, and go test — no build tag needed.
+      # The migration immutability guard inside `make check` diffs schema.go
+      # against the base branch, which a depth-1 checkout does not have. Fetch
+      # just main's tip — the guard only ever reads one file from it.
+      - name: Fetch base branch for the migration guard
+        run: git fetch --no-tags --depth=1 origin main:refs/remotes/origin/main
+
+      # make check runs gofmt -l, go vet, the migration guard, and go test —
+      # no build tag needed.
       - name: make check
         run: make check
 

@@ -11,6 +11,7 @@ import (
 	"strconv"
 
 	"github.com/joestump/msgbrowse/internal/devsync"
+	"github.com/joestump/msgbrowse/internal/mcp"
 	"github.com/joestump/msgbrowse/internal/store"
 )
 
@@ -149,6 +150,17 @@ type indexData struct {
 	ConversationCount int // stat-strip count; independent of the sidebar listing (REQ-0008-006)
 	NewestTS          string
 	HasArchive        bool
+	// Providers is the per-provider freshness breakdown (issue #1): counts +
+	// last-synced stamp per source, beside the global strip above.
+	Providers []providerStat
+	// Embedding is the semantic-search index status card (issue #1).
+	Embedding embedStatusData
+	// The MCP connection card (issue #1) — the same request-derived endpoint
+	// and copy blocks /settings shows, rendered by the shared mcp_connect_card
+	// define so the two surfaces can never drift.
+	MCPEndpointURL string
+	MCPConfigJSON  string
+	MCPAddCommand  string
 }
 
 type conversationData struct {
@@ -161,22 +173,32 @@ type statusData struct {
 	baseData
 	ConversationCount int // stat-strip count; independent of the sidebar listing (REQ-0008-006)
 	Run               *store.IngestRun
-	Snapshots         []store.Snapshot
 	NewestTS          string
-	SnapshotFootprint int64
-	// HasSnapshotPipeline gates the Encrypted-DB-snapshots card (issue #164):
-	// on a desktop-onboarded machine there IS no snapshot pipeline (that flow
-	// is the Cowork/launchd Signal export), so "0 B across 0 snapshots … No
-	// snapshots found" read like a failure. True when snapshots are recorded or
-	// the signal archive carries a .snapshots directory; false renders one
-	// neutral line instead of the card.
-	HasSnapshotPipeline bool
 	// DeviceSyncEnabled mirrors config device_sync.enabled for the Device
 	// sync card's disabled state; Sync is the live snapshot (nil when sync is
 	// disabled, no monitor is wired, or the registry read failed) — SPEC-0014
 	// REQ "Status and Doctor Surfacing" (#158).
 	DeviceSyncEnabled bool
 	Sync              *devsync.Status
+	// DeviceSyncFeature gates the entire Device sync card: false (the default
+	// release build, feature not compiled in behind the `devicesync` tag) omits
+	// it so /status carries no dead surface.
+	DeviceSyncFeature bool
+	// Embedding drives the "Semantic search index" card (#191): the same
+	// coverage + last-run + in-progress data the Overview card shows, assembled
+	// by overviewEmbedding.
+	Embedding embedStatusData
+	// IndexAvailable reports whether an Indexer is wired: false (browser / no-op
+	// mode) hides the Build controls and shows the unavailable note.
+	IndexAvailable bool
+	// IndexResult is the post-POST banner state after a Build / Reset-&-rebuild:
+	// "" (no action), "started", "reset", "inprogress", "nomodel",
+	// "unavailable", or "error" — a fixed enum mapped to prose by the template.
+	IndexResult string
+	// SetupToken arms the Build / Reset forms with the same per-session token
+	// gate the other privileged POSTs use; "" when no Indexer is wired (the
+	// forms are not rendered then).
+	SetupToken string
 }
 
 // pageSize is the number of messages per transcript page.
@@ -243,6 +265,21 @@ func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 		s.serverError(w, err)
 		return
 	}
+	// The Overview consolidation (issue #1): per-provider freshness and the
+	// semantic-index status ride every home render — full and boosted alike
+	// (they live inside #main-content); all are cheap aggregates, so the
+	// REQ-0008-006 sidebar-listing exemption above is untouched.
+	providers, err := s.overviewProviders(ctx)
+	if err != nil {
+		s.serverError(w, err)
+		return
+	}
+	embedding, err := s.overviewEmbedding(ctx)
+	if err != nil {
+		s.serverError(w, err)
+		return
+	}
+	endpoint := mcpEndpointURL(r)
 	// Home is the Messages surface: the header's Messages tab reads active.
 	base.NavTab = navTabMessages
 	s.render(w, r, "index", indexData{
@@ -250,6 +287,11 @@ func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 		ConversationCount: convCount,
 		NewestTS:          newest,
 		HasArchive:        convCount > 0,
+		Providers:         providers,
+		Embedding:         embedding,
+		MCPEndpointURL:    endpoint,
+		MCPConfigJSON:     mcp.ClientConfigJSON(endpoint),
+		MCPAddCommand:     mcp.ClaudeMCPAddCommand(endpoint),
 	})
 }
 
@@ -461,6 +503,42 @@ func (s *Server) handleMessages(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
+	s.renderStatus(w, r, "")
+}
+
+// handleStatusIndex is POST /status/index — the privileged "Build" control that
+// embeds every message still missing a vector. Gate FIRST (checkSetupPOST:
+// same-origin + per-session token + body cap, 403 before any work), then start
+// the detached single-flight job and re-render the Status page with the
+// fixed-enum result banner (the LLM-save pattern). reset=false: existing
+// vectors are kept and only the delta is embedded.
+func (s *Server) handleStatusIndex(w http.ResponseWriter, r *http.Request) {
+	if !s.checkSetupPOST(w, r) {
+		return // 403 already written; no job started
+	}
+	s.renderStatus(w, r, s.startReindex(false))
+}
+
+// handleStatusIndexReset is POST /status/index/reset — the privileged "Reset &
+// rebuild" control: it clears every stored vector and the run log, then
+// re-embeds the whole corpus from scratch. Same gate and re-render shape as
+// handleStatusIndex; reset=true. The single guarded job does the clear inside
+// the detached goroutine (store.ResetEmbeddings) so a from-scratch rebuild is
+// one click, not a clear-then-build two-step.
+func (s *Server) handleStatusIndexReset(w http.ResponseWriter, r *http.Request) {
+	if !s.checkSetupPOST(w, r) {
+		return // 403 already written; nothing cleared, no job started
+	}
+	s.renderStatus(w, r, s.startReindex(true))
+}
+
+// renderStatus assembles the Status page and renders it (full document or
+// boosted #main-content partial). indexResult is the fixed-enum banner from a
+// just-completed Build / Reset POST, "" on a plain GET. The semantic-index card
+// reflects coverage as of THIS render — a manual refresh shows the count climb
+// while a job runs (no hx-poll, keeping the page CSP-clean and free of a
+// background request the user did not ask for).
+func (s *Server) renderStatus(w http.ResponseWriter, r *http.Request, indexResult string) {
 	ctx := r.Context()
 	var (
 		base      baseData
@@ -491,31 +569,40 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 		s.serverError(w, err)
 		return
 	}
-	snaps, err := s.store.ListSnapshots(ctx)
-	if err != nil {
-		s.serverError(w, err)
-		return
-	}
 	newest, err := s.store.NewestMessageTS(ctx)
 	if err != nil {
 		s.serverError(w, err)
 		return
 	}
-	var footprint int64
-	for _, sn := range snaps {
-		footprint += sn.SizeBytes
+	embedding, err := s.overviewEmbedding(ctx)
+	if err != nil {
+		s.serverError(w, err)
+		return
 	}
-	s.render(w, r, "status", statusData{
-		baseData:            base,
-		ConversationCount:   convCount,
-		Run:                 run,
-		Snapshots:           snaps,
-		NewestTS:            newest,
-		SnapshotFootprint:   footprint,
-		HasSnapshotPipeline: len(snaps) > 0 || s.signalSnapshotsDirExists(),
-		DeviceSyncEnabled:   s.deviceSyncEnabled,
-		Sync:                s.syncStatusSnapshot(ctx),
-	})
+	data := statusData{
+		baseData:          base,
+		ConversationCount: convCount,
+		Run:               run,
+		NewestTS:          newest,
+		DeviceSyncEnabled: s.deviceSyncEnabled,
+		DeviceSyncFeature: s.deviceSyncFeature,
+		Sync:              s.syncStatusSnapshot(ctx),
+		Embedding:         embedding,
+		IndexAvailable:    s.indexer != nil,
+		IndexResult:       indexResult,
+	}
+	// The Build / Reset forms are privileged POSTs: arm them with a live token,
+	// but only when there is an Indexer to drive (browser mode renders the
+	// unavailable note, no forms).
+	if s.indexer != nil {
+		tok, err := s.setupTokens.mint()
+		if err != nil {
+			s.serverError(w, err)
+			return
+		}
+		data.SetupToken = tok
+	}
+	s.render(w, r, "status", data)
 }
 
 // signalSnapshotsDirExists reports whether the signal archive carries a

@@ -1,12 +1,16 @@
-// The Settings → LLM tab (issue #191, stage A): the user-facing surface for
-// the AI endpoint — base URL, embed model, and "Facts model" (llm.chat_model;
-// the facts feature consumes it today, the journal digest later). Exactly
-// three fields, and deliberately NO API-key field: per internal/config's
-// posture, endpoints that require a key read it from the MSGBROWSE_LLM_API_KEY
-// environment variable, so a key never round-trips through a form or the
-// config file. Saving applies LIVE — the wired LLMConfigurator persists the
-// three keys into the loaded config file and swaps the process's llm.Holder,
-// so the MCP server's semantic search uses the new endpoint with no restart.
+// The Settings → LLM tab (issue #191): the user-facing surface for the AI
+// endpoint — base URL, embed model, "Facts model" (llm.chat_model; the facts
+// feature consumes it today, the journal digest later), and the API key. The
+// key is editable here and persisted to the 0600 config file (Option A — a
+// desktop user has no convenient env var; ADR-0010's loopback single-user
+// trust). Two exceptions keep the secret honest: a key supplied via
+// MSGBROWSE_LLM_API_KEY is used but NEVER written back to disk (it stays in the
+// environment it was scoped to), and the field itself is a password input whose
+// value is never echoed — a blank field means "keep the current key", and an
+// explicit Clear checkbox wipes it. Saving applies LIVE — the wired
+// LLMConfigurator persists the keys into the loaded config file and swaps the
+// process's llm.Holder, so the MCP server's semantic search uses the new
+// endpoint with no restart.
 //
 // The save POST is privileged (it changes the app's single network egress,
 // ADR-0010) and is gated exactly like the Setup POSTs: same-origin +
@@ -18,6 +22,7 @@
 package web
 
 import (
+	"context"
 	"net/http"
 	"net/url"
 	"strings"
@@ -31,6 +36,7 @@ import (
 const (
 	llmBaseURLMaxLen = 2048
 	llmModelMaxLen   = 128
+	llmAPIKeyMaxLen  = 512
 )
 
 // LLMConfigurator is the live-settings seam behind the LLM tab (the
@@ -45,6 +51,11 @@ type LLMConfigurator interface {
 	// ApplyLLM persists s to the config file and swaps the live client.
 	// Nothing is swapped when persistence fails.
 	ApplyLLM(s llm.Settings) error
+	// TestLLM probes the endpoint described by s with a cheap real call,
+	// WITHOUT persisting or swapping the live client — the "Test connection"
+	// affordance so a user can verify an endpoint before saving. Returns nil
+	// on success, an error otherwise.
+	TestLLM(ctx context.Context, s llm.Settings) error
 }
 
 // SetLLMConfig wires the live LLM settings source. Call it after NewServer
@@ -61,23 +72,37 @@ type llmSettingsData struct {
 	BaseURL    string
 	EmbedModel string
 	FactsModel string
+	// HasAPIKey reports whether a key is currently set, so the template can show
+	// a "key is set" placeholder without ever rendering the secret. The key
+	// value is NEVER echoed into the form (a blank field means "keep it").
+	HasAPIKey bool
+	// APIKeyFromEnv reports the current key came from MSGBROWSE_LLM_API_KEY, so
+	// the template can label it "set via environment" and note that saving will
+	// not write it to the config file. Only meaningful when HasAPIKey is true.
+	APIKeyFromEnv bool
 	// SetupToken is the per-session token the form submits through the same
 	// checkSetupPOST gate the Setup POSTs use.
 	SetupToken string
 	// SaveResult is the post-save banner state: "" (no save attempted), "ok",
 	// "unavailable" (no configurator wired), or "error" (persist/swap failed).
 	SaveResult string
+	// TestResult is the post-probe banner state for "Test connection": ""
+	// (no probe attempted), "ok" (endpoint reachable + model valid),
+	// "unreachable" (probe failed — no raw error is echoed), or "unavailable"
+	// (no configurator wired).
+	TestResult string
 	// Per-field validation errors: "" (valid), "required", "scheme",
 	// "invalid", or "toolong".
 	ErrBaseURL    string
 	ErrEmbedModel string
 	ErrFactsModel string
+	ErrAPIKey     string
 }
 
 // HasErrors reports whether any field failed validation, for the template's
 // summary banner.
 func (d llmSettingsData) HasErrors() bool {
-	return d.ErrBaseURL != "" || d.ErrEmbedModel != "" || d.ErrFactsModel != ""
+	return d.ErrBaseURL != "" || d.ErrEmbedModel != "" || d.ErrFactsModel != "" || d.ErrAPIKey != ""
 }
 
 // currentLLM resolves the effective settings for display: the live
@@ -95,9 +120,11 @@ func (s *Server) currentLLM() llm.Settings {
 func (s *Server) handleSettingsLLM(w http.ResponseWriter, r *http.Request) {
 	cur := s.currentLLM()
 	s.renderLLMSettings(w, r, llmSettingsData{
-		BaseURL:    cur.BaseURL,
-		EmbedModel: cur.EmbedModel,
-		FactsModel: cur.ChatModel,
+		BaseURL:       cur.BaseURL,
+		EmbedModel:    cur.EmbedModel,
+		FactsModel:    cur.ChatModel,
+		HasAPIKey:     cur.APIKey != "",
+		APIKeyFromEnv: cur.APIKeyFromEnv,
 	})
 }
 
@@ -112,14 +139,39 @@ func (s *Server) handleSettingsLLMSave(w http.ResponseWriter, r *http.Request) {
 		return // 403 already written; nothing was validated or applied
 	}
 
+	// The API key is a password field we never echo, so a BLANK field means
+	// "keep the current key" — only a non-blank value changes it (the standard
+	// secret-field UX; it also means the form can't accidentally wipe a key on
+	// an unrelated save). The "Clear saved key" checkbox is the explicit wipe.
+	// The effective key (and its provenance) is resolved against the live value.
+	cur := s.currentLLM()
+	clearKey := r.PostFormValue("clear_api_key") != ""
+	typedKey := strings.TrimSpace(r.PostFormValue("api_key"))
+	apiKey := typedKey
+	fromEnv := false
+	keptKey := false
+	switch {
+	case clearKey:
+		apiKey = "" // explicit wipe wins over any typed/kept value
+	case typedKey == "":
+		// Blank and not clearing: keep the current key, preserving its
+		// provenance so an env-provided key still isn't persisted to disk.
+		apiKey = cur.APIKey
+		fromEnv = cur.APIKeyFromEnv
+		keptKey = true
+	}
+
 	data := llmSettingsData{
-		BaseURL:    strings.TrimSpace(r.PostFormValue("base_url")),
-		EmbedModel: strings.TrimSpace(r.PostFormValue("embed_model")),
-		FactsModel: strings.TrimSpace(r.PostFormValue("facts_model")),
+		BaseURL:       strings.TrimSpace(r.PostFormValue("base_url")),
+		EmbedModel:    strings.TrimSpace(r.PostFormValue("embed_model")),
+		FactsModel:    strings.TrimSpace(r.PostFormValue("facts_model")),
+		HasAPIKey:     apiKey != "",
+		APIKeyFromEnv: fromEnv,
 	}
 	data.ErrBaseURL = validateLLMBaseURL(data.BaseURL)
 	data.ErrEmbedModel = validateLLMModel(data.EmbedModel)
 	data.ErrFactsModel = validateLLMModel(data.FactsModel)
+	data.ErrAPIKey = validateLLMAPIKey(apiKey)
 	if data.HasErrors() {
 		s.renderLLMSettings(w, r, data)
 		return
@@ -131,9 +183,11 @@ func (s *Server) handleSettingsLLMSave(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := s.llmConfig.ApplyLLM(llm.Settings{
-		BaseURL:    data.BaseURL,
-		EmbedModel: data.EmbedModel,
-		ChatModel:  data.FactsModel,
+		BaseURL:       data.BaseURL,
+		EmbedModel:    data.EmbedModel,
+		ChatModel:     data.FactsModel,
+		APIKey:        apiKey,
+		APIKeyFromEnv: fromEnv,
 	}); err != nil {
 		s.log.Error("LLM settings save failed", "error", err)
 		data.SaveResult = "error"
@@ -141,17 +195,83 @@ func (s *Server) handleSettingsLLMSave(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// Endpoint/model names are configuration, never message content — safe to
-	// log (the API key is not part of Settings at all).
+	// log. The API key value is NEVER logged; only whether one is set and
+	// whether this save changed it.
 	s.log.Info("LLM settings saved and applied live",
-		"base_url", data.BaseURL, "embed_model", data.EmbedModel, "chat_model", data.FactsModel)
+		"base_url", data.BaseURL, "embed_model", data.EmbedModel, "chat_model", data.FactsModel,
+		"api_key_set", apiKey != "", "api_key_changed", !keptKey)
 
-	cur := s.llmConfig.CurrentLLM()
+	applied := s.llmConfig.CurrentLLM()
 	s.renderLLMSettings(w, r, llmSettingsData{
-		BaseURL:    cur.BaseURL,
-		EmbedModel: cur.EmbedModel,
-		FactsModel: cur.ChatModel,
-		SaveResult: "ok",
+		BaseURL:       applied.BaseURL,
+		EmbedModel:    applied.EmbedModel,
+		FactsModel:    applied.ChatModel,
+		HasAPIKey:     applied.APIKey != "",
+		APIKeyFromEnv: applied.APIKeyFromEnv,
+		SaveResult:    "ok",
 	})
+}
+
+// handleSettingsLLMTest is POST /settings/llm/test — the "Test connection"
+// probe. Gated exactly like the save (checkSetupPOST: same-origin +
+// per-session token + body cap, 403 before any work), it reads the SAME
+// currently-entered (unsaved) form values, validates them, then probes the
+// endpoint WITHOUT persisting or swapping the live client. The result is a
+// fixed-enum banner ("ok" / "unreachable" / "unavailable"); the raw probe
+// error is logged server-side but never echoed into the page (it can carry the
+// endpoint URL). The form and effective/entered values re-render unchanged so
+// the user can adjust and retry.
+func (s *Server) handleSettingsLLMTest(w http.ResponseWriter, r *http.Request) {
+	if !s.checkSetupPOST(w, r) {
+		return // 403 already written; nothing was validated or probed
+	}
+
+	// Same secret-field resolution as save: a blank api_key means "use the
+	// current key", so the probe verifies the endpoint the user would save.
+	apiKey := strings.TrimSpace(r.PostFormValue("api_key"))
+	if apiKey == "" {
+		apiKey = s.currentLLM().APIKey
+	}
+
+	data := llmSettingsData{
+		BaseURL:    strings.TrimSpace(r.PostFormValue("base_url")),
+		EmbedModel: strings.TrimSpace(r.PostFormValue("embed_model")),
+		FactsModel: strings.TrimSpace(r.PostFormValue("facts_model")),
+		HasAPIKey:  apiKey != "",
+	}
+	data.ErrBaseURL = validateLLMBaseURL(data.BaseURL)
+	data.ErrEmbedModel = validateLLMModel(data.EmbedModel)
+	data.ErrFactsModel = validateLLMModel(data.FactsModel)
+	data.ErrAPIKey = validateLLMAPIKey(apiKey)
+	if data.HasErrors() {
+		s.renderLLMSettings(w, r, data)
+		return
+	}
+
+	if s.llmConfig == nil {
+		data.TestResult = "unavailable"
+		s.renderLLMSettings(w, r, data)
+		return
+	}
+	if err := s.llmConfig.TestLLM(r.Context(), llm.Settings{
+		BaseURL:    data.BaseURL,
+		EmbedModel: data.EmbedModel,
+		ChatModel:  data.FactsModel,
+		APIKey:     apiKey,
+	}); err != nil {
+		// The raw error can name the endpoint URL, so it is logged (endpoint
+		// names are configuration, never message content) but NEVER rendered.
+		s.log.Warn("LLM test connection failed",
+			"base_url", data.BaseURL, "embed_model", data.EmbedModel, "chat_model", data.FactsModel,
+			"error", err)
+		data.TestResult = "unreachable"
+		s.renderLLMSettings(w, r, data)
+		return
+	}
+	s.log.Info("LLM test connection succeeded",
+		"base_url", data.BaseURL, "embed_model", data.EmbedModel, "chat_model", data.FactsModel)
+	data.TestResult = "ok"
+	s.renderLLMSettings(w, r, data)
 }
 
 // renderLLMSettings finishes any LLM-tab response: shell (full or boosted
@@ -202,6 +322,22 @@ func validateLLMBaseURL(raw string) string {
 	}
 	if u.Host == "" {
 		return "invalid"
+	}
+	return ""
+}
+
+// validateLLMAPIKey checks the API key: bounded length and printable runes
+// only (keys are opaque ASCII/base64-ish tokens). Empty is VALID — many local
+// proxies need none, and an empty submission means "keep the current key"
+// upstream. Returns "" or a fixed error enum ("toolong" / "invalid").
+func validateLLMAPIKey(k string) string {
+	if len(k) > llmAPIKeyMaxLen {
+		return "toolong"
+	}
+	for _, r := range k {
+		if !unicode.IsPrint(r) {
+			return "invalid"
+		}
 	}
 	return ""
 }

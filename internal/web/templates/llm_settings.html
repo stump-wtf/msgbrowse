@@ -4,11 +4,12 @@
      *_content pattern): <title> keeps history entries titled; the define owns
      <main id="main-content"> so partial responses carry no shell.
 
-     The Settings → LLM tab (issue #191): exactly three fields — Base URL,
-     Embed model, Facts model (llm.chat_model) — and deliberately NO API-key
-     field: keys come from the MSGBROWSE_LLM_API_KEY environment variable only
-     (internal/config posture), so a key never lands in a form, a page, or the
-     config file. The form is boosted (hx-boost on the form itself), so a save
+     The Settings → LLM tab (issue #191): Base URL, Embed model, Facts model
+     (llm.chat_model), and an API key. The key is a write-only secret field —
+     its value is never rendered back (the form shows only whether one is set),
+     a blank submission keeps the current key, and it is persisted to the 0600
+     config file (MSGBROWSE_LLM_API_KEY still overrides at boot). The form is
+     boosted (hx-boost on the form itself), so a save
      swaps only #main-content; without JS it degrades to a plain same-origin
      form POST through the identical handler. All feedback states are
      fixed-enum banners; the echoed field values pass through html/template
@@ -41,6 +42,23 @@
       <p class="link-card-title">Saving failed.</p>
       <p class="link-card-sub">The settings could not be written to the config file; the running
         configuration is unchanged. See Logs for details and try again.</p>
+    </div>
+    {{- else if eq .TestResult "ok"}}
+    <div class="notice-card" role="status">
+      <p class="link-card-title">Connection succeeded.</p>
+      <p class="link-card-sub">The endpoint responded and the model is valid. These values were only
+        tested — click Save and apply to keep them.</p>
+    </div>
+    {{- else if eq .TestResult "unreachable"}}
+    <div class="notice-card" role="status">
+      <p class="link-card-title">Connection failed.</p>
+      <p class="link-card-sub">The endpoint could not be reached, or it rejected the model. Check the base
+        URL, model names, and API key, then try again. See Logs for details.</p>
+    </div>
+    {{- else if eq .TestResult "unavailable"}}
+    <div class="notice-card" role="status">
+      <p class="link-card-title">Testing is not available here.</p>
+      <p class="link-card-sub">This server was started without a live LLM client to probe with.</p>
     </div>
     {{- else if .HasErrors}}
     <div class="notice-card" role="status">
@@ -103,12 +121,56 @@
             the journal digest later); stored as <code class="font-mono">llm.chat_model</code>.</p>
         </div>
 
-        <button type="submit" class="setup-btn">Save and apply</button>
+        <div class="space-y-1">
+          <label class="eyebrow block" for="llm-api-key">API key</label>
+          {{/* Secret field: type=password, autocomplete="new-password" so the
+               browser never offers to autofill a saved login here, and the value
+               is NEVER rendered back (only whether one is set). A blank
+               submission keeps the current key; type a new one to replace it, or
+               tick "Clear saved key" below to wipe it. */}}
+          <input id="llm-api-key" name="api_key" type="password" class="filter-input w-full font-mono"
+                 value="" autocomplete="new-password" spellcheck="false"
+                 placeholder="{{if .HasAPIKey}}•••••••• (a key is set — leave blank to keep it){{else}}none set — a local proxy needs none{{end}}"
+                 {{if .ErrAPIKey}}aria-invalid="true" aria-describedby="llm-api-key-error"{{else}}aria-describedby="llm-api-key-hint"{{end}}>
+          {{- if .ErrAPIKey}}
+          <p id="llm-api-key-error" class="setup-note setup-note-warn">
+            {{- if eq .ErrAPIKey "toolong"}}That API key is too long.
+            {{- else}}That API key contains characters that are not allowed.{{end}}</p>
+          {{- end}}
+          {{- if .HasAPIKey}}
+          <label class="flex items-center gap-2 status-note">
+            <input type="checkbox" name="clear_api_key" value="1"> Clear saved key
+            {{- if .APIKeyFromEnv}} (removes the config-file copy){{else}} (removes it from the config file){{end}}
+          </label>
+          {{- end}}
+          {{- if and .HasAPIKey .APIKeyFromEnv}}
+          <p id="llm-api-key-hint" class="status-note">A key is set via the
+            <code class="font-mono">MSGBROWSE_LLM_API_KEY</code> environment variable. It is used as-is and
+            is <strong>never written to the config file</strong> — saving here leaves the environment the
+            sole home of that secret. Type a value to store one in the config file instead
+            (<code class="font-mono">llm.api_key</code>, mode 0600).</p>
+          {{- else}}
+          <p id="llm-api-key-hint" class="status-note">Only needed if your endpoint requires one. Stored in
+            this app's config file (<code class="font-mono">llm.api_key</code>, mode 0600); leave blank to
+            keep the current key. The <code class="font-mono">MSGBROWSE_LLM_API_KEY</code> environment
+            variable, if set, overrides it at startup and is never persisted here.</p>
+          {{- end}}
+        </div>
+
+        {{/* Two submit buttons share the form. "Save and apply" posts to the
+             form's action (/settings/llm). "Test connection" probes the
+             CURRENTLY-ENTERED values without saving: hx-post retargets the
+             boosted submit to /settings/llm/test (inheriting the form's
+             hx-target/hx-select/hx-swap), and formaction gives the identical
+             route to the no-JS plain-POST fallback. No inline JS — CSP-safe. */}}
+        <div class="flex flex-wrap gap-3">
+          <button type="submit" class="setup-btn">Save and apply</button>
+          <button type="submit" class="setup-btn setup-btn-ghost"
+                  formaction="/settings/llm/test"
+                  hx-post="/settings/llm/test">Test connection</button>
+        </div>
       </form>
 
-      <p class="status-note">There is no API-key field on purpose: an endpoint that requires a key reads
-        it from the <code class="font-mono">MSGBROWSE_LLM_API_KEY</code> environment variable — keys are
-        never stored in this app's config file.</p>
       <p class="status-note">msgbrowse's only network egress goes to this URL; the default points at a
         local proxy, and routing message content to a hosted provider is a deliberate choice (ADR-0010).</p>
     </section>

@@ -20,6 +20,7 @@ import (
 	"context"
 	"html/template"
 	"net/http"
+	"time"
 
 	"github.com/joestump/msgbrowse/internal/devsync"
 	"github.com/joestump/msgbrowse/internal/setup"
@@ -109,6 +110,12 @@ type setupCard struct {
 	// (SHORTID)" — set only in the synced state (#158). Server-composed from
 	// the registry row, never request-derived.
 	SyncedFrom string
+	// LastSynced is the human-formatted time this source last completed an
+	// import ("2006-01-02 15:04"), shown on Enabled and Synced cards so the user
+	// can see how current the archive is. Empty (HasLastSynced=false) when the
+	// source has never completed a run.
+	LastSynced    string
+	HasLastSynced bool
 }
 
 // HasSettingsLink reports whether the card's guidance carries a System Settings
@@ -140,9 +147,10 @@ type setupData struct {
 	// so the intro can nudge the user toward an action (vs. a pure returning-user
 	// view where everything is Enabled/Not-detected).
 	AnyActionable bool
-	// AnyEnabled is true when at least one source is Enabled, so the page renders
-	// the all-sources Refresh control (SPEC-0013 REQ "Refresh": "a single control
-	// that refreshes every enabled source"). Hidden when nothing is Enabled.
+	// AnyEnabled is true when at least one source is Enabled or Synced — the
+	// signal that the "enabled sources auto-refresh" footer copy actually applies.
+	// Without it, a machine with NOTHING detected would still claim its enabled
+	// sources refresh automatically (issue #162 footer regression).
 	AnyEnabled bool
 	// EnableAvailable reports whether an Enabler is wired (desktop bundle or a
 	// configured $PATH resolver): true renders live Enable buttons, false renders
@@ -191,7 +199,7 @@ func (s *Server) handleSetup(w http.ResponseWriter, r *http.Request) {
 		if c.Actionable {
 			anyActionable = true
 		}
-		if c.State == setupStateEnabled {
+		if c.State == setupStateEnabled || c.State == setupStateSynced {
 			anyEnabled = true
 		}
 	}
@@ -225,11 +233,24 @@ func (s *Server) setupCards(ctx context.Context, token string) []setupCard {
 	present := s.sourcesPresent(ctx)
 	counts := s.sourceCounts(ctx)
 	replicas := s.replicaSources(ctx)
+	lastSync := s.lastSyncTimes(ctx)
 	cards := make([]setupCard, 0, len(source.All))
 	for _, src := range source.All {
-		cards = append(cards, s.setupCardFor(det, src, token, present, counts, replicas))
+		cards = append(cards, s.setupCardFor(det, src, token, present, counts, replicas, lastSync))
 	}
 	return cards
+}
+
+// lastSyncTimes reads the per-source last-import timestamps for the Providers
+// cards' "Last synced" line. A store error is logged and yields nil — the cards
+// simply omit the line, never a 500.
+func (s *Server) lastSyncTimes(ctx context.Context) map[string]time.Time {
+	times, err := s.store.LastSyncTimes(ctx)
+	if err != nil {
+		s.log.Warn("setup: could not read last sync times from store", "error", err)
+		return nil
+	}
+	return times
 }
 
 // setupCardFor builds a single source's card. Enabled short-circuits detection:
@@ -243,12 +264,20 @@ func (s *Server) setupCards(ctx context.Context, token string) []setupCard {
 // while its live OS-permission probe would still report Needed. counts is the
 // per-source imported footprint (issue #162), shown on Enabled cards; a nil map
 // (store error) degrades to the plain Imported note.
-func (s *Server) setupCardFor(det setup.Detector, src, token string, present map[string]bool, counts map[string]store.SourceCount, replicas map[string]devsync.ReplicaOf) setupCard {
+func (s *Server) setupCardFor(det setup.Detector, src, token string, present map[string]bool, counts map[string]store.SourceCount, replicas map[string]devsync.ReplicaOf, lastSync map[string]time.Time) setupCard {
 	card := setupCard{
 		Source:          src,
 		Label:           source.Label(src),
 		EnableAvailable: s.enableAvailable(),
 		Token:           token,
+	}
+	// The "Last synced" line rides on EVERY render path — full page and the
+	// Enable/Recheck/Disable fragment swaps — so it never vanishes when a card
+	// is replaced out from under the page (the fragment callers previously
+	// omitted it). The template only shows it on Enabled/Synced cards.
+	if t, ok := lastSync[src]; ok {
+		card.LastSynced = t.Local().Format("2006-01-02 15:04")
+		card.HasLastSynced = true
 	}
 
 	// The synced-replica state wins over everything (#158; SPEC-0014 REQ

@@ -6,7 +6,7 @@ import "context"
 // `user_version` pragma. On Open, the migrations runner brings any older
 // database forward to this version. Bump it and append a migration whenever the
 // schema changes.
-const schemaVersion = 11
+const schemaVersion = 14
 
 // SchemaVersion returns the schema revision this binary expects (and migrates a
 // database forward to on Open). Read-only callers — notably `msgbrowse doctor` —
@@ -50,6 +50,9 @@ var migrations = []string{
 	9:  schemaV9,
 	10: schemaV10,
 	11: schemaV11,
+	12: schemaV12,
+	13: schemaV13,
+	14: schemaV14,
 }
 
 // schemaV1 is the initial Signal-only schema. It is preserved verbatim so a
@@ -474,6 +477,101 @@ CREATE TABLE sync_state (
 );
 `
 
+// schemaV12 adds embed_runs — the durable log of semantic-search indexing
+// runs, the embeddings analogue of ingest_runs (issue #1: the Overview needs
+// "last index run" and an in-progress marker, and internal/embed's
+// run-time Summary evaporates with the CLI process that produced it).
+//
+// A run is recorded in two (plus N) writes: a row is INSERTed when the run
+// starts (finished_at = ” — the sentinel for "still in flight"), its
+// embedded/batches counters and updated_at heartbeat are refreshed after each
+// batch, and the terminal write stamps finished_at plus the final totals (and
+// the error text when the run aborted). `msgbrowse embed` is a separate
+// process from `msgbrowse serve`, but both open the same SQLite file, so the
+// heartbeat is exactly how the web Overview observes a live run: an
+// unfinished row with a fresh updated_at is in progress; an unfinished row
+// whose heartbeat went stale is a crashed run (the process died before its
+// terminal write) and is reported as such rather than spinning forever.
+//
+// All timestamps are RFC3339 UTC strings, matching ingest_runs.
+const schemaV12 = `
+CREATE TABLE IF NOT EXISTS embed_runs (
+    id          INTEGER PRIMARY KEY,
+    model       TEXT    NOT NULL,
+    started_at  TEXT    NOT NULL,
+    updated_at  TEXT    NOT NULL,
+    finished_at TEXT    NOT NULL DEFAULT '',
+    duration_ms INTEGER NOT NULL DEFAULT 0,
+    embedded    INTEGER NOT NULL DEFAULT 0,
+    pruned      INTEGER NOT NULL DEFAULT 0,
+    batches     INTEGER NOT NULL DEFAULT 0,
+    error       TEXT    NOT NULL DEFAULT ''
+);
+`
+
+// schemaV13 adds the cross-provider contact-merge decision journal and its
+// rules (ADR-0024 / SPEC-0018, issue #11). Note the version: the ADR draft
+// wrote "migration v11", then embed_runs claimed v11 on this lineage, and the
+// v11 slot ultimately went to the journal tables that shipped on main (issue
+// #217) — so the merge tables land at v13. The tables and behavior are exactly
+// as the ADR pins; only the migration number moved.
+//
+// contact_links is a DECISION JOURNAL, not a pointer graph: one row per
+// merge/split decision keyed by a canonical-ordered pair of stable
+// (source, identifier) tuples — never contact rowids. This is the codebase's
+// standard answer to rowid churn (embeddings v3, contact_facts v4, reactions
+// v6 all key durable state by stable message hashes because
+// ReplaceConversationMessages / DeleteSourceData reassign rowids on every
+// import): (source, identifier) is UNIQUE and stable in contact_identifiers
+// since v2, so a decision recorded against it re-activates when its source is
+// re-imported. There is deliberately NO foreign key to contact_identifiers —
+// a link whose identifier is currently absent is INERT, not invalid, exactly
+// like a fact whose supporting message hash has vanished.
+//
+// Canonical pair ordering ((source_a, identifier_a) < (source_b,
+// identifier_b), enforced by the writer, deduped by the UNIQUE constraint)
+// makes symmetric decisions collide, and "one current decision per pair" (the
+// writer replaces a split row with a merge row and vice versa on manual
+// action) keeps the table free of contradictions without timestamp
+// arbitration. A merge records the full bipartite pairing of both contacts'
+// identifier sets so any surviving pair re-links the group after a partial
+// source deletion. origin ('manual' | 'auto') drives precedence in reconcile:
+// manual split > manual merge > auto rules.
+//
+// contact_merge_rules is a single-row settings table (CHECK id = 1) owned by
+// the settings UI (#12); it lives in the store, not the config file, because
+// the web layer has no config-file write path. Defaults are conservative
+// (ADR-0024): auto-merge OFF (suggestions only), phone+email trusted once
+// enabled, address-book hints on (they only ever suggest, and the provider is
+// permission-gated). The default row is seeded here idempotently.
+const schemaV13 = `
+CREATE TABLE IF NOT EXISTS contact_links (
+    id           INTEGER PRIMARY KEY,
+    kind         TEXT    NOT NULL,          -- 'merge' | 'split'
+    origin       TEXT    NOT NULL,          -- 'manual' | 'auto'
+    source_a     TEXT    NOT NULL,
+    identifier_a TEXT    NOT NULL,
+    source_b     TEXT    NOT NULL,
+    identifier_b TEXT    NOT NULL,
+    created_at   TEXT    NOT NULL,
+    UNIQUE(source_a, identifier_a, source_b, identifier_b)
+);
+CREATE INDEX IF NOT EXISTS idx_contact_links_a ON contact_links(source_a, identifier_a);
+CREATE INDEX IF NOT EXISTS idx_contact_links_b ON contact_links(source_b, identifier_b);
+
+CREATE TABLE IF NOT EXISTS contact_merge_rules (
+    id               INTEGER PRIMARY KEY CHECK (id = 1),
+    auto_merge       INTEGER NOT NULL DEFAULT 0,
+    match_phone      INTEGER NOT NULL DEFAULT 1,
+    match_email      INTEGER NOT NULL DEFAULT 1,
+    use_address_book INTEGER NOT NULL DEFAULT 1,
+    updated_at       TEXT    NOT NULL
+);
+INSERT INTO contact_merge_rules (id, auto_merge, match_phone, match_email, use_address_book, updated_at)
+    VALUES (1, 0, 1, 1, 1, strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+    ON CONFLICT(id) DO NOTHING;
+`
+
 // schemaV11 adds the AI-editorialized journal (ADR-0023): a two-layer feature
 // over the archive, both layers keyed by calendar DAY ('YYYY-MM-DD').
 //
@@ -527,3 +625,40 @@ CREATE TABLE IF NOT EXISTS journal_digests (
 );
 CREATE INDEX IF NOT EXISTS idx_journal_digests_updated ON journal_digests(updated_at);
 `
+
+// schemaV14 is the LINEAGE REPAIR migration (issue #217).
+//
+// Between 2026-07-07 and 2026-07-24 two lineages independently defined a
+// migration numbered v11 and both were applied to real databases:
+//
+//	main lineage  v11 = journal_days + journal_digests   (shipped in #213)
+//	fork lineage  v11 = embed_runs                       (shipped in #29's branch)
+//	fork lineage  v12 = contact_links + contact_merge_rules
+//
+// The reconciliation above gives main's journal tables the v11 slot they
+// already occupy in the wild and renumbers the fork's pair to v12/v13. That
+// alone is NOT sufficient, because migrate() only ever runs versions
+// current+1 … schemaVersion: a fork-lineage database stamped 11 or 12 is
+// already "past" v11 and would never receive the journal tables, while a
+// main-lineage database stamped 11 would never receive embed_runs. Both would
+// arrive at v13 reporting a schema they do not actually have.
+//
+// v14 closes that hole by re-asserting the union of all three contested
+// migrations. Every database converges here regardless of the path it took:
+//
+//	v10 (common ancestor) → v11, v12, v13 applied normally, v14 a no-op
+//	main lineage @ v11    → v12, v13 create the fork tables, v14 a no-op
+//	fork lineage @ v11    → v12 no-op, v13 contacts, v14 creates the journal
+//	fork lineage @ v12    → v13 no-op, v14 creates the journal
+//
+// This is safe to re-run because all three constants are written to be
+// idempotent within their version transition (the invariant documented on
+// `migrations` above): every statement is CREATE … IF NOT EXISTS, and the one
+// seed row uses ON CONFLICT DO NOTHING. It is composed from the constants
+// rather than copied so it can never drift from what it repairs — which holds
+// precisely because shipped migrations are immutable (enforced by
+// scripts/check-migrations.sh).
+//
+// Databases created after this migration never exercise the repair path; they
+// walk 1…14 in order and v14 is a no-op on a schema that is already complete.
+const schemaV14 = schemaV11 + schemaV12 + schemaV13

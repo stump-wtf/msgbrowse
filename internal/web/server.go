@@ -22,10 +22,12 @@ import (
 	"os"
 	"path"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/joestump/msgbrowse/internal/archivepath"
 	"github.com/joestump/msgbrowse/internal/config"
+	"github.com/joestump/msgbrowse/internal/contacts"
 	"github.com/joestump/msgbrowse/internal/devsync"
 	"github.com/joestump/msgbrowse/internal/imageconv"
 	"github.com/joestump/msgbrowse/internal/llm"
@@ -75,7 +77,17 @@ type Store interface {
 	GetJournalDay(ctx context.Context, day string) (store.JournalDayView, bool, error)
 	SourcesPresent(ctx context.Context) ([]string, error)
 	SourceCounts(ctx context.Context) (map[string]store.SourceCount, error)
+	LastSyncTimes(ctx context.Context) (map[string]time.Time, error)
 	DeleteSourceData(ctx context.Context, src string) (int64, error)
+	LatestEmbedRun(ctx context.Context) (*store.EmbedRun, error)
+	EmbeddingCoverage(ctx context.Context, model string) (store.EmbeddingCoverage, error)
+	// Contact merge engine (#11) behind the Settings → Contacts tab (#12).
+	GetMergeRules(ctx context.Context) (store.MergeRules, error)
+	SetMergeRules(ctx context.Context, r store.MergeRules) error
+	MergeCandidates(ctx context.Context, resolver contacts.Resolver) ([]store.MergeCandidate, error)
+	MergedContacts(ctx context.Context) ([]store.MergedContact, error)
+	MergeContacts(ctx context.Context, a, b int64) (int64, error)
+	SplitContact(ctx context.Context, contactID int64, moved []store.ContactIdentifier) (int64, error)
 }
 
 // Server holds the dependencies shared by all handlers.
@@ -105,6 +117,13 @@ type Server struct {
 	// deviceSyncEnabled mirrors config device_sync.enabled for the /settings
 	// pairing section's absent state (SPEC-0010; payload contract SPEC-0011).
 	deviceSyncEnabled bool
+	// deviceSyncFeature reports whether the device-sync feature is compiled into
+	// this binary at all — a COMPILE-TIME flag the shell sets from a
+	// build-tagged constant (SetDeviceSyncFeature). Device sync is gated behind
+	// the `devicesync` build tag and NOT built by default, so a release binary
+	// hides the entire Device sync surface on /settings and /status. False (the
+	// default) renders those sections as if the feature did not exist.
+	deviceSyncFeature bool
 	// pairing is the live pairing source for /settings' QR section and the
 	// pair/unpair POSTs; nil until serve / the desktop shell wires
 	// SetPairingSource.
@@ -158,6 +177,24 @@ type Server struct {
 	// llmBoot is the boot-time LLM config snapshot (file + defaults merged),
 	// the tab's display fallback when no configurator is wired.
 	llmBoot llm.Settings
+	// indexer runs the semantic-index embedding job behind the Status page's
+	// Build / Reset-&-rebuild controls (#191): serve and the desktop shell wire
+	// an internal/embed.Indexer over the shared store + llm.Holder via
+	// SetIndexer. nil (browser / no-op mode) renders the controls' "unavailable"
+	// state and makes the Build POST report itself so.
+	indexer Indexer
+	// indexMu guards indexing, the single-flight flag for the ONE global index
+	// job the web layer runs at a time. A second Build while a job is in flight
+	// coalesces to a no-op rather than starting a duplicate SQLite writer.
+	indexMu  sync.Mutex
+	indexing bool
+	// addressBook is the pluggable address-book provider behind contact
+	// merging (issue #9): the macOS desktop shell wires a Contacts-backed
+	// contacts.Resolver via SetContactResolver; nil (Linux, browser mode,
+	// unwired shell) reads as contacts.Unavailable{} through
+	// contactResolver(), so consumers never nil-check and the merge path
+	// never errors for "no address book".
+	addressBook contacts.Resolver
 	// journalExclude mirrors journal.exclude_conversations so the /journal stat
 	// tiles (most-active weekday, peak hour) honor the same denylist the
 	// mechanical journal_days was built with — otherwise the message-scanning
@@ -196,6 +233,7 @@ func NewServer(st Store, cfg *config.Config, log *slog.Logger) (*Server, error) 
 			BaseURL:    cfg.LLM.BaseURL,
 			EmbedModel: cfg.LLM.EmbedModel,
 			ChatModel:  cfg.LLM.ChatModel,
+			APIKey:     cfg.LLM.APIKey,
 		},
 	}
 	tmpl, err := template.New("").Funcs(template.FuncMap{
@@ -215,6 +253,7 @@ func NewServer(st Store, cfg *config.Config, log *slog.Logger) (*Server, error) 
 		"sourceSlug":       sourceSlug,
 		"humanSource":      source.Label,
 		"imgRenderable":    s.imgRenderable,
+		"imgTileState":     s.imgTileState,
 		"convRowCtx":       convRowCtx,
 		"galleryConvURL":   galleryConvURL,
 	}).ParseFS(templatesFS, "templates/*.html")
@@ -242,27 +281,68 @@ func (s *Server) archiveRoots() archivepath.Roots {
 	return setup.EffectiveRoots(&s.rootsCfg)
 }
 
-// imgRenderable reports whether an image attachment will actually display in an
-// <img>: either a web-native format, or a non-web format (HEIC/TIFF) that has a
-// transcoded JPEG derivative on disk. Templates use it to render a placeholder
-// instead of a broken image.
-func (s *Server) imgRenderable(src, convName, relPath string) bool {
-	if imageconv.WebRenderable(relPath) {
-		return true
-	}
-	if !imageconv.Convertible(relPath) {
-		return false
-	}
+// Image-tile states for the media grid and the transcript thumbnails
+// (issue #15). The strings are what imgTileState hands to the templates.
+const (
+	tileImg       = "img"       // will actually display in an <img>
+	tileNoPreview = "nopreview" // on disk but not browser-renderable: download placeholder
+	tileMissing   = "missing"   // absent from the archive on this machine (or unresolvable)
+)
+
+// imgTileState classifies an image attachment for rendering (issue #15):
+//
+//   - tileImg: the <img> src will succeed — a web-native format whose file is
+//     on disk, or a non-web format (HEIC/TIFF) whose transcoded JPEG
+//     derivative is on disk (the media handler serves the derivative).
+//   - tileNoPreview: the original is on disk but no browser-renderable
+//     rendition exists (e.g. an un-transcoded HEIC) — templates render a
+//     download placeholder.
+//   - tileMissing: the attachment row exists in the DB but the file can't be
+//     resolved (source not configured, traversal) or isn't on disk (partial
+//     export, moved archive, synced replica without media). Templates render
+//     an inert labeled placeholder — an <img> would 404 into the browser's
+//     broken-image glyph.
+//
+// The existence check is a stat per tile (plus one for the derivative on
+// convertible formats). That is the same per-item cost decorateFiles already
+// pays on the Files tab, and microseconds against the SPEC-0008 render
+// budgets — the alternative is emitting <img> tags that fail at request time.
+func (s *Server) imgTileState(src, convName, relPath string) string {
 	abs, ok := s.mediaFilePath(src, convName, relPath)
-	if !ok {
-		return false
+	if imageconv.Convertible(relPath) {
+		// Non-web format: renderable only through its transcoded derivative.
+		if !ok {
+			return tileMissing
+		}
+		if d := imageconv.DerivedPath(s.derivedDir, abs); d != "" && statIsFile(d) {
+			return tileImg
+		}
+		if statIsFile(abs) {
+			return tileNoPreview
+		}
+		return tileMissing
 	}
-	d := imageconv.DerivedPath(s.derivedDir, abs)
-	if d == "" {
-		return false
+	if !ok || !statIsFile(abs) {
+		return tileMissing
 	}
-	_, err := os.Stat(d)
-	return err == nil
+	if imageconv.WebRenderable(relPath) {
+		return tileImg
+	}
+	return tileNoPreview
+}
+
+// imgRenderable reports whether an image attachment will actually display in an
+// <img>. Kept as the boolean the transcript templates branch on; the gallery
+// uses the finer-grained imgTileState.
+func (s *Server) imgRenderable(src, convName, relPath string) bool {
+	return s.imgTileState(src, convName, relPath) == tileImg
+}
+
+// statIsFile reports whether path exists and is a regular-ish file (not a
+// directory) — the same predicate handleMedia applies before serving.
+func statIsFile(path string) bool {
+	info, err := os.Stat(path)
+	return err == nil && !info.IsDir()
 }
 
 // Handler returns the root http.Handler (security headers already applied).
@@ -277,6 +357,14 @@ func (s *Server) Handler() http.Handler { return s.mux }
 // params, no inline styles, no per-request state — the embedded server knows
 // it is the desktop shell at construction time and says so once.
 func (s *Server) SetDesktopChrome(enabled bool) { s.desktopChrome = enabled }
+
+// SetDeviceSyncFeature records whether the device-sync feature is compiled into
+// this binary (the `devicesync` build tag). The shell passes a build-tagged
+// constant; with the feature absent — the default release build — the
+// /settings and /status device-sync sections do not render at all, so an
+// unfinished feature never ships a visible-but-dead surface. Call before
+// serving; the flag is read-only afterwards.
+func (s *Server) SetDeviceSyncFeature(enabled bool) { s.deviceSyncFeature = enabled }
 
 // SetShellNotes wires the desktop shell's diagnostics snapshot (issue #167:
 // systray/dock startup must be observable on the Logs page, not silent).
@@ -319,6 +407,15 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("GET /c/{id}/messages", s.handleMessages)
 	mux.HandleFunc("GET /c/{id}/at/{mid}", s.handleConversationAt)
 	mux.HandleFunc("GET /status", s.handleStatus)
+	// Semantic-index controls (#191): privileged POSTs behind the same
+	// checkSetupPOST gate as the Setup POSTs — Build embeds the missing delta,
+	// Reset & rebuild clears the index and re-embeds from scratch. Both start a
+	// detached single-flight job and re-render Status with a fixed-enum banner.
+	mux.HandleFunc("POST /status/index", s.handleStatusIndex)
+	mux.HandleFunc("POST /status/index/reset", s.handleStatusIndexReset)
+	// The Backups tab (issue #2): the encrypted-DB-snapshot inventory, moved out
+	// of /status into its own Settings-shell section. A safe GET, no mutation.
+	mux.HandleFunc("GET /backups", s.handleBackups)
 	// The Setup surface is presented to the user as "Providers" (its route is
 	// /providers); /setup 301-redirects for compatibility with any existing links
 	// or bookmarks. The privileged POSTs keep the /setup/* prefix — they are
@@ -332,7 +429,6 @@ func (s *Server) routes() http.Handler {
 	// handler by the same-origin + per-session-token check before any work.
 	mux.HandleFunc("POST /setup/enable", s.handleSetupEnable)
 	mux.HandleFunc("POST /setup/refresh", s.handleSetupRefresh)
-	mux.HandleFunc("POST /setup/refresh-all", s.handleSetupRefreshAll)
 	mux.HandleFunc("POST /setup/cancel", s.handleSetupCancel)
 	mux.HandleFunc("POST /setup/recheck", s.handleSetupRecheck)
 	mux.HandleFunc("POST /setup/disable", s.handleSetupDisable)
@@ -343,6 +439,16 @@ func (s *Server) routes() http.Handler {
 	// as every other privileged POST.
 	mux.HandleFunc("GET /settings/llm", s.handleSettingsLLM)
 	mux.HandleFunc("POST /settings/llm", s.handleSettingsLLMSave)
+	mux.HandleFunc("POST /settings/llm/test", s.handleSettingsLLMTest)
+	// The Settings → Contacts tab (#12): the merge-rules settings, de-dup
+	// candidate review, and the manual merge/split overrides. A safe GET render
+	// plus three privileged POSTs (save rules / merge / split), each gated by
+	// the same checkSetupPOST contract and re-rendering the tab with a
+	// fixed-enum result banner.
+	mux.HandleFunc("GET /settings/contacts", s.handleSettingsContacts)
+	mux.HandleFunc("POST /settings/contacts/rules", s.handleSettingsMergeRules)
+	mux.HandleFunc("POST /settings/contacts/merge", s.handleSettingsMerge)
+	mux.HandleFunc("POST /settings/contacts/split", s.handleSettingsSplit)
 	// Device pairing + unpairing (SPEC-0014 Authentication table): privileged
 	// POSTs behind the same checkSetupPOST gate as the Setup POSTs (#157/#158).
 	mux.HandleFunc("POST /settings/devices/pair", s.handleDevicePair)

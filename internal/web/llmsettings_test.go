@@ -1,6 +1,7 @@
 package web
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -21,6 +22,11 @@ type fakeLLMConfigurator struct {
 	cur      llm.Settings
 	applied  []llm.Settings
 	applyErr error
+	// tested records every TestLLM probe so the tests can assert a rejected
+	// POST probed NOTHING (the checkSetupPOST contract); testErr is the error
+	// the probe returns (nil = reachable).
+	tested  []llm.Settings
+	testErr error
 }
 
 func (f *fakeLLMConfigurator) CurrentLLM() llm.Settings { return f.cur }
@@ -32,10 +38,24 @@ func (f *fakeLLMConfigurator) ApplyLLM(s llm.Settings) error {
 	f.cur = s
 	return nil
 }
+func (f *fakeLLMConfigurator) TestLLM(_ context.Context, s llm.Settings) error {
+	f.tested = append(f.tested, s)
+	return f.testErr
+}
 
 // llmPOST builds a POST /settings/llm with the given origin, token, and form
 // values (empty entries omitted), mirroring enablePOST.
 func llmPOST(t *testing.T, srv *Server, origin, token string, fields map[string]string) *httptest.ResponseRecorder {
+	return llmPOSTTo(t, srv, "/settings/llm", origin, token, fields)
+}
+
+// llmTestPOST builds a POST /settings/llm/test — the "Test connection" probe.
+func llmTestPOST(t *testing.T, srv *Server, origin, token string, fields map[string]string) *httptest.ResponseRecorder {
+	return llmPOSTTo(t, srv, "/settings/llm/test", origin, token, fields)
+}
+
+// llmPOSTTo posts the given form to path with the given origin/token.
+func llmPOSTTo(t *testing.T, srv *Server, path, origin, token string, fields map[string]string) *httptest.ResponseRecorder {
 	t.Helper()
 	form := url.Values{}
 	for k, v := range fields {
@@ -44,7 +64,7 @@ func llmPOST(t *testing.T, srv *Server, origin, token string, fields map[string]
 	if token != "" {
 		form.Set(setupTokenField, token)
 	}
-	req := httptest.NewRequest(http.MethodPost, "/settings/llm", strings.NewReader(form.Encode()))
+	req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(form.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	if origin != "" {
 		req.Header.Set("Origin", origin)
@@ -96,12 +116,13 @@ func TestLLMTabRenders(t *testing.T) {
 	if !contains(body, "llm.chat_model") {
 		t.Error("facts-model field missing its llm.chat_model hint")
 	}
-	// NO API-key input — only the env-var hint (config.go posture).
-	for _, forbidden := range []string{`name="api_key"`, `type="password"`} {
-		if contains(body, forbidden) {
-			t.Errorf("LLM tab must not render an API-key field, found %q", forbidden)
+	// The API-key input is present as a write-only password field (Option A).
+	for _, want := range []string{`name="api_key"`, `type="password"`} {
+		if !contains(body, want) {
+			t.Errorf("LLM tab missing the API-key field marker %q", want)
 		}
 	}
+	// The env var is still documented as an override.
 	if !contains(body, "MSGBROWSE_LLM_API_KEY") {
 		t.Error("LLM tab missing the MSGBROWSE_LLM_API_KEY env-var hint")
 	}
@@ -265,11 +286,12 @@ func TestLLMSaveValidationRejections(t *testing.T) {
 	}
 }
 
-// TestLLMSaveHappyPathWritesExactlyThreeKeys drives the REAL stack — handler
-// → llm.Applier → config.SaveLLM → llm.Holder — against a pre-existing config
-// file: exactly the three llm keys are written, the unrelated pre-existing
-// key survives, and the live holder swaps (#191's no-restart contract).
-func TestLLMSaveHappyPathWritesExactlyThreeKeys(t *testing.T) {
+// TestLLMSaveHappyPathWritesKeys drives the REAL stack — handler → llm.Applier
+// → config.SaveLLM → llm.Holder — against a pre-existing config file: the llm
+// keys (base URL, both models, AND the submitted api_key, Option A) are
+// written, the unrelated pre-existing key survives, and the live holder swaps
+// with the new key (#191's no-restart contract).
+func TestLLMSaveHappyPathWritesKeys(t *testing.T) {
 	srv, _, _ := newTestServer(t)
 
 	path := filepath.Join(t.TempDir(), "config.yaml")
@@ -279,8 +301,8 @@ func TestLLMSaveHappyPathWritesExactlyThreeKeys(t *testing.T) {
 	holder := llm.NewHolder(llm.New(llm.Options{BaseURL: "http://old.test/v1"}), llm.Settings{
 		BaseURL: "http://old.test/v1", EmbedModel: "old-embed", ChatModel: "old-chat",
 	})
-	srv.SetLLMConfig(llm.NewApplier(holder, "", 0, func(s llm.Settings) error {
-		return config.SaveLLM(path, s.BaseURL, s.EmbedModel, s.ChatModel)
+	srv.SetLLMConfig(llm.NewApplier(holder, 0, func(s llm.Settings) error {
+		return config.SaveLLM(path, s.BaseURL, s.EmbedModel, s.ChatModel, s.APIKey)
 	}))
 
 	tok := mintToken(t, srv)
@@ -288,6 +310,7 @@ func TestLLMSaveHappyPathWritesExactlyThreeKeys(t *testing.T) {
 		"base_url":    "  http://127.0.0.1:11434/v1  ", // trimmed
 		"embed_model": "nomic-embed-text",
 		"facts_model": "llama3",
+		"api_key":     "sk-test-key-123",
 	})
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d", rec.Code)
@@ -296,17 +319,21 @@ func TestLLMSaveHappyPathWritesExactlyThreeKeys(t *testing.T) {
 	if !contains(body, "LLM settings saved.") {
 		t.Error("missing the saved confirmation")
 	}
-	// The re-rendered form shows the now-effective (trimmed) values.
+	// The re-rendered form shows the now-effective (trimmed) values...
 	if !contains(body, `value="http://127.0.0.1:11434/v1"`) {
 		t.Error("saved render missing the trimmed effective base URL")
 	}
+	// ...but NEVER the secret key value.
+	if contains(body, "sk-test-key-123") {
+		t.Error("the API key value must never be rendered back into the page")
+	}
 
-	// Live swap: the holder now reports the new settings.
-	if got := holder.Settings(); got.BaseURL != "http://127.0.0.1:11434/v1" || got.EmbedModel != "nomic-embed-text" || got.ChatModel != "llama3" {
+	// Live swap: the holder now reports the new settings, including the key.
+	if got := holder.Settings(); got.BaseURL != "http://127.0.0.1:11434/v1" || got.EmbedModel != "nomic-embed-text" || got.ChatModel != "llama3" || got.APIKey != "sk-test-key-123" {
 		t.Errorf("holder after save = %+v", got)
 	}
 
-	// The file: three keys written, unrelated keys preserved, no api_key.
+	// The file: llm keys (incl. api_key) written, unrelated keys preserved.
 	raw, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatal(err)
@@ -316,15 +343,13 @@ func TestLLMSaveHappyPathWritesExactlyThreeKeys(t *testing.T) {
 		"base_url: http://127.0.0.1:11434/v1",
 		"embed_model: nomic-embed-text",
 		"chat_model: llama3",
+		"api_key: sk-test-key-123",
 		"data_dir: /custom/data", // unrelated top-level key preserved
 		"max_concurrency: 9",     // unrelated llm key preserved
 	} {
 		if !contains(out, want) {
 			t.Errorf("config file missing %q:\n%s", want, out)
 		}
-	}
-	if contains(out, "api_key") {
-		t.Errorf("config file gained an api_key:\n%s", out)
 	}
 }
 
@@ -387,5 +412,231 @@ func TestLLMSaveApplyErrorReported(t *testing.T) {
 	}
 	if contains(body, "LLM settings saved.") {
 		t.Error("rendered success despite an apply error")
+	}
+}
+
+// TestLLMTabHasTestButton: the tab renders a "Test connection" submit that
+// targets /settings/llm/test (both the htmx hx-post and the no-JS formaction).
+func TestLLMTabHasTestButton(t *testing.T) {
+	srv, _, _ := newTestServer(t)
+	srv.SetLLMConfig(&fakeLLMConfigurator{})
+
+	body := get(t, srv, "/settings/llm").Body.String()
+	if !contains(body, "Test connection") {
+		t.Error("LLM tab missing the Test connection button")
+	}
+	if !contains(body, `hx-post="/settings/llm/test"`) {
+		t.Error("Test connection button missing its hx-post route")
+	}
+	if !contains(body, `formaction="/settings/llm/test"`) {
+		t.Error("Test connection button missing its no-JS formaction route")
+	}
+}
+
+// TestLLMTestConnectionOK: a probe that returns nil renders the success banner,
+// records the ENTERED values, and applies/persists NOTHING.
+func TestLLMTestConnectionOK(t *testing.T) {
+	srv, _, _ := newTestServer(t)
+	fc := &fakeLLMConfigurator{}
+	srv.SetLLMConfig(fc)
+
+	tok := mintToken(t, srv)
+	rec := llmTestPOST(t, srv, selfOrigin, tok, validLLMForm())
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d", rec.Code)
+	}
+	if !contains(rec.Body.String(), "Connection succeeded.") {
+		t.Error("missing the test-ok banner")
+	}
+	if len(fc.applied) != 0 {
+		t.Fatalf("test probe applied %d settings, want 0", len(fc.applied))
+	}
+	if len(fc.tested) != 1 {
+		t.Fatalf("test probed %d times, want 1", len(fc.tested))
+	}
+	if got := fc.tested[0]; got.BaseURL != "http://127.0.0.1:11434/v1" || got.EmbedModel != "nomic-embed-text" || got.ChatModel != "llama3" {
+		t.Errorf("probed settings = %+v", got)
+	}
+}
+
+// TestLLMTestConnectionUnreachable: a probe that errors renders the failure
+// banner and NEVER echoes the raw error (which can carry the endpoint URL).
+func TestLLMTestConnectionUnreachable(t *testing.T) {
+	srv, _, _ := newTestServer(t)
+	fc := &fakeLLMConfigurator{testErr: errors.New("dial tcp 10.0.0.9:4000: connection refused")}
+	srv.SetLLMConfig(fc)
+
+	tok := mintToken(t, srv)
+	rec := llmTestPOST(t, srv, selfOrigin, tok, validLLMForm())
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d", rec.Code)
+	}
+	body := rec.Body.String()
+	if !contains(body, "Connection failed.") {
+		t.Error("missing the test-unreachable banner")
+	}
+	if contains(body, "connection refused") || contains(body, "10.0.0.9") {
+		t.Error("the raw probe error must never be rendered into the page")
+	}
+	if contains(body, "Connection succeeded.") {
+		t.Error("rendered success despite a probe error")
+	}
+}
+
+// TestLLMTestUnavailableWithoutConfigurator: no configurator wired → the
+// gate-passing probe reports itself unavailable and probes nothing.
+func TestLLMTestUnavailableWithoutConfigurator(t *testing.T) {
+	srv, _, _ := newTestServer(t)
+	tok := mintToken(t, srv)
+	rec := llmTestPOST(t, srv, selfOrigin, tok, validLLMForm())
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d", rec.Code)
+	}
+	if !contains(rec.Body.String(), "Testing is not available here.") {
+		t.Error("missing the test-unavailable banner")
+	}
+}
+
+// TestLLMTestValidationRejected: an invalid form re-renders with the field
+// error and probes NOTHING (validation runs before the probe).
+func TestLLMTestValidationRejected(t *testing.T) {
+	srv, _, _ := newTestServer(t)
+	fc := &fakeLLMConfigurator{}
+	srv.SetLLMConfig(fc)
+
+	tok := mintToken(t, srv)
+	rec := llmTestPOST(t, srv, selfOrigin, tok, map[string]string{"base_url": "ftp://nope/v1"})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d", rec.Code)
+	}
+	if len(fc.tested) != 0 {
+		t.Fatalf("invalid input probed %d times, want 0", len(fc.tested))
+	}
+	if !contains(rec.Body.String(), "must start with http:// or https://") {
+		t.Error("missing the base-URL field error")
+	}
+}
+
+// TestLLMTestCrossOriginRejected: a cross-origin probe — even with a valid
+// token — is rejected 403 and probes nothing (the checkSetupPOST gate).
+func TestLLMTestCrossOriginRejected(t *testing.T) {
+	srv, _, _ := newTestServer(t)
+	fc := &fakeLLMConfigurator{}
+	srv.SetLLMConfig(fc)
+
+	tok := mintToken(t, srv)
+	rec := llmTestPOST(t, srv, "http://evil.example", tok, validLLMForm())
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("cross-origin probe status = %d, want 403", rec.Code)
+	}
+	if len(fc.tested) != 0 {
+		t.Fatalf("cross-origin probe ran %d times, want 0", len(fc.tested))
+	}
+}
+
+// TestLLMTestMissingTokenRejected: same-origin but tokenless → 403, nothing
+// probed.
+func TestLLMTestMissingTokenRejected(t *testing.T) {
+	srv, _, _ := newTestServer(t)
+	fc := &fakeLLMConfigurator{}
+	srv.SetLLMConfig(fc)
+
+	rec := llmTestPOST(t, srv, selfOrigin, "", validLLMForm())
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("missing-token probe status = %d, want 403", rec.Code)
+	}
+	if len(fc.tested) != 0 {
+		t.Fatalf("missing-token probe ran %d times, want 0", len(fc.tested))
+	}
+}
+
+// TestLLMSaveBlankKeepsConfigKey: a blank api_key field with a config-sourced
+// key set keeps the current key and applies it with APIKeyFromEnv=false (it is
+// legitimately stored in config, Option A).
+func TestLLMSaveBlankKeepsConfigKey(t *testing.T) {
+	srv, _, _ := newTestServer(t)
+	fc := &fakeLLMConfigurator{cur: llm.Settings{
+		BaseURL: "http://old/v1", APIKey: "sk-in-config", APIKeyFromEnv: false,
+	}}
+	srv.SetLLMConfig(fc)
+
+	tok := mintToken(t, srv)
+	rec := llmPOST(t, srv, selfOrigin, tok, validLLMForm()) // no api_key field
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d", rec.Code)
+	}
+	if len(fc.applied) != 1 {
+		t.Fatalf("applied %d, want 1", len(fc.applied))
+	}
+	if got := fc.applied[0]; got.APIKey != "sk-in-config" || got.APIKeyFromEnv {
+		t.Errorf("applied = %+v, want kept config key with APIKeyFromEnv=false", got)
+	}
+}
+
+// TestLLMSaveBlankKeepsEnvKeyUnpersisted is the env-key-leak regression: when
+// the current key came from MSGBROWSE_LLM_API_KEY (APIKeyFromEnv=true), a blank
+// save keeps it LIVE but carries the env flag through so the persist layer
+// never writes the env secret to the config file.
+func TestLLMSaveBlankKeepsEnvKeyUnpersisted(t *testing.T) {
+	srv, _, _ := newTestServer(t)
+	fc := &fakeLLMConfigurator{cur: llm.Settings{
+		BaseURL: "http://old/v1", APIKey: "sk-from-env", APIKeyFromEnv: true,
+	}}
+	srv.SetLLMConfig(fc)
+
+	tok := mintToken(t, srv)
+	rec := llmPOST(t, srv, selfOrigin, tok, validLLMForm()) // no api_key field
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d", rec.Code)
+	}
+	if len(fc.applied) != 1 {
+		t.Fatalf("applied %d, want 1", len(fc.applied))
+	}
+	got := fc.applied[0]
+	if got.APIKey != "sk-from-env" {
+		t.Errorf("live key = %q, want the env key kept for the live client", got.APIKey)
+	}
+	if !got.APIKeyFromEnv {
+		t.Error("APIKeyFromEnv must stay true so persist suppresses the on-disk copy")
+	}
+}
+
+// TestLLMSaveTypedKeyOverridesEnv: typing a key when the current one is
+// env-sourced flips APIKeyFromEnv off — the user chose to store it (Option A),
+// so it must now persist.
+func TestLLMSaveTypedKeyOverridesEnv(t *testing.T) {
+	srv, _, _ := newTestServer(t)
+	fc := &fakeLLMConfigurator{cur: llm.Settings{APIKey: "sk-from-env", APIKeyFromEnv: true}}
+	srv.SetLLMConfig(fc)
+
+	tok := mintToken(t, srv)
+	form := validLLMForm()
+	form["api_key"] = "sk-typed-in-tab"
+	rec := llmPOST(t, srv, selfOrigin, tok, form)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d", rec.Code)
+	}
+	if got := fc.applied[0]; got.APIKey != "sk-typed-in-tab" || got.APIKeyFromEnv {
+		t.Errorf("applied = %+v, want typed key with APIKeyFromEnv=false", got)
+	}
+}
+
+// TestLLMSaveClearKeyWipes: the "Clear saved key" checkbox wipes the key even
+// when the field is blank, and marks it not-from-env so the empty value is
+// persisted (clearing the config copy).
+func TestLLMSaveClearKeyWipes(t *testing.T) {
+	srv, _, _ := newTestServer(t)
+	fc := &fakeLLMConfigurator{cur: llm.Settings{APIKey: "sk-old", APIKeyFromEnv: false}}
+	srv.SetLLMConfig(fc)
+
+	tok := mintToken(t, srv)
+	form := validLLMForm()
+	form["clear_api_key"] = "1"
+	rec := llmPOST(t, srv, selfOrigin, tok, form)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d", rec.Code)
+	}
+	if got := fc.applied[0]; got.APIKey != "" || got.APIKeyFromEnv {
+		t.Errorf("applied = %+v, want wiped key (APIKey=\"\", APIKeyFromEnv=false)", got)
 	}
 }

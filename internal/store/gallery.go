@@ -16,12 +16,20 @@ import (
 // construction: ReplaceConversationMessages stamps one source per replace and
 // conversations are UNIQUE(source, name)).
 type GalleryFilter struct {
-	ConversationID int64
-	Source         string
-	Domain         string // links only; exact match after www-stripping (MCP list_links)
-	StartUnix      int64
-	EndUnix        int64
-	Limit          int
+	// ConversationIDs limits results to any of these conversations (issue #6:
+	// the Media filter is multi-select). Empty means all conversations; ids
+	// bind as an IN(...) parameter set, never string-interpolated.
+	ConversationIDs []int64
+	Source          string
+	Domain          string // links only; exact match after www-stripping (MCP list_links)
+	StartUnix       int64
+	EndUnix         int64
+	Limit           int
+	// SortAsc flips the attachment walk to oldest-first; the zero value keeps
+	// the newest-first default. Links stay domain-ordered regardless (their
+	// display order is grouped, not chronological), so this only steers
+	// ListAttachments (Images/Files).
+	SortAsc bool
 }
 
 // MediaItem is one attachment (image or file) with the provenance needed to
@@ -85,14 +93,22 @@ type LinkPage struct {
 	Next    LinkCursor
 }
 
+// inPlaceholders returns a "?,?,..." list of n bound-parameter placeholders
+// for an IN(...) set.
+func inPlaceholders(n int) string {
+	return strings.TrimSuffix(strings.Repeat("?,", n), ",")
+}
+
 // attachmentClauses builds WHERE clauses (alias a) for attachments queries.
 // Only denormalized columns appear — see GalleryFilter.
 func attachmentClauses(f GalleryFilter) ([]string, []any) {
 	var where []string
 	var args []any
-	if f.ConversationID > 0 {
-		where = append(where, "a.conversation_id = ?")
-		args = append(args, f.ConversationID)
+	if n := len(f.ConversationIDs); n > 0 {
+		where = append(where, "a.conversation_id IN ("+inPlaceholders(n)+")")
+		for _, id := range f.ConversationIDs {
+			args = append(args, id)
+		}
 	}
 	if f.Source != "" {
 		where = append(where, "a.conversation_id IN (SELECT id FROM conversations WHERE source = ?)")
@@ -114,9 +130,11 @@ func attachmentClauses(f GalleryFilter) ([]string, []any) {
 func linkClauses(f GalleryFilter) ([]string, []any) {
 	var where []string
 	var args []any
-	if f.ConversationID > 0 {
-		where = append(where, "l.conversation_id = ?")
-		args = append(args, f.ConversationID)
+	if n := len(f.ConversationIDs); n > 0 {
+		where = append(where, "l.conversation_id IN ("+inPlaceholders(n)+")")
+		for _, id := range f.ConversationIDs {
+			args = append(args, id)
+		}
 	}
 	if f.Source != "" {
 		where = append(where, "l.conversation_id IN (SELECT id FROM conversations WHERE source = ?)")
@@ -174,17 +192,18 @@ func galleryLimit(f GalleryFilter, def, max int) int {
 //     within a kind, so the scan emits rows already in display order and stops
 //     at LIMIT — no sort, no messages touch (measured 357 ms → 10 ms).
 //   - Conversation-filtered paths seek idx_attachments_conv_kind instead: the
-//     candidate set is bounded by that conversation's attachments, so the
-//     residual sort is small; walking the kind_ts index here would degrade to
-//     a full-index walk for conversations with few recent attachments
-//     (measured 104 ms vs 1 ms on a sparse conversation).
+//     candidate set is bounded by the selected conversations' attachments
+//     (SQLite runs an IN(...) over the index's leading column as one seek per
+//     id), so the residual sort is small; walking the kind_ts index here would
+//     degrade to a full-index walk for conversations with few recent
+//     attachments (measured 104 ms vs 1 ms on a sparse conversation).
 //
 // messages and conversations are joined unaliased and only by INTEGER PRIMARY
 // KEY for the ≤ limit result rows — plans SEARCH them, never SCAN.
 func listAttachmentsSQL(kind string, f GalleryFilter, cursorTSUnix, cursorID int64, limit int) (string, []any) {
 	clauses, filterArgs := attachmentClauses(f)
 	idx := "idx_attachments_kind_ts"
-	if f.ConversationID > 0 {
+	if len(f.ConversationIDs) > 0 {
 		idx = "idx_attachments_conv_kind"
 	}
 	q := `
@@ -196,23 +215,37 @@ SELECT a.id, a.conversation_id, conversations.name, conversations.source, a.mess
  WHERE a.kind = ?` + andSQL(clauses)
 	args := append([]any{kind}, filterArgs...)
 	if cursorTSUnix != 0 || cursorID != 0 {
-		// (ts_unix, id) < (cursor) — spelled with a redundant ts_unix <= bound so
-		// the index seeks straight to the cursor instead of re-walking and
-		// discarding every newer entry on each page.
-		q += ` AND a.ts_unix <= ? AND (a.ts_unix < ? OR a.id < ?)`
+		// Keyset seek in the walk direction: newest-first pages continue strictly
+		// before the cursor, oldest-first strictly after it. Each is spelled with
+		// a redundant ts_unix bound so the pinned index seeks straight to the
+		// cursor instead of re-walking and discarding every already-shown entry.
+		if f.SortAsc {
+			q += ` AND a.ts_unix >= ? AND (a.ts_unix > ? OR a.id > ?)`
+		} else {
+			q += ` AND a.ts_unix <= ? AND (a.ts_unix < ? OR a.id < ?)`
+		}
 		args = append(args, cursorTSUnix, cursorTSUnix, cursorID)
 	}
-	q += `
+	// Same pinned index serves both directions — SQLite walks it forward for ASC
+	// and backward for DESC, emitting rows already in display order (no sort).
+	if f.SortAsc {
+		q += `
+ ORDER BY a.ts_unix ASC, a.id ASC
+ LIMIT ?`
+	} else {
+		q += `
  ORDER BY a.ts_unix DESC, a.id DESC
  LIMIT ?`
+	}
 	args = append(args, limit)
 	return q, args
 }
 
 // ListAttachments returns one page of attachments of the given kind ("image"
-// or "file"), newest first, matching the filter. A zero cursor starts from the
-// newest; passing the previous page's NextTSUnix/NextID continues strictly
-// after it. Page size is f.Limit (default 200, max 1000).
+// or "file") matching the filter, ordered newest-first by default or
+// oldest-first when f.SortAsc is set. A zero cursor starts from the leading
+// edge; passing the previous page's NextTSUnix/NextID continues strictly after
+// it in the chosen order. Page size is f.Limit (default 200, max 1000).
 func (s *Store) ListAttachments(ctx context.Context, kind string, f GalleryFilter, cursorTSUnix, cursorID int64) (*MediaPage, error) {
 	limit := galleryLimit(f, 200, 1000)
 	// Fetch limit+1 to detect whether more pages exist.

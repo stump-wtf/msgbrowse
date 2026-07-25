@@ -4,14 +4,19 @@
      keeps history entries titled; the define owns <main id="main-content"> so
      partial responses carry no shell. */}}
 {{define "status_content"}}<title>{{.Title}}</title>
-    <main id="main-content" class="flex-1" tabindex="0">
-  {{/* Status & backups (REQ-0006-011): re-skinned to the slate system — slate
+    {{/* hx-history="false": the Build / Reset forms carry a live per-session
+         setup token (the privileged-POST gate), which must not be snapshotted
+         into htmx's localStorage history cache — the same opt-out the LLM tab
+         and the Settings pairing page use. */}}
+    <main id="main-content" class="flex-1" tabindex="0" hx-history="false">
+  {{/* Status (REQ-0006-011): re-skinned to the slate system — slate
        surfaces/borders, mono tabular values — with no behavioral change. Keeps
-       the archive-freshness stat strip, the ingest-run metric grid, and the
-       snapshot table. The counts come from dedicated fields (not
-       len .Conversations) so partial renders can skip the sidebar listing.
-       Renders inside the Settings shell (issue #163): shared h1 + sub-nav,
-       with /status staying the canonical URL. */}}
+       the archive-freshness stat strip and the ingest-run metric grid; the
+       encrypted-DB-snapshot inventory graduated to its own Backups tab
+       (issue #2). The counts come from dedicated fields (not len .Conversations)
+       so partial renders can skip the sidebar listing. Renders inside the
+       Settings shell (issue #163): shared h1 + sub-nav, with /status staying
+       the canonical URL. */}}
   <div class="px-6 lg:px-8 py-8 max-w-4xl space-y-5">
     <h1 class="screen-h1">Settings</h1>
     {{template "settings_subnav" "status"}}
@@ -50,11 +55,113 @@
       {{end}}
     </div>
 
+    {{/* Semantic search index (#191): the in-app management the Overview card
+         links here for. Coverage + last-run + live in-progress marker (the
+         same embedStatusData the Overview shows) plus the Build /
+         Reset-&-rebuild controls the CLI-only `msgbrowse embed` used to be the
+         only way to drive. role="status" aria-live="polite" like the device
+         sync card, so the post-action banner is announced. */}}
+    <div class="status-card" role="status" aria-live="polite">
+      <div class="status-card-title">Semantic search index</div>
+
+      {{- if eq .IndexResult "started"}}
+      <div class="notice-card mb-4">
+        <p class="link-card-title">Indexing started.</p>
+        <p class="link-card-sub">Embedding the messages that still need a vector. Refresh this page to
+          watch coverage climb.</p>
+      </div>
+      {{- else if eq .IndexResult "reset"}}
+      <div class="notice-card mb-4">
+        <p class="link-card-title">Reset &amp; rebuild started.</p>
+        <p class="link-card-sub">The index was cleared and is rebuilding from scratch. Refresh this page
+          to watch coverage climb.</p>
+      </div>
+      {{- else if eq .IndexResult "inprogress"}}
+      <div class="notice-card mb-4">
+        <p class="link-card-title">A run is already in progress.</p>
+        <p class="link-card-sub">Nothing new was started — the running job continues.</p>
+      </div>
+      {{- else if eq .IndexResult "nomodel"}}
+      <div class="notice-card mb-4">
+        <p class="link-card-title">No embedding model configured.</p>
+        <p class="link-card-sub">Set an embed model on the <a href="/settings/llm" class="link link-hover">LLM
+          settings</a> tab, then build the index.</p>
+      </div>
+      {{- else if eq .IndexResult "unavailable"}}
+      <div class="notice-card mb-4">
+        <p class="link-card-title">Index management is not available here.</p>
+        <p class="link-card-sub">This server was started without an indexer. Run
+          <code class="font-mono">msgbrowse embed</code> from the command line instead.</p>
+      </div>
+      {{- else if eq .IndexResult "error"}}
+      <div class="notice-card mb-4">
+        <p class="link-card-title">The index job could not start.</p>
+        <p class="link-card-sub">See Logs for details and try again.</p>
+      </div>
+      {{- end}}
+
+      {{if not .IndexAvailable}}
+      <p class="status-note">Index management is unavailable in this mode. Run
+        <code class="font-mono">msgbrowse embed</code> from the command line to build the semantic index.</p>
+      {{else if not .Embedding.Configured}}
+      <p class="status-note">Semantic search is not configured. Set an embedding model on the
+        <a href="/settings/llm" class="link link-hover">LLM settings</a> tab, then build the index.</p>
+      {{else}}
+      {{if .Embedding.InProgress}}
+      <p class="status-note mb-4"><span class="sync-badge sync-badge-info">Indexing…</span>
+        {{num .Embedding.RunEmbedded}} messages embedded so far in the current run.</p>
+      {{else if .Embedding.Stalled}}
+      <p class="status-note mb-4"><span class="sync-badge sync-badge-warn">Interrupted</span>
+        The last index run stopped before finishing — build again to resume where it left off.</p>
+      {{end}}
+      <div class="status-grid">
+        <div><div class="status-metric-label">Coverage</div>
+          <div class="status-metric-value">{{num .Embedding.Embedded}} of {{num .Embedding.Embeddable}} messages ({{.Embedding.Percent}}%)</div></div>
+        <div><div class="status-metric-label">Embedding model</div>
+          <div class="status-metric-value">{{.Embedding.Model}}</div></div>
+        <div><div class="status-metric-label">Last index run</div>
+          <div class="status-metric-value">
+            {{- if .Embedding.HasLastRun}}{{.Embedding.LastFinished}} · {{num .Embedding.LastEmbedded}} embedded in {{num .Embedding.LastDurationMS}} ms
+              {{- if and .Embedding.LastModel (ne .Embedding.LastModel .Embedding.Model)}} <span class="opacity-60">(model {{.Embedding.LastModel}})</span>{{end}}
+            {{- else if .Embedding.InProgress}}running now
+            {{- else}}never{{end -}}
+          </div></div>
+      </div>
+      {{if .Embedding.LastError}}
+      <p class="status-note mt-4"><span class="sync-badge sync-badge-err">Failed</span>
+        Last run aborted: <span class="font-mono">{{.Embedding.LastError}}</span></p>
+      {{end}}
+
+      {{/* Build / Reset controls — privileged same-origin form POSTs carrying
+           the per-session token, boosted to swap only #main-content (no inline
+           JS; CSP-clean). Disabled while a run is in progress so a second
+           click cannot race the guard. */}}
+      <div class="flex flex-wrap gap-3 mt-4">
+        <form method="post" action="/status/index"
+              hx-boost="true" hx-target="#main-content" hx-select="#main-content" hx-swap="outerHTML">
+          <input type="hidden" name="setup_token" value="{{.SetupToken}}">
+          <button type="submit" class="setup-btn"{{if .Embedding.InProgress}} disabled{{end}}>Build index</button>
+        </form>
+        <form method="post" action="/status/index/reset"
+              hx-boost="true" hx-target="#main-content" hx-select="#main-content" hx-swap="outerHTML">
+          <input type="hidden" name="setup_token" value="{{.SetupToken}}">
+          <button type="submit" class="setup-btn setup-btn-ghost"{{if .Embedding.InProgress}} disabled{{end}}>Reset &amp; rebuild</button>
+        </form>
+      </div>
+      <p class="status-note mt-3">Build embeds the messages that still need a vector; Reset &amp; rebuild
+        clears the whole index and re-embeds from scratch (useful after changing the embedding model).</p>
+      {{end}}
+    </div>
+
     {{/* Device sync (#158; SPEC-0014 REQ "Status and Doctor Surfacing"):
          engine state, per-peer connection, and per-folder health/completion —
          Syncthing's state surfaced HERE so the user never opens its GUI.
          Disabled (the default) renders one neutral line; enabled-but-
-         unreadable renders a pointer to Logs instead of fake numbers. */}}
+         unreadable renders a pointer to Logs instead of fake numbers.
+
+         Gated on DeviceSyncFeature (the `devicesync` build tag): a release build
+         omits the feature, so this whole block is absent. */}}
+    {{- if .DeviceSyncFeature}}
     {{if not .DeviceSyncEnabled}}
     <p class="status-note">Device sync is off (the default). Pair devices from Settings after enabling
       <code class="font-mono">device_sync</code> in your config.</p>
@@ -118,41 +225,7 @@
       {{end}}
     </div>
     {{end}}
-
-    {{/* The snapshots card renders only where a snapshot pipeline exists
-         (issue #164): recorded snapshots, or a .snapshots dir in the signal
-         archive. A desktop-onboarded machine has neither — "0 B across 0
-         snapshots … No snapshots found" read like a failure there, so it gets
-         one neutral line instead. */}}
-    {{if .HasSnapshotPipeline}}
-    <div class="status-card">
-      <div class="status-card-title">Encrypted DB snapshots</div>
-      <p class="status-note mb-4">Total footprint: <span class="font-mono">{{humanSize .SnapshotFootprint}}</span> across <span class="font-mono">{{num (len .Snapshots)}}</span> snapshots.
-        These are SQLCipher-encrypted raw database backups for disaster recovery —
-        msgbrowse lists them but never opens or decrypts them.</p>
-      {{if .Snapshots}}
-      <div class="overflow-x-auto">
-        <table class="status-table">
-          <thead><tr><th>Snapshot</th><th>Taken</th><th>Size</th><th>Retention tier</th></tr></thead>
-          <tbody>
-            {{- range .Snapshots}}
-            <tr>
-              <td class="mono">{{.Filename}}</td>
-              <td class="whitespace-nowrap">{{.TakenAt.Format "2006-01-02 15:04"}}</td>
-              <td class="whitespace-nowrap mono">{{humanSize .SizeBytes}}</td>
-              <td><span class="tier-pill tier-{{.Tier}}">{{.Tier}}</span></td>
-            </tr>
-            {{- end}}
-          </tbody>
-        </table>
-      </div>
-      {{else}}
-      <p class="results-empty">No snapshots found under <code class="font-mono">.snapshots/</code>.</p>
-      {{end}}
-    </div>
-    {{else}}
-    <p class="status-note">No snapshot pipeline on this machine.</p>
-    {{end}}
+    {{- end}}
   </div>
     </main>
 {{end}}

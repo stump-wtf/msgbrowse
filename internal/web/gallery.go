@@ -15,11 +15,18 @@ import (
 
 // galleryFilterForm is the re-renderable filter state for the gallery.
 type galleryFilterForm struct {
-	Tab            string
-	ConversationID int64
-	Source         string
-	Start          string
-	End            string
+	Tab string
+	// ConversationIDs is the multi-select conversation filter (issue #6): every
+	// checked conversation travels as its own repeated ?conversation= parameter.
+	// Empty means all conversations.
+	ConversationIDs []int64
+	Source          string
+	Start           string
+	End             string
+	// Sort is the attachment display order (sortDesc default / sortAsc), carried
+	// on tab links and load-more URLs so it survives tab switches and
+	// infinite-scroll pagination. Mirrors the transcript's ?sort= convention.
+	Sort string
 }
 
 // galleryFileView decorates a file attachment with its on-disk size and type,
@@ -28,6 +35,12 @@ type galleryFileView struct {
 	store.MediaItem
 	SizeHuman   string
 	ContentType string
+	// Missing marks a DB row whose file can't be resolved or isn't on disk in
+	// the archive on this machine (issues #4/#15): the template renders an
+	// inert labeled card instead of a download link — a click on such a link
+	// fetches a 404 under a `download` attribute, which browsers surface as a
+	// silently failed download ("clicking does nothing").
+	Missing bool
 }
 
 // linkGroup is a set of deduplicated links sharing a domain. Total is the
@@ -67,16 +80,24 @@ type galleryData struct {
 	// id+name listing, NOT the sidebar summaries, so partial renders never need
 	// the expensive listing (SPEC-0008 REQ-0008-006). Ordered alphabetically.
 	FilterConversations []store.ConversationRef
-	Filter              galleryFilterForm
-	Sources             []string
-	Counts              store.MediaCounts
-	ImagesPage          galleryImagesData
-	FilesPage           galleryFilesData
-	LinksPage           galleryLinksData
+	// ConversationFilterLabel is the collapsed multi-select's summary text
+	// ("All conversations", one name, or "N conversations").
+	ConversationFilterLabel string
+	Filter                  galleryFilterForm
+	Sources                 []string
+	Counts                  store.MediaCounts
+	ImagesPage              galleryImagesData
+	FilesPage               galleryFilesData
+	LinksPage               galleryLinksData
 }
 
 // validTabs are the gallery's three views.
 var validTabs = map[string]bool{"images": true, "files": true, "links": true}
+
+// maxConversationFilterIDs caps how many distinct ?conversation= ids a request
+// may carry. The UI can never produce more than one per conversation, so the
+// cap only bites hand-crafted URLs.
+const maxConversationFilterIDs = 200
 
 func (s *Server) handleGallery(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
@@ -110,11 +131,12 @@ func (s *Server) handleGallery(w http.ResponseWriter, r *http.Request) {
 	}
 
 	data := galleryData{
-		baseData:            base,
-		FilterConversations: refs,
-		Filter:              form,
-		Sources:             source.All,
-		Counts:              counts,
+		baseData:                base,
+		FilterConversations:     refs,
+		ConversationFilterLabel: conversationFilterLabel(form.ConversationIDs, refs),
+		Filter:                  form,
+		Sources:                 source.All,
+		Counts:                  counts,
 	}
 
 	switch form.Tab {
@@ -193,16 +215,17 @@ func parseInt64(s string) int64 {
 }
 
 // decorateFiles stats each file in the read-only archive to add size and type.
-// Files that can't be stat'd (missing/renamed) still render, just without
-// size/type, so the listing never fails on a single bad attachment.
+// Files that can't be stat'd (missing/renamed) still render — flagged Missing,
+// without size/type — so the listing never fails on a single bad attachment.
 func (s *Server) decorateFiles(items []store.MediaItem) []galleryFileView {
 	out := make([]galleryFileView, 0, len(items))
 	for _, it := range items {
-		v := galleryFileView{MediaItem: it}
+		v := galleryFileView{MediaItem: it, Missing: true}
 		if full, ok := s.mediaFilePath(it.Source, it.ConversationName, it.RelPath); ok {
 			if info, err := os.Stat(full); err == nil && !info.IsDir() {
 				v.SizeHuman = humanSize(info.Size())
 				v.ContentType = fileContentType(full)
+				v.Missing = false
 			}
 		}
 		out = append(out, v)
@@ -253,22 +276,72 @@ func parseGalleryFilter(r *http.Request) (galleryFilterForm, store.GalleryFilter
 	if !validTabs[tab] {
 		tab = "images"
 	}
-	convID, _ := strconv.ParseInt(r.URL.Query().Get("conversation"), 10, 64)
+	// Multi-select conversation filter (issue #6): every checked box repeats
+	// ?conversation=. Garbage and duplicates drop out; an empty set means all.
+	// The set is capped well below SQLite's bound-parameter limit (32766 for
+	// modernc.org/sqlite) — each id becomes one IN(...) parameter, and without
+	// a cap a crafted URL could make every gallery query fail at prepare.
+	var convIDs []int64
+	seen := map[int64]bool{}
+	for _, raw := range r.URL.Query()["conversation"] {
+		id, err := strconv.ParseInt(raw, 10, 64)
+		if err != nil || id <= 0 || seen[id] {
+			continue
+		}
+		seen[id] = true
+		convIDs = append(convIDs, id)
+		if len(convIDs) == maxConversationFilterIDs {
+			break
+		}
+	}
 	src := r.URL.Query().Get("source")
 	if !source.IsKnown(src) {
 		src = ""
 	}
 	start := r.URL.Query().Get("start")
 	end := r.URL.Query().Get("end")
+	sort := parseSort(r) // sortDesc (newest-first) default; sortAsc for oldest-first
 
-	form := galleryFilterForm{Tab: tab, ConversationID: convID, Source: src, Start: start, End: end}
+	form := galleryFilterForm{Tab: tab, ConversationIDs: convIDs, Source: src, Start: start, End: end, Sort: sort}
 	filter := store.GalleryFilter{
-		ConversationID: convID,
-		Source:         src,
-		StartUnix:      dayStartUnix(start),
-		EndUnix:        dayEndUnix(end),
+		ConversationIDs: convIDs,
+		Source:          src,
+		StartUnix:       dayStartUnix(start),
+		EndUnix:         dayEndUnix(end),
+		SortAsc:         sort == sortAsc,
 	}
 	return form, filter
+}
+
+// HasConversation reports whether the given conversation id is part of the
+// active filter. Exported so the template can mark its checkbox checked.
+func (f galleryFilterForm) HasConversation(id int64) bool {
+	for _, c := range f.ConversationIDs {
+		if c == id {
+			return true
+		}
+	}
+	return false
+}
+
+// conversationFilterLabel is the collapsed multi-select's summary text: the
+// one selected conversation's display name, a count for several, or "All
+// conversations" for none. Ids that no longer resolve to a conversation still
+// count — the filter genuinely narrows to them (to nothing).
+func conversationFilterLabel(ids []int64, refs []store.ConversationRef) string {
+	switch len(ids) {
+	case 0:
+		return "All conversations"
+	case 1:
+		for _, ref := range refs {
+			if ref.ID == ids[0] {
+				return humanName(ref.Name)
+			}
+		}
+		return "1 conversation"
+	default:
+		return strconv.Itoa(len(ids)) + " conversations"
+	}
 }
 
 // filterValues returns the querystring values that preserve the current
@@ -276,8 +349,8 @@ func parseGalleryFilter(r *http.Request) (galleryFilterForm, store.GalleryFilter
 func (f galleryFilterForm) filterValues(tab string) url.Values {
 	v := url.Values{}
 	v.Set("tab", tab)
-	if f.ConversationID > 0 {
-		v.Set("conversation", strconv.FormatInt(f.ConversationID, 10))
+	for _, id := range f.ConversationIDs {
+		v.Add("conversation", strconv.FormatInt(id, 10))
 	}
 	if f.Source != "" {
 		v.Set("source", f.Source)
@@ -287,6 +360,11 @@ func (f galleryFilterForm) filterValues(tab string) url.Values {
 	}
 	if f.End != "" {
 		v.Set("end", f.End)
+	}
+	// Only the non-default order needs to travel; absent ?sort= reads as
+	// newest-first in parseGalleryFilter, keeping default URLs clean.
+	if f.Sort == sortAsc {
+		v.Set("sort", sortAsc)
 	}
 	return v
 }
@@ -304,7 +382,7 @@ func (f galleryFilterForm) GalleryQuery(tab string) string {
 // links, so the deep link's shape (and parseGalleryFilter round-trip) stays
 // identical to what the gallery emits for itself.
 func galleryConvURL(tab string, convID int64) string {
-	return galleryFilterForm{Tab: tab, ConversationID: convID}.GalleryQuery(tab)
+	return galleryFilterForm{Tab: tab, ConversationIDs: []int64{convID}}.GalleryQuery(tab)
 }
 
 // attachmentsNextURL builds the /gallery/items URL for the page after this

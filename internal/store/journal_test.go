@@ -12,14 +12,6 @@ import (
 	_ "modernc.org/sqlite"
 )
 
-// sysMsg builds a system/timeline message (is_system=1) for seeding — the
-// journal must exclude these from every count and transcript.
-func sysMsg(conv, ts string) signal.Message {
-	m := msg(conv, ts, signal.SystemSender, "you called", nil, nil)
-	m.IsSystem = true
-	return m
-}
-
 // TestMigrateV10ToV11AddsJournalTables walks the real migration chain to v10,
 // then runs the runner and asserts schemaV11 lands the two journal tables plus
 // the digest index, and that the FK-less migration commits cleanly.
@@ -76,7 +68,7 @@ func TestBuildJournalDaysAggregates(t *testing.T) {
 		msg("Harper", "2023-05-01 09:00:00", "Harper", "morning", nil, nil),
 		msg("Harper", "2023-05-01 09:05:00", signal.OwnerSender, "hi", nil, nil),
 		msg("Harper", "2023-05-01 09:06:00", "Harper", "coffee?", nil, nil),
-		sysMsg("Harper", "2023-05-01 09:10:00"),                         // excluded: system
+		sysMsg("Harper", "2023-05-01 09:10:00", "you called"),           // excluded: system
 		msg("Harper", "2023-05-01 09:11:00", "Harper", "   ", nil, nil), // excluded: empty
 		msg("Harper", "2023-05-02 12:00:00", "Harper", "next day", nil, nil),
 	}); err != nil {
@@ -328,7 +320,7 @@ func TestDayTranscriptEnrichesAndExcludes(t *testing.T) {
 		msg("Harper", "2023-05-01 09:00:00", "Harper", "look at this",
 			[]signal.Attachment{{Kind: signal.KindImage, RelPath: "media/a.jpg", OriginalName: "a.jpg"}},
 			[]signal.Link{{URL: "https://example.com/x"}}),
-		sysMsg("Harper", "2023-05-01 09:05:00"), // must not appear
+		sysMsg("Harper", "2023-05-01 09:05:00", "you called"), // must not appear
 	}); err != nil {
 		t.Fatal(err)
 	}

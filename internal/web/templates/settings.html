@@ -1,12 +1,16 @@
 {{define "settings"}}{{template "page_start" .}}{{template "settings_content" .}}{{template "page_end" .}}{{end}}
 
 {{/* settings_subnav is the Settings shell's sub-navigation (issue #163):
-     Settings · Providers · Logs · Status & backups · LLM, rendered at the top
-     of each section's page so they read as one surface instead of link-card
-     jumps to standalone destinations. Providers joined the shell in #175 (it
-     left the sidebar — a configuration surface, not a primary destination);
-     LLM joined last in #191 (the AI endpoint tab). The dot is the active
-     tab's token ("settings" / "providers" / "logs" / "status" / "llm"); the
+     Settings · Providers · Logs · Status · Backups · LLM · Contacts, rendered
+     at the top of each section's page so they read as one surface instead of
+     link-card jumps to standalone destinations. Providers joined the shell in
+     #175 (it left the sidebar — a configuration surface, not a primary
+     destination); LLM joined in #191 (the AI endpoint tab); Backups split off
+     Status in #2 (the encrypted-DB-snapshot inventory graduated to its own tab,
+     so Status is once again just ingest health); Contacts joined in #12 (the
+     cross-provider merge-rules + manual override surface). The dot is the active
+     tab's token ("settings" / "providers" / "logs" / "status" / "backups" /
+     "llm" / "contacts"); the
      active tab carries aria-current so the state is conveyed as more than
      color (SPEC-0013 §Accessibility spirit). Boosted like every in-app nav
      (SPEC-0008 REQ-0008-006), so switching tabs swaps only #main-content; the
@@ -17,43 +21,23 @@
       <a href="/settings" class="settings-tab{{if eq . "settings"}} settings-tab-active{{end}}"{{if eq . "settings"}} aria-current="page"{{end}}>Settings</a>
       <a href="/providers" class="settings-tab{{if eq . "providers"}} settings-tab-active{{end}}"{{if eq . "providers"}} aria-current="page"{{end}}>Providers</a>
       <a href="/logs" class="settings-tab{{if eq . "logs"}} settings-tab-active{{end}}"{{if eq . "logs"}} aria-current="page"{{end}}>Logs</a>
-      <a href="/status" class="settings-tab{{if eq . "status"}} settings-tab-active{{end}}"{{if eq . "status"}} aria-current="page"{{end}}>Status &amp; backups</a>
+      <a href="/status" class="settings-tab{{if eq . "status"}} settings-tab-active{{end}}"{{if eq . "status"}} aria-current="page"{{end}}>Status</a>
+      <a href="/backups" class="settings-tab{{if eq . "backups"}} settings-tab-active{{end}}"{{if eq . "backups"}} aria-current="page"{{end}}>Backups</a>
       <a href="/settings/llm" class="settings-tab{{if eq . "llm"}} settings-tab-active{{end}}"{{if eq . "llm"}} aria-current="page"{{end}}>LLM</a>
+      <a href="/settings/contacts" class="settings-tab{{if eq . "contacts"}} settings-tab-active{{end}}"{{if eq . "contacts"}} aria-current="page"{{end}}>Contacts</a>
     </nav>
 {{end}}
 
-{{/* settings_content is the boosted-swap unit (SPEC-0008 REQ-0008-006, the
-     *_content pattern): <title> keeps history entries titled; the define owns
-     <main id="main-content"> so partial responses carry no shell.
-
-     Connect/Settings (SPEC-0010): the MCP endpoint URL, JSON client config,
-     and `claude mcp add` line — each with an icon-only copy button — plus the
-     device-sync pairing section (SPEC-0014: this node's Syncthing device-ID
-     QR + manual code, the pair form, and the paired-device registry). Copy
-     buttons are wired by /static/copy.js via data-copy-target (no inline
-     handlers — script-src 'self'); confirmations are announced through the
-     aria-live region below and shown visually by the button's copy→check icon
-     swap. Every value is also selectable text, so nothing depends on the
-     clipboard or the QR image alone. Logs and Status & backups render under
-     the same shell via the sub-nav above (issue #163). */}}
-{{define "settings_content"}}<title>{{.Title}}</title>
-    {{/* hx-history="false": the pair form carries a live per-session setup
-         token (the privileged-POST gate). Without this, a boosted navigation
-         away snapshots this page (token included) into htmx's localStorage
-         history cache, where it would outlive the session. The device-ID
-         payload itself is public (SPEC-0014 §Trust Model) — the token is why
-         the history opt-out stays. */}}
-    <main id="main-content" class="flex-1" tabindex="0" hx-history="false">
-  <div class="px-6 lg:px-8 py-8 max-w-4xl space-y-5">
-    <h1 class="screen-h1">Settings</h1>
-    {{template "settings_subnav" "settings"}}
-    <p class="screen-sub">Connect an MCP client to this archive, or pair another device.</p>
-
-    {{/* Copy confirmations land here for assistive tech (SPEC-0010
-         §Accessibility "Dynamic feedback"): polite live region, visually
-         hidden, updated by copy.js on every successful copy. */}}
-    <p id="copy-announce" class="sr-only" aria-live="polite"></p>
-
+{{/* mcp_connect_card is the MCP connection card — endpoint URL, client JSON,
+     and the `claude mcp add` one-liner, each with an icon-only copy button
+     wired by /static/copy.js via data-copy-target (no inline handlers —
+     script-src 'self'; confirmations announce into the shared #copy-announce
+     region in the page shell). It is SHARED verbatim by Settings and the
+     Overview (issue #1), so the two surfaces can never drift; the dot needs
+     .MCPEndpointURL / .MCPConfigJSON / .MCPAddCommand (settingsData and
+     indexData both carry them). The element ids inside are unique per page —
+     the two surfaces never render together. */}}
+{{define "mcp_connect_card"}}
     <section class="status-card space-y-4" aria-labelledby="settings-mcp-heading">
       <h2 id="settings-mcp-heading" class="status-card-title">MCP server</h2>
       <p class="status-note">Point Claude Desktop or Claude Code at this archive over streamable HTTP.
@@ -96,12 +80,50 @@
         </div>
       </div>
     </section>
+{{end}}
+
+{{/* settings_content is the boosted-swap unit (SPEC-0008 REQ-0008-006, the
+     *_content pattern): <title> keeps history entries titled; the define owns
+     <main id="main-content"> so partial responses carry no shell.
+
+     Connect/Settings (SPEC-0010): the MCP endpoint URL, JSON client config,
+     and `claude mcp add` line — each with an icon-only copy button — plus the
+     device-sync pairing section (SPEC-0014: this node's Syncthing device-ID
+     QR + manual code, the pair form, and the paired-device registry). Copy
+     buttons are wired by /static/copy.js via data-copy-target (no inline
+     handlers — script-src 'self'); confirmations are announced through the
+     shared #copy-announce aria-live region in the page shell (page_end, #14)
+     and shown visually by the button's copy→check icon swap. Every value is
+     also selectable text, so nothing depends on the
+     clipboard or the QR image alone. Logs and Status & backups render under
+     the same shell via the sub-nav above (issue #163). */}}
+{{define "settings_content"}}<title>{{.Title}}</title>
+    {{/* hx-history="false": the pair form carries a live per-session setup
+         token (the privileged-POST gate). Without this, a boosted navigation
+         away snapshots this page (token included) into htmx's localStorage
+         history cache, where it would outlive the session. The device-ID
+         payload itself is public (SPEC-0014 §Trust Model) — the token is why
+         the history opt-out stays. */}}
+    <main id="main-content" class="flex-1" tabindex="0" hx-history="false">
+  <div class="px-6 lg:px-8 py-8 max-w-4xl space-y-5">
+    <h1 class="screen-h1">Settings</h1>
+    {{template "settings_subnav" "settings"}}
+    <p class="screen-sub">Connect an MCP client to this archive, or pair another device.</p>
+
+    {{/* Copy confirmations announce into the shared #copy-announce live region
+         in the page shell (page_end, #14) — no per-page region needed. */}}
+
+    {{template "mcp_connect_card" .}}
 
     {{/* Device sync (SPEC-0014 REQ "Pairing via Device ID and QR"): the QR and
          manual code carry this node's PUBLIC Syncthing device ID + folder
          introduction — never a secret. Pairing is symmetric explicit-accept:
          each node pastes/scans the OTHER node's code, and no archive data
-         flows until both have (SPEC-0014 §Trust Model). */}}
+         flows until both have (SPEC-0014 §Trust Model).
+
+         The whole section is gated on DeviceSyncFeature — the `devicesync` build
+         tag. Release builds omit the feature, so nothing here renders. */}}
+    {{- if .DeviceSyncFeature}}
     <section class="status-card space-y-4" aria-labelledby="settings-pairing-heading">
       <h2 id="settings-pairing-heading" class="status-card-title">Device sync</h2>
       {{- if .UnpairResult}}
@@ -307,6 +329,7 @@
       </div>
       {{- end}}
     </section>
+    {{- end}}
   </div>
     </main>
 {{end}}

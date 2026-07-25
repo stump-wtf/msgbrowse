@@ -107,8 +107,12 @@ func TestSetupFullPageRendersCards(t *testing.T) {
 			t.Errorf("full /setup missing card %q", want)
 		}
 	}
-	if n := strings.Count(body, `class="setup-card `); n != 3 {
-		t.Errorf("full /setup rendered %d source cards, want 3", n)
+	// Three real source cards plus the Telegram "coming soon" placeholder = 4.
+	if n := strings.Count(body, `class="setup-card `); n != 4 {
+		t.Errorf("full /setup rendered %d cards, want 4 (3 sources + Telegram coming-soon)", n)
+	}
+	if !contains(body, `aria-label="Telegram: coming soon"`) {
+		t.Errorf("full /setup missing the Telegram coming-soon card")
 	}
 }
 
@@ -325,13 +329,57 @@ func TestBuiltCSSCarriesSetupComponents(t *testing.T) {
 		".setup-guide-steps",
 		".setup-guide-result",
 		".setup-guide-close:focus-visible", // keyboard focus on the close control
-		// All-sources Refresh control (#135): the drift guard must carry the new
-		// classes so a stale app.css cannot ship the refresh control unstyled.
-		".setup-refresh-all",
-		".setup-refresh-all-result",
+		// Providers 2×2 grid + Telegram "coming soon" card: the drift guard must
+		// carry the new classes so a stale app.css cannot ship them unstyled.
+		".setup-card-coming-soon",
+		".setup-badge-coming-soon",
+		".src-telegram",
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("built app.css missing %q (rebuild: rm -rf .tools && make css)", want)
 		}
 	}
+}
+
+// TestSetupFooterThreeWay pins the issue #162 footer regression fix: the copy is
+// keyed on the page's real state across all THREE cases, so a machine with
+// nothing detected no longer claims its (non-existent) enabled sources refresh
+// automatically.
+func TestSetupFooterThreeWay(t *testing.T) {
+	// Case 1: nothing detected — neither actionable nor enabled. The footer must
+	// say so, NOT "Enabled sources refresh automatically".
+	t.Run("no sources detected", func(t *testing.T) {
+		srv := newEmptyStoreServer(t)
+		srv.SetDetector(detectorFor(t.TempDir(), false)) // empty HOME → all Not-detected
+		body := get(t, srv, "/providers").Body.String()
+		if !contains(body, "No message sources were detected") {
+			t.Errorf("empty machine missing the neutral footer:\n%s", footerOf(body))
+		}
+		if contains(body, "Enabled sources refresh automatically") {
+			t.Error("empty machine wrongly claims enabled sources auto-refresh")
+		}
+	})
+
+	// Case 2: a detected-but-not-enabled source is actionable.
+	t.Run("actionable", func(t *testing.T) {
+		srv := newEmptyStoreServer(t)
+		srv.SetDetector(detectorFor(signalPlusIMessageHome(t), false))
+		body := get(t, srv, "/providers").Body.String()
+		if !contains(body, "Detected sources can be enabled from here") {
+			t.Errorf("actionable machine missing the enable-nudge footer:\n%s", footerOf(body))
+		}
+	})
+}
+
+// footerOf extracts the setup footnote paragraph for a readable failure message.
+func footerOf(body string) string {
+	i := strings.Index(body, "setup-footnote")
+	if i < 0 {
+		return "(no setup-footnote found)"
+	}
+	end := i + 400
+	if end > len(body) {
+		end = len(body)
+	}
+	return body[i:end]
 }

@@ -52,8 +52,19 @@ func newLLMHolder(cfg *config.Config) *llm.Holder {
 		BaseURL:    cfg.LLM.BaseURL,
 		EmbedModel: cfg.LLM.EmbedModel,
 		ChatModel:  cfg.LLM.ChatModel,
+		APIKey:     cfg.LLM.APIKey,
+		// A key supplied through MSGBROWSE_LLM_API_KEY must never be written to
+		// the config file (that would leak an env-scoped secret to disk). viper's
+		// AutomaticEnv has already folded the env value into cfg.LLM.APIKey, so we
+		// read the raw env var to recover its provenance.
+		APIKeyFromEnv: os.Getenv(llmAPIKeyEnvVar) != "",
 	})
 }
+
+// llmAPIKeyEnvVar is the environment variable viper maps to llm.api_key
+// (SetEnvPrefix "MSGBROWSE" + the "." → "_" replacer). A non-empty value means
+// the effective key is env-provided and must not be persisted to config.
+const llmAPIKeyEnvVar = "MSGBROWSE_LLM_API_KEY"
 
 // llmConfigSavePath resolves where the Settings → LLM tab persists (#191):
 // the config file this process actually loaded, else the standard per-user
@@ -72,16 +83,25 @@ func llmConfigSavePath(cfg *config.Config) (string, error) {
 }
 
 // newLLMApplier builds the web layer's LLMConfigurator over holder: persist
-// the three llm keys into the resolved config file, then swap the live
-// client. The API key stays the boot-resolved value (MSGBROWSE_LLM_API_KEY /
-// config, per the config posture) — it is not editable from the tab.
+// the llm keys (base URL, both models, and the API key) into the resolved
+// config file, then swap the live client. The key is editable from the tab
+// and stored in the 0600 config file (Option A — a desktop user has no handy
+// env var).
 func newLLMApplier(cfg *config.Config, holder *llm.Holder) *llm.Applier {
-	return llm.NewApplier(holder, cfg.LLM.APIKey, cfg.LLM.Timeout, func(s llm.Settings) error {
+	return llm.NewApplier(holder, cfg.LLM.Timeout, func(s llm.Settings) error {
 		path, err := llmConfigSavePath(cfg)
 		if err != nil {
 			return err
 		}
-		return config.SaveLLM(path, s.BaseURL, s.EmbedModel, s.ChatModel)
+		// Never persist an env-provided key: write it blank so the config file
+		// stays a placeholder and MSGBROWSE_LLM_API_KEY remains the sole home of
+		// the secret. The live client still runs on s.APIKey (the swap below in
+		// Applier.ApplyLLM); only the on-disk copy is suppressed.
+		storedKey := s.APIKey
+		if s.APIKeyFromEnv {
+			storedKey = ""
+		}
+		return config.SaveLLM(path, s.BaseURL, s.EmbedModel, s.ChatModel, storedKey)
 	})
 }
 

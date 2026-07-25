@@ -26,6 +26,16 @@ connection.** The default `llm.base_url` is a local LiteLLM proxy routing to a
 local model (Ollama), so out of the box message content never leaves the
 device — and device-sync traffic, when enabled, never leaves your LAN.
 
+**Disabling a source is not a full erase.** Disable removes a source's imported
+conversations, messages, and contact identifiers from the store, but the
+cross-provider merge journal (`contact_links`, ADR-0024) is deliberately kept so
+a later re-import re-folds the same people automatically. Those rows store the
+raw `(source, identifier)` tuples — i.e. phone numbers and emails — so a
+disabled source's identifiers persist in `contact_links` (and accumulate across
+repeated disable/re-enable cycles) until you delete the `data_dir` database. If
+you need a permanent removal rather than a re-enable, treat deleting `data_dir`
+as the erase step.
+
 ## The data-sent-to-the-LLM boundary
 
 This is the one place data leaves the box, and only if you point LiteLLM at a
@@ -53,8 +63,13 @@ sends raw media off-device. The default local route keeps it on the machine.
   (default on) gates it (ADR-0023 / SPEC-0016).
 - Keep the default local LiteLLM route. Routing to a hosted provider must be a
   deliberate edit to `litellm.config.yaml` and is documented as off-device.
-- The API key is read from `MSGBROWSE_LLM_API_KEY` (env/secret) only and is never
-  baked into the image or expected in a committed file.
+- The API key is never baked into the image. It comes from `MSGBROWSE_LLM_API_KEY`
+  (env/secret, which always wins at startup) or from the Settings → LLM tab, which
+  persists it to the local `0600` config file. That file lives outside version
+  control — never commit it. A key supplied via the environment is used but
+  **never written back to the config file** — saving the tab suppresses the
+  on-disk copy — so an env-scoped secret cannot leak onto disk. The tab never
+  renders the key back and offers an explicit *Clear* control to remove it.
 
 ## Archive integrity
 
