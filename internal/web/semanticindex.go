@@ -20,6 +20,8 @@ package web
 
 import (
 	"context"
+	"net/http"
+	"time"
 )
 
 // Indexer is the live seam behind the semantic-index controls (the
@@ -36,12 +38,65 @@ type Indexer interface {
 	// the web layer calls it in a detached background goroutine. ctx is NOT the
 	// request context — the job outlives the HTTP request.
 	RunEmbed(ctx context.Context, reset bool) error
+	// EmbedQuery embeds a single search query with the live client + embed
+	// model so the Search page can run semantic / hybrid queries against the
+	// index (the same live-holder read as RunEmbed). Returns nil (not an error)
+	// when embedding is unavailable or fails, so the caller degrades to
+	// keyword-only rather than 500ing — mirroring MCP's embedQuery.
+	EmbedQuery(ctx context.Context, query string) []float32
 }
 
 // SetIndexer wires the semantic-index job runner. Call it after NewServer and
 // before serving begins — handlers read s.indexer without locking, so late
 // wiring would race (the guard's own mutex protects only the in-flight flag).
 func (s *Server) SetIndexer(ix Indexer) { s.indexer = ix }
+
+// embedRunHistoryLimit caps the Status page's index run-history table. Recent
+// runs tell the track record without turning the card into an unbounded log.
+const embedRunHistoryLimit = 8
+
+// handleStatusIndexProgress is GET /status/index/progress — the live-refresh
+// endpoint behind the semantic-index card's progress bar. It re-renders JUST
+// the card (coverage, in-progress line, run history, controls) as a fragment,
+// so the card's hx-poll swaps itself every couple seconds WHILE a run is in
+// flight and stops once the fresh HTML no longer carries the poll trigger.
+//
+// It is a read-only GET (no token needed to observe) and mints a token for the
+// embedded Build / Reset forms ONLY when those forms render enabled — i.e. no
+// run is in flight. A 2s poll that minted every tick would push ~1800
+// tokens/hour through a set capped at setupTokenCap (1024), evicting the
+// still-valid tokens armed on other open pages (Providers, Settings → LLM) and
+// 403ing their next save mid-run. While a run is in flight the buttons are
+// disabled, so the token would go unused anyway; the poll that observes the run
+// finish renders enabled buttons and mints one then.
+func (s *Server) handleStatusIndexProgress(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	embedding, err := s.overviewEmbedding(ctx)
+	if err != nil {
+		s.serverError(w, err)
+		return
+	}
+	history, err := s.embedRunHistory(ctx, embedRunHistoryLimit)
+	if err != nil {
+		s.serverError(w, err)
+		return
+	}
+	data := statusData{
+		Embedding:      embedding,
+		History:        history,
+		IndexAvailable: s.indexer != nil,
+		IndexRunning:   s.indexJobRunning(),
+	}
+	if s.indexer != nil && !data.Embedding.InProgress && !data.IndexRunning {
+		tok, err := s.setupTokens.mint()
+		if err != nil {
+			s.serverError(w, err)
+			return
+		}
+		data.SetupToken = tok
+	}
+	s.renderFragment(w, "semantic_index_card", data)
+}
 
 // Fixed-enum result of a Build / Reset-&-rebuild request, mapped to a banner by
 // status.html. Never request-derived.
@@ -69,17 +124,34 @@ func (s *Server) indexJobRunning() bool {
 // no Indexer is wired or no embed model is configured, and coalesces a start
 // that races a running job into "in progress" rather than a duplicate writer.
 //
+// The guard is two-layered because there are two ways a run can already be
+// going. s.indexing catches a second click in THIS process. The embed_runs
+// heartbeat catches a run started elsewhere — a `msgbrowse embed` CLI against
+// the same SQLite file. The template disables the buttons on that heartbeat,
+// but that is client-side only: a page rendered before the CLI started, or a
+// direct POST, would otherwise sail past the in-memory flag and start a second
+// concurrent writer that embeds the same pending messages twice and interleaves
+// two overlapping embed_runs rows. A run whose heartbeat has gone stale
+// (embedRunStaleAfter) reads as crashed, not live, so a Build can still resume
+// after a killed CLI run — the same classification overviewEmbedding applies.
+//
 // The job runs in a DETACHED goroutine under context.Background() so it
 // survives the request that started it; embed.Run records its own begin/finish
 // in embed_runs, so progress and completion are observable on the next Status
 // render (or the Overview card) with no in-request wait.
-func (s *Server) startReindex(reset bool) string {
+func (s *Server) startReindex(ctx context.Context, reset bool) string {
 	ix := s.indexer
 	if ix == nil {
 		return indexResultUnavailable
 	}
 	if ix.EmbedModel() == "" {
 		return indexResultNoModel
+	}
+	// A read error here is not a reason to refuse: fall through to the
+	// in-memory guard rather than blocking a Build on a transient store hiccup.
+	if run, err := s.store.LatestEmbedRun(ctx); err == nil && run != nil &&
+		run.InFlight() && time.Since(run.UpdatedAt) <= embedRunStaleAfter {
+		return indexResultInProgress
 	}
 
 	s.indexMu.Lock()

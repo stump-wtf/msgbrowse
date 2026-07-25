@@ -69,3 +69,19 @@ func (ix *Indexer) RunEmbed(ctx context.Context, reset bool) error {
 	})
 	return err
 }
+
+// EmbedQuery embeds one search query with the live client so the Search page's
+// semantic / hybrid modes can retrieve against the index. It reads the holder's
+// current client at call time (a Settings → LLM change applies to the next
+// query) and returns nil — never an error — when the client is unavailable or
+// the embedding fails, so search degrades to keyword-only rather than failing.
+// A single-input Embed that returns other than one vector is treated as a
+// failure (nil), mirroring MCP's embedQuery.
+func (ix *Indexer) EmbedQuery(ctx context.Context, query string) []float32 {
+	vecs, err := ix.holder.Embed(ctx, []string{query})
+	if err != nil || len(vecs) != 1 {
+		ix.log.Warn("query embedding failed; semantic search degraded to keyword-only", "error", err)
+		return nil
+	}
+	return vecs[0]
+}

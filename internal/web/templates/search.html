@@ -14,7 +14,7 @@
        #search-results on input/change. */}}
   <div class="px-4 lg:px-6 py-6 max-w-4xl">
     <h1 class="screen-h1 mb-1">Search</h1>
-    <p class="screen-sub mb-5">Full-text keyword search across all messages.</p>
+    <p class="screen-sub mb-5">Keyword, semantic, or hybrid search across all messages.</p>
 
     <form action="/search" method="get"
           hx-get="/search/results" hx-target="#search-results" hx-swap="innerHTML"
@@ -25,6 +25,18 @@
       </label>
 
       <div class="filter-row mt-3">
+        <label class="filter-control">
+          <span class="filter-label">Mode</span>
+          {{/* Keyword (FTS5) is always available; Semantic / Hybrid query the
+               built embedding index and need an embed model configured (the
+               results area explains it when they don't). Changing the mode
+               fires the form's change trigger, re-running the search. */}}
+          <select name="mode" class="filter-input">
+            <option value="keyword" {{if eq .Form.Mode "keyword"}}selected{{end}}>Keyword</option>
+            <option value="semantic" {{if eq .Form.Mode "semantic"}}selected{{end}}>Semantic</option>
+            <option value="hybrid" {{if eq .Form.Mode "hybrid"}}selected{{end}}>Hybrid</option>
+          </select>
+        </label>
         <label class="filter-control">
           <span class="filter-label">Conversation</span>
           {{/* FilterConversations is the lightweight id+name listing — NOT the
@@ -73,11 +85,21 @@
 {{end}}
 
 {{define "search_results"}}
-  {{- if .Ran}}
+  {{- if and .Ran (ne .Form.Mode "keyword") (not .SemanticAvailable)}}
+    {{/* Semantic / hybrid was chosen but the index can't answer: an embed model
+         isn't configured, or this mode was started without an indexer (browser
+         mode). Explain how to enable it rather than silently showing nothing. */}}
+    <div class="results-empty">
+      <p class="link-card-title">Semantic search isn't available yet.</p>
+      <p class="link-card-sub">Set an embedding model on the
+        <a href="/settings/llm" class="link link-hover">LLM settings</a> tab and build the index on the
+        <a href="/status" class="link link-hover">Status</a> page, then try semantic or hybrid search.
+        Keyword search works now.</p>
+    </div>
+  {{- else if .Ran}}
     {{- if .Hits}}
-    {{/* Results meta. Elapsed time isn't measured server-side yet (the brief's
-         "· 0.04s"); we show the count only. */}}
-    <div class="results-meta mb-3">{{num .Count}} result{{if ne .Count 1}}s{{end}}{{if eq .Count 200}} · showing first 200{{end}}</div>
+    {{/* Results meta: count + server-side elapsed (the brief's "· 0.04s"). */}}
+    <div class="results-meta mb-3">{{num .Count}} result{{if ne .Count 1}}s{{end}} · {{.Elapsed}}{{if eq .Count 200}} · showing first 200{{end}}</div>
     <ol class="flex flex-col gap-2">
       {{- range $i, $hit := .Hits}}
       <li>
@@ -90,6 +112,8 @@
             <span class="result-sender">{{if $hit.IsOwner}}Me{{else}}{{humanName $hit.Sender}}{{end}}</span>
             <span class="result-ts">{{$hit.TS}}</span>
             <span class="result-spacer"></span>
+            {{/* Similarity / fused-rank score, shown only for semantic & hybrid. */}}
+            {{- if ne $.Form.Mode "keyword"}}<span class="score-chip" title="relevance score">{{$hit.Score}}</span>{{end}}
             <span class="source-pill {{sourceSlug $hit.Source}}">{{humanSource $hit.Source}}</span>
             {{- if $hit.HasAttachment}}<span class="result-glyph" title="has attachment">{{template "icon-paperclip" $}}</span>{{end}}
             {{- if $hit.HasLink}}<span class="result-glyph" title="has link">{{template "icon-link" $}}</span>{{end}}

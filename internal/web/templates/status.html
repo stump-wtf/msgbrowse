@@ -55,103 +55,11 @@
       {{end}}
     </div>
 
-    {{/* Semantic search index (#191): the in-app management the Overview card
-         links here for. Coverage + last-run + live in-progress marker (the
-         same embedStatusData the Overview shows) plus the Build /
-         Reset-&-rebuild controls the CLI-only `msgbrowse embed` used to be the
-         only way to drive. role="status" aria-live="polite" like the device
-         sync card, so the post-action banner is announced. */}}
-    <div class="status-card" role="status" aria-live="polite">
-      <div class="status-card-title">Semantic search index</div>
-
-      {{- if eq .IndexResult "started"}}
-      <div class="notice-card mb-4">
-        <p class="link-card-title">Indexing started.</p>
-        <p class="link-card-sub">Embedding the messages that still need a vector. Refresh this page to
-          watch coverage climb.</p>
-      </div>
-      {{- else if eq .IndexResult "reset"}}
-      <div class="notice-card mb-4">
-        <p class="link-card-title">Reset &amp; rebuild started.</p>
-        <p class="link-card-sub">The index was cleared and is rebuilding from scratch. Refresh this page
-          to watch coverage climb.</p>
-      </div>
-      {{- else if eq .IndexResult "inprogress"}}
-      <div class="notice-card mb-4">
-        <p class="link-card-title">A run is already in progress.</p>
-        <p class="link-card-sub">Nothing new was started — the running job continues.</p>
-      </div>
-      {{- else if eq .IndexResult "nomodel"}}
-      <div class="notice-card mb-4">
-        <p class="link-card-title">No embedding model configured.</p>
-        <p class="link-card-sub">Set an embed model on the <a href="/settings/llm" class="link link-hover">LLM
-          settings</a> tab, then build the index.</p>
-      </div>
-      {{- else if eq .IndexResult "unavailable"}}
-      <div class="notice-card mb-4">
-        <p class="link-card-title">Index management is not available here.</p>
-        <p class="link-card-sub">This server was started without an indexer. Run
-          <code class="font-mono">msgbrowse embed</code> from the command line instead.</p>
-      </div>
-      {{- else if eq .IndexResult "error"}}
-      <div class="notice-card mb-4">
-        <p class="link-card-title">The index job could not start.</p>
-        <p class="link-card-sub">See Logs for details and try again.</p>
-      </div>
-      {{- end}}
-
-      {{if not .IndexAvailable}}
-      <p class="status-note">Index management is unavailable in this mode. Run
-        <code class="font-mono">msgbrowse embed</code> from the command line to build the semantic index.</p>
-      {{else if not .Embedding.Configured}}
-      <p class="status-note">Semantic search is not configured. Set an embedding model on the
-        <a href="/settings/llm" class="link link-hover">LLM settings</a> tab, then build the index.</p>
-      {{else}}
-      {{if .Embedding.InProgress}}
-      <p class="status-note mb-4"><span class="sync-badge sync-badge-info">Indexing…</span>
-        {{num .Embedding.RunEmbedded}} messages embedded so far in the current run.</p>
-      {{else if .Embedding.Stalled}}
-      <p class="status-note mb-4"><span class="sync-badge sync-badge-warn">Interrupted</span>
-        The last index run stopped before finishing — build again to resume where it left off.</p>
-      {{end}}
-      <div class="status-grid">
-        <div><div class="status-metric-label">Coverage</div>
-          <div class="status-metric-value">{{num .Embedding.Embedded}} of {{num .Embedding.Embeddable}} messages ({{.Embedding.Percent}}%)</div></div>
-        <div><div class="status-metric-label">Embedding model</div>
-          <div class="status-metric-value">{{.Embedding.Model}}</div></div>
-        <div><div class="status-metric-label">Last index run</div>
-          <div class="status-metric-value">
-            {{- if .Embedding.HasLastRun}}{{.Embedding.LastFinished}} · {{num .Embedding.LastEmbedded}} embedded in {{num .Embedding.LastDurationMS}} ms
-              {{- if and .Embedding.LastModel (ne .Embedding.LastModel .Embedding.Model)}} <span class="opacity-60">(model {{.Embedding.LastModel}})</span>{{end}}
-            {{- else if .Embedding.InProgress}}running now
-            {{- else}}never{{end -}}
-          </div></div>
-      </div>
-      {{if .Embedding.LastError}}
-      <p class="status-note mt-4"><span class="sync-badge sync-badge-err">Failed</span>
-        Last run aborted: <span class="font-mono">{{.Embedding.LastError}}</span></p>
-      {{end}}
-
-      {{/* Build / Reset controls — privileged same-origin form POSTs carrying
-           the per-session token, boosted to swap only #main-content (no inline
-           JS; CSP-clean). Disabled while a run is in progress so a second
-           click cannot race the guard. */}}
-      <div class="flex flex-wrap gap-3 mt-4">
-        <form method="post" action="/status/index"
-              hx-boost="true" hx-target="#main-content" hx-select="#main-content" hx-swap="outerHTML">
-          <input type="hidden" name="setup_token" value="{{.SetupToken}}">
-          <button type="submit" class="setup-btn"{{if .Embedding.InProgress}} disabled{{end}}>Build index</button>
-        </form>
-        <form method="post" action="/status/index/reset"
-              hx-boost="true" hx-target="#main-content" hx-select="#main-content" hx-swap="outerHTML">
-          <input type="hidden" name="setup_token" value="{{.SetupToken}}">
-          <button type="submit" class="setup-btn setup-btn-ghost"{{if .Embedding.InProgress}} disabled{{end}}>Reset &amp; rebuild</button>
-        </form>
-      </div>
-      <p class="status-note mt-3">Build embeds the messages that still need a vector; Reset &amp; rebuild
-        clears the whole index and re-embeds from scratch (useful after changing the embedding model).</p>
-      {{end}}
-    </div>
+    {{/* Semantic search index (#191): coverage, a live progress bar, run
+         history, and the Build / Reset controls. Extracted to a define so the
+         self-polling progress fragment (/status/index/progress) can re-render
+         exactly this card while a run is in flight. */}}
+    {{template "semantic_index_card" .}}
 
     {{/* Device sync (#158; SPEC-0014 REQ "Status and Doctor Surfacing"):
          engine state, per-peer connection, and per-folder health/completion —
@@ -228,4 +136,145 @@
     {{- end}}
   </div>
     </main>
+{{end}}
+{{define "semantic_index_card"}}
+    {{/* No aria-live on the CARD: it is the 2s poll's swap target, so a live
+         region here would re-announce the whole card — coverage, the entire run
+         history table, both button labels — every two seconds for the length of
+         a run. The live region is scoped to the one line that actually changes
+         (the "Indexing…" progress note) instead. */}}
+    <div id="semantic-index-card" class="status-card"
+         {{- if or .Embedding.InProgress .IndexRunning}} hx-get="/status/index/progress" hx-trigger="every 2s" hx-target="#semantic-index-card" hx-swap="outerHTML"{{end}}>
+      <div class="status-card-title">Semantic search index</div>
+
+      {{- if eq .IndexResult "started"}}
+      <div class="notice-card mb-4">
+        <p class="link-card-title">Indexing started.</p>
+        <p class="link-card-sub">Embedding the messages that still need a vector — the progress bar below
+          updates live while it runs.</p>
+      </div>
+      {{- else if eq .IndexResult "reset"}}
+      <div class="notice-card mb-4">
+        <p class="link-card-title">Reset &amp; rebuild started.</p>
+        <p class="link-card-sub">The index was cleared and is rebuilding from scratch — watch the progress
+          bar below.</p>
+      </div>
+      {{- else if eq .IndexResult "inprogress"}}
+      <div class="notice-card mb-4">
+        <p class="link-card-title">A run is already in progress.</p>
+        <p class="link-card-sub">Nothing new was started — the running job continues.</p>
+      </div>
+      {{- else if eq .IndexResult "nomodel"}}
+      <div class="notice-card mb-4">
+        <p class="link-card-title">No embedding model configured.</p>
+        <p class="link-card-sub">Set an embed model on the <a href="/settings/llm" class="link link-hover">LLM
+          settings</a> tab, then build the index.</p>
+      </div>
+      {{- else if eq .IndexResult "unavailable"}}
+      <div class="notice-card mb-4">
+        <p class="link-card-title">Index management is not available here.</p>
+        <p class="link-card-sub">This server was started without an indexer. Run
+          <code class="font-mono">msgbrowse embed</code> from the command line instead.</p>
+      </div>
+      {{- else if eq .IndexResult "error"}}
+      <div class="notice-card mb-4">
+        <p class="link-card-title">The index job could not start.</p>
+        <p class="link-card-sub">See Logs for details and try again.</p>
+      </div>
+      {{- end}}
+
+      {{if not .IndexAvailable}}
+      <p class="status-note">Index management is unavailable in this mode. Run
+        <code class="font-mono">msgbrowse embed</code> from the command line to build the semantic index.</p>
+      {{else if not .Embedding.Configured}}
+      <p class="status-note">Semantic search is not configured. Set an embedding model on the
+        <a href="/settings/llm" class="link link-hover">LLM settings</a> tab, then build the index.</p>
+      {{else}}
+      {{if .Embedding.InProgress}}
+      <p class="status-note mb-3" role="status" aria-live="polite"><span class="sync-badge sync-badge-info">Indexing…</span>
+        {{num .Embedding.RunEmbedded}} messages embedded so far in the current run.</p>
+      {{else if .Embedding.Stalled}}
+      <p class="status-note mb-3"><span class="sync-badge sync-badge-warn">Interrupted</span>
+        The last index run stopped before finishing — build again to resume where it left off.</p>
+      {{end}}
+
+      {{/* Live progress bar: coverage as a fraction of the embeddable corpus.
+           <progress> (not an inline-styled div) keeps it CSP-clean. */}}
+      {{if gt .Embedding.Embeddable 0}}
+      <div class="index-progress-row mb-4">
+        <progress class="index-progress" value="{{.Embedding.Embedded}}" max="{{.Embedding.Embeddable}}"></progress>
+        <span class="index-progress-pct mono">{{.Embedding.Percent}}%</span>
+      </div>
+      {{end}}
+
+      <div class="status-grid">
+        <div><div class="status-metric-label">Coverage</div>
+          <div class="status-metric-value">{{num .Embedding.Embedded}} of {{num .Embedding.Embeddable}} messages ({{.Embedding.Percent}}%)</div></div>
+        <div><div class="status-metric-label">Embedding model</div>
+          <div class="status-metric-value">{{.Embedding.Model}}</div></div>
+        <div><div class="status-metric-label">Last index run</div>
+          <div class="status-metric-value">
+            {{- if .Embedding.HasLastRun}}{{.Embedding.LastFinished}} · {{num .Embedding.LastEmbedded}} embedded in {{num .Embedding.LastDurationMS}} ms
+              {{- if and .Embedding.LastModel (ne .Embedding.LastModel .Embedding.Model)}} <span class="opacity-60">(model {{.Embedding.LastModel}})</span>{{end}}
+            {{- else if .Embedding.InProgress}}running now
+            {{- else}}never{{end -}}
+          </div></div>
+      </div>
+      {{if .Embedding.LastError}}
+      <p class="status-note mt-4"><span class="sync-badge sync-badge-err">Failed</span>
+        Last run aborted: <span class="font-mono">{{.Embedding.LastError}}</span></p>
+      {{end}}
+
+      {{/* Run history: the index's recent track record (newest first). */}}
+      {{if .History}}
+      <div class="status-subtable mt-5">
+        <div class="status-metric-label mb-2">Recent runs</div>
+        <div class="overflow-x-auto">
+          <table class="w-full text-sm">
+            <thead>
+              <tr class="text-left opacity-60">
+                <th class="pb-2 pr-4 font-medium">Started</th>
+                <th class="pb-2 pr-4 font-medium">Status</th>
+                <th class="pb-2 pr-4 font-medium">Embedded</th>
+                <th class="pb-2 pr-4 font-medium">Duration</th>
+                <th class="pb-2 font-medium">Model</th>
+              </tr>
+            </thead>
+            <tbody>
+              {{- range .History}}
+              <tr class="border-t border-base-300/40">
+                <td class="whitespace-nowrap py-2 pr-4 mono">{{.Started}}</td>
+                <td class="whitespace-nowrap py-2 pr-4"><span class="sync-badge sync-badge-{{.Badge}}">{{.Status}}</span>
+                  {{- if .Error}} <span class="opacity-60 font-mono">{{.Error}}</span>{{end}}</td>
+                <td class="whitespace-nowrap py-2 pr-4 mono">{{num .Embedded}}</td>
+                <td class="whitespace-nowrap py-2 pr-4 mono">{{.Duration}}</td>
+                <td class="whitespace-nowrap py-2 mono opacity-70">{{.Model}}</td>
+              </tr>
+              {{- end}}
+            </tbody>
+          </table>
+        </div>
+      </div>
+      {{end}}
+
+      {{/* Build / Reset controls — privileged same-origin form POSTs carrying
+           the per-session token, boosted to swap only #main-content (no inline
+           JS; CSP-clean). Disabled while a run is in progress so a second
+           click cannot race the guard. */}}
+      <div class="flex flex-wrap gap-3 mt-5">
+        <form method="post" action="/status/index"
+              hx-boost="true" hx-target="#main-content" hx-select="#main-content" hx-swap="outerHTML">
+          <input type="hidden" name="setup_token" value="{{.SetupToken}}">
+          <button type="submit" class="setup-btn"{{if or .Embedding.InProgress .IndexRunning}} disabled{{end}}>Build index</button>
+        </form>
+        <form method="post" action="/status/index/reset"
+              hx-boost="true" hx-target="#main-content" hx-select="#main-content" hx-swap="outerHTML">
+          <input type="hidden" name="setup_token" value="{{.SetupToken}}">
+          <button type="submit" class="setup-btn setup-btn-ghost"{{if or .Embedding.InProgress .IndexRunning}} disabled{{end}}>Reset &amp; rebuild</button>
+        </form>
+      </div>
+      <p class="status-note mt-3">Build embeds the messages that still need a vector; Reset &amp; rebuild
+        clears the whole index and re-embeds from scratch (useful after changing the embedding model).</p>
+      {{end}}
+    </div>
 {{end}}

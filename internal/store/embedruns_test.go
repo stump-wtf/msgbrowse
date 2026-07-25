@@ -223,3 +223,58 @@ func sysMsg(conv, ts, body string) signal.Message {
 	m.IsSystem = true
 	return m
 }
+
+// TestRecentEmbedRuns pins the run-history query behind the Status page's
+// index run-history table: newest-first ordering, the n cap, and that each
+// row round-trips its state (in-flight vs finished, totals, error).
+func TestRecentEmbedRuns(t *testing.T) {
+	st := newTestStore(t)
+	ctx := context.Background()
+
+	if runs, err := st.RecentEmbedRuns(ctx, 5); err != nil || len(runs) != 0 {
+		t.Fatalf("empty store RecentEmbedRuns = %v, %v; want empty", runs, err)
+	}
+	// n <= 0 is a no-op (no query), returning nothing.
+	if runs, err := st.RecentEmbedRuns(ctx, 0); err != nil || runs != nil {
+		t.Fatalf("RecentEmbedRuns(0) = %v, %v; want nil, nil", runs, err)
+	}
+
+	base := time.Date(2026, 7, 1, 10, 0, 0, 0, time.UTC)
+	// Three finished runs + one still in flight, begun in ascending time.
+	var lastID int64
+	for i := 0; i < 4; i++ {
+		start := base.Add(time.Duration(i) * time.Hour)
+		id, err := st.BeginEmbedRun(ctx, "m", start)
+		if err != nil {
+			t.Fatal(err)
+		}
+		lastID = id
+		if i < 3 { // leave the last one in flight
+			if err := st.FinishEmbedRun(ctx, EmbedRun{
+				ID: id, FinishedAt: start.Add(time.Minute), DurationMS: int64(1000 * (i + 1)),
+				Embedded: 10 * (i + 1), Batches: i + 1,
+			}); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+
+	runs, err := st.RecentEmbedRuns(ctx, 3)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(runs) != 3 {
+		t.Fatalf("RecentEmbedRuns(3) len = %d, want 3 (capped)", len(runs))
+	}
+	// Newest first: the in-flight run (lastID) leads.
+	if runs[0].ID != lastID || !runs[0].InFlight() {
+		t.Errorf("first row = id %d inflight=%v; want the newest, in-flight run (id %d)",
+			runs[0].ID, runs[0].InFlight(), lastID)
+	}
+	if runs[1].ID <= runs[2].ID {
+		t.Errorf("rows not newest-first: %d then %d", runs[1].ID, runs[2].ID)
+	}
+	if runs[1].InFlight() || runs[1].DurationMS == 0 {
+		t.Errorf("second row should be a finished run with a duration, got %+v", runs[1])
+	}
+}

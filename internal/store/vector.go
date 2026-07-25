@@ -32,6 +32,12 @@ type ScoredMessage struct {
 	TSUnix           int64
 	Body             string
 	Score            float64
+	// HasAttachment / HasLink mirror the keyword path's SearchHit flags so a
+	// semantic hit renders the same paperclip / link glyphs a keyword hit for
+	// the same message does — otherwise the identical message reads as
+	// attachment-less depending only on which search mode found it.
+	HasAttachment bool
+	HasLink       bool
 }
 
 // SemanticOptions filters the candidate set before scoring (same filters as
@@ -42,7 +48,15 @@ type SemanticOptions struct {
 	Sender         string
 	StartUnix      int64
 	EndUnix        int64
-	K              int
+	// HasAttachment / HasLink restrict to messages carrying an attachment /
+	// link, with the same EXISTS predicates SearchMessages uses. They exist so
+	// the Search page's semantic and hybrid modes honour the SAME filter row
+	// the keyword mode does — without them a ticked "Has attachment" is
+	// silently dropped on the semantic path (and half-applied in hybrid, where
+	// only the keyword half filters).
+	HasAttachment bool
+	HasLink       bool
+	K             int
 }
 
 // MessagesNeedingEmbedding returns up to limit messages that have no embedding
@@ -182,10 +196,18 @@ func (s *Store) SemanticSearch(ctx context.Context, query []float32, model strin
 		where = append(where, "m.ts_unix <= ?")
 		args = append(args, opts.EndUnix)
 	}
+	if opts.HasAttachment {
+		where = append(where, "EXISTS (SELECT 1 FROM attachments a WHERE a.message_id = m.id)")
+	}
+	if opts.HasLink {
+		where = append(where, "EXISTS (SELECT 1 FROM links l WHERE l.message_id = m.id)")
+	}
 
 	q := `
 SELECT m.id, m.hash, m.conversation_id, c.name, m.source, m.sender, m.is_system,
-       m.ts, m.ts_unix, m.body, e.vec, e.dim
+       m.ts, m.ts_unix, m.body, e.vec, e.dim,
+       EXISTS (SELECT 1 FROM attachments a WHERE a.message_id = m.id) AS has_att,
+       EXISTS (SELECT 1 FROM links l WHERE l.message_id = m.id)       AS has_link
   FROM embeddings e
   JOIN messages m      ON m.hash = e.message_hash
   JOIN conversations c ON c.id = m.conversation_id
@@ -200,13 +222,15 @@ SELECT m.id, m.hash, m.conversation_id, c.name, m.source, m.sender, m.is_system,
 	var scored []ScoredMessage
 	for rows.Next() {
 		var (
-			m        ScoredMessage
-			isSystem int
-			blob     []byte
-			dim      int
+			m               ScoredMessage
+			isSystem        int
+			blob            []byte
+			dim             int
+			hasAtt, hasLink int
 		)
 		if err := rows.Scan(&m.MessageID, &m.Hash, &m.ConversationID, &m.ConversationName,
-			&m.Source, &m.Sender, &isSystem, &m.TS, &m.TSUnix, &m.Body, &blob, &dim); err != nil {
+			&m.Source, &m.Sender, &isSystem, &m.TS, &m.TSUnix, &m.Body, &blob, &dim,
+			&hasAtt, &hasLink); err != nil {
 			return nil, err
 		}
 		vec, err := decodeVec(blob, dim)
@@ -222,6 +246,8 @@ SELECT m.id, m.hash, m.conversation_id, c.name, m.source, m.sender, m.is_system,
 		}
 		m.IsSystem = isSystem == 1
 		m.IsOwner = m.Sender == signal.OwnerSender
+		m.HasAttachment = hasAtt == 1
+		m.HasLink = hasLink == 1
 		m.Score = cosine(query, vec, qNorm)
 		scored = append(scored, m)
 	}

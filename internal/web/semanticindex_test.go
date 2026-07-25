@@ -43,6 +43,7 @@ type fakeIndexer struct {
 	started  int32         // RunEmbed invocations (atomic)
 	lastRst  atomic.Bool   // reset arg of the most recent RunEmbed
 	finished sync.WaitGroup
+	queryVec []float32 // returned by EmbedQuery; nil = "embedding unavailable"
 }
 
 func newFakeIndexer(model string) *fakeIndexer {
@@ -50,6 +51,8 @@ func newFakeIndexer(model string) *fakeIndexer {
 }
 
 func (f *fakeIndexer) EmbedModel() string { return f.model }
+
+func (f *fakeIndexer) EmbedQuery(ctx context.Context, query string) []float32 { return f.queryVec }
 
 func (f *fakeIndexer) RunEmbed(ctx context.Context, reset bool) error {
 	atomic.AddInt32(&f.started, 1)
@@ -61,6 +64,14 @@ func (f *fakeIndexer) RunEmbed(ctx context.Context, reset bool) error {
 
 // starts returns how many times RunEmbed was invoked.
 func (f *fakeIndexer) starts() int { return int(atomic.LoadInt32(&f.started)) }
+
+// tokenCount reports how many live tokens the server's set holds, so a test can
+// prove the 2s progress poll is not churning the capped set.
+func tokenCount(s *setupTokens) int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return len(s.tokens)
+}
 
 // indexPOST issues a privileged POST to a /status/index* route with the given
 // origin + token, mirroring llmPOST.
@@ -349,5 +360,176 @@ func TestOverviewLinksToStatusIndex(t *testing.T) {
 	// The buttons live only on Status, not duplicated on the Overview.
 	if contains(body, `action="/status/index"`) {
 		t.Error("Overview should not duplicate the Build form")
+	}
+}
+
+// TestStatusIndexProgressFragment: the live-refresh endpoint returns JUST the
+// semantic-index card fragment (not the whole Status shell), 200, with the
+// card's id so the poll swaps itself.
+func TestStatusIndexProgressFragment(t *testing.T) {
+	srv, _ := newStatusServer(t, "test-embed", true)
+	rec := get(t, srv, "/status/index/progress")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("progress status = %d, want 200", rec.Code)
+	}
+	body := rec.Body.String()
+	if !contains(body, `id="semantic-index-card"`) {
+		t.Errorf("progress fragment missing the card id:\n%s", body)
+	}
+	if !contains(body, "Semantic search index") {
+		t.Errorf("progress fragment missing the card title")
+	}
+	// It is a fragment, not the full page: no sidebar / stat strip.
+	if contains(body, "Archive freshness") {
+		t.Errorf("progress endpoint returned the whole Status page, not just the card")
+	}
+}
+
+// TestStatusIndexRunHistory: with recorded runs, the Status card renders the
+// run-history table with a badge per run.
+
+// TestStatusIndexRunHistory: with recorded runs, the Status card renders the
+// run-history table with a badge per run.
+func TestStatusIndexRunHistory(t *testing.T) {
+	srv, st := newStatusServer(t, "test-embed", true)
+	ctx := context.Background()
+	start := time.Date(2026, 7, 1, 9, 0, 0, 0, time.UTC)
+	id, err := st.BeginEmbedRun(ctx, "test-embed", start)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.FinishEmbedRun(ctx, store.EmbedRun{
+		ID: id, FinishedAt: start.Add(time.Minute), DurationMS: 2500, Embedded: 42, Batches: 2,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	body := get(t, srv, "/status").Body.String()
+	if !contains(body, "Recent runs") {
+		t.Errorf("Status missing the run-history section")
+	}
+	if !contains(body, "Completed") {
+		t.Errorf("Status run-history missing the completed badge")
+	}
+	// The progress bar is present when coverage is known (embeddable > 0 needs a
+	// message; with none the bar is omitted — assert the card still renders).
+	if !contains(body, `id="semantic-index-card"`) {
+		t.Errorf("Status missing the semantic index card")
+	}
+}
+
+// TestStatusIndexRefusesWhileCLIRunInFlight: the in-memory single-flight flag
+// only knows about jobs THIS process started. A `msgbrowse embed` CLI run
+// against the same SQLite file shows up solely as an unfinished embed_runs row
+// with a live heartbeat — the template disables the buttons on it, but that is
+// client-side only. A POST from a page rendered before the CLI started must
+// still coalesce instead of launching a second concurrent writer.
+
+// TestStatusIndexRefusesWhileCLIRunInFlight: the in-memory single-flight flag
+// only knows about jobs THIS process started. A `msgbrowse embed` CLI run
+// against the same SQLite file shows up solely as an unfinished embed_runs row
+// with a live heartbeat — the template disables the buttons on it, but that is
+// client-side only. A POST from a page rendered before the CLI started must
+// still coalesce instead of launching a second concurrent writer.
+func TestStatusIndexRefusesWhileCLIRunInFlight(t *testing.T) {
+	srv, st := newStatusServer(t, "test-embed", true)
+	fi := newFakeIndexer("test-embed")
+	srv.SetIndexer(fi)
+
+	// A "CLI" run: begun, heartbeat fresh, never finished.
+	if _, err := st.BeginEmbedRun(context.Background(), "test-embed", time.Now()); err != nil {
+		t.Fatal(err)
+	}
+
+	rec := indexPOST(t, srv, "/status/index", selfOrigin, mintToken(t, srv))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("build POST status = %d, want 200", rec.Code)
+	}
+	if !contains(rec.Body.String(), "A run is already in progress") {
+		t.Errorf("POST during a CLI run should coalesce, got:\n%s", rec.Body.String())
+	}
+	if fi.starts() != 0 {
+		t.Errorf("RunEmbed invoked %d times; a concurrent CLI run must not be joined by a second writer", fi.starts())
+	}
+}
+
+// TestStatusIndexStaleRunDoesNotBlockBuild: the heartbeat guard classifies a
+// run the same way embeddingStatus does — an unfinished row whose heartbeat
+// went stale is a CRASHED run, not a live one. Build must still work, or a
+// killed `msgbrowse embed` would wedge the in-app control forever.
+
+// TestStatusIndexStaleRunDoesNotBlockBuild: the heartbeat guard classifies a
+// run the same way embeddingStatus does — an unfinished row whose heartbeat
+// went stale is a CRASHED run, not a live one. Build must still work, or a
+// killed `msgbrowse embed` would wedge the in-app control forever.
+func TestStatusIndexStaleRunDoesNotBlockBuild(t *testing.T) {
+	srv, st := newStatusServer(t, "test-embed", true)
+	fi := newFakeIndexer("test-embed")
+	fi.finished.Add(1)
+	srv.SetIndexer(fi)
+
+	// Begun well outside embedRunStaleAfter and never finished: crashed.
+	if _, err := st.BeginEmbedRun(context.Background(), "test-embed",
+		time.Now().Add(-2*embedRunStaleAfter)); err != nil {
+		t.Fatal(err)
+	}
+
+	rec := indexPOST(t, srv, "/status/index", selfOrigin, mintToken(t, srv))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("build POST status = %d", rec.Code)
+	}
+	if !contains(rec.Body.String(), "Indexing started") {
+		t.Errorf("a stale (crashed) run must not block a rebuild, got:\n%s", rec.Body.String())
+	}
+	waitFor(t, func() bool { return fi.starts() == 1 })
+	close(fi.release)
+	fi.finished.Wait()
+}
+
+// TestStatusIndexProgressMintsNoTokenWhileRunning: the card polls itself every
+// 2s while a run is in flight. Minting a privileged token on every tick would
+// push ~1800 tokens/hour through a set capped at setupTokenCap, evicting the
+// still-valid tokens armed on other open pages (Providers, Settings → LLM) and
+// 403ing their next save mid-run. The buttons are disabled while running, so
+// the poll mints only once the controls come back enabled.
+
+// TestStatusIndexProgressMintsNoTokenWhileRunning: the card polls itself every
+// 2s while a run is in flight. Minting a privileged token on every tick would
+// push ~1800 tokens/hour through a set capped at setupTokenCap, evicting the
+// still-valid tokens armed on other open pages (Providers, Settings → LLM) and
+// 403ing their next save mid-run. The buttons are disabled while running, so
+// the poll mints only once the controls come back enabled.
+func TestStatusIndexProgressMintsNoTokenWhileRunning(t *testing.T) {
+	srv, st := newStatusServer(t, "test-embed", true)
+	ctx := context.Background()
+
+	id, err := st.BeginEmbedRun(ctx, "test-embed", time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	before := tokenCount(srv.setupTokens)
+	for i := 0; i < 5; i++ { // five poll ticks
+		if rec := get(t, srv, "/status/index/progress"); rec.Code != http.StatusOK {
+			t.Fatalf("progress poll status = %d", rec.Code)
+		}
+	}
+	if after := tokenCount(srv.setupTokens); after != before {
+		t.Errorf("in-flight polls minted %d tokens (%d → %d); want none", after-before, before, after)
+	}
+
+	// The run finishes: the next poll renders enabled controls and must arm
+	// them with a live token.
+	if err := st.FinishEmbedRun(ctx, store.EmbedRun{ID: id, FinishedAt: time.Now(), Embedded: 1, Batches: 1}); err != nil {
+		t.Fatal(err)
+	}
+	rec := get(t, srv, "/status/index/progress")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("post-run progress status = %d", rec.Code)
+	}
+	if tokenCount(srv.setupTokens) != before+1 {
+		t.Errorf("the poll that observes the run finish should mint exactly one token, count = %d", tokenCount(srv.setupTokens))
+	}
+	if contains(rec.Body.String(), `name="setup_token" value=""`) {
+		t.Errorf("finished-run fragment left the forms armed with an empty token:\n%s", rec.Body.String())
 	}
 }

@@ -134,3 +134,43 @@ SELECT COUNT(*), COUNT(e.message_hash)
 	}
 	return c, nil
 }
+
+// RecentEmbedRuns returns the most recently started embedding runs, newest
+// first, capped at n (n <= 0 yields an empty slice). It backs the Status page's
+// index run-history table: LatestEmbedRun answers "what is the current state",
+// this answers "what has the index done lately" — each row's finished/duration/
+// embedded/error tell the story of one pass across the CLI↔serve boundary.
+func (s *Store) RecentEmbedRuns(ctx context.Context, n int) ([]EmbedRun, error) {
+	if n <= 0 {
+		return nil, nil
+	}
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT id, model, started_at, updated_at, finished_at, duration_ms, embedded, pruned, batches, error
+		   FROM embed_runs ORDER BY id DESC LIMIT ?`, n)
+	if err != nil {
+		return nil, fmt.Errorf("recent embed runs: %w", err)
+	}
+	defer rows.Close()
+
+	var out []EmbedRun
+	for rows.Next() {
+		var (
+			r                          EmbedRun
+			started, updated, finished string
+		)
+		if err := rows.Scan(&r.ID, &r.Model, &started, &updated, &finished,
+			&r.DurationMS, &r.Embedded, &r.Pruned, &r.Batches, &r.Error); err != nil {
+			return nil, fmt.Errorf("recent embed runs: scan: %w", err)
+		}
+		r.StartedAt = parseRFC3339(started)
+		r.UpdatedAt = parseRFC3339(updated)
+		if finished != "" {
+			r.FinishedAt = parseRFC3339(finished)
+		}
+		out = append(out, r)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("recent embed runs: %w", err)
+	}
+	return out, nil
+}
