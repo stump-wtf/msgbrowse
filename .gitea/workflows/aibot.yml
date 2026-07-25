@@ -39,14 +39,36 @@ jobs:
       - name: Checkout PR head
         uses: actions/checkout@v4
         with:
+          # The head branch lives in the head REPO, which is not this repo when
+          # the PR comes from a fork. Without this the fork's branch name is
+          # resolved against stump.wtf/msgbrowse, is not found, and the job dies
+          # in ~6s — which is exactly how every run on #216 failed while its head
+          # was on joestump-agent/msgbrowse. Upstream fix:
+          # stumpcloud/gitea-aibot-action#4.
+          repository: ${{ github.event.pull_request.head.repo.full_name || github.repository }}
           ref: ${{ github.event.pull_request.head.ref || github.head_ref }}
           fetch-depth: 0
 
       - name: AI bot
         uses: https://gitea.stump.rocks/stumpcloud/gitea-aibot-action@main
         env:
-          AIBOT_HARNESS: ${{ vars.AIBOT_HARNESS || 'crush' }}
-          AIBOT_MODEL:   ${{ vars.AIBOT_MODEL   || 'zaicoding/glm-4.7' }}
+          # LiteLLM (metered, no weekly cap) rather than the Z.ai coding plan.
+          # The Z.ai plan exhausted its weekly/monthly quota mid-sprint and every
+          # run then failed with "Weekly/Monthly Limit Exhausted", which reads as
+          # a code failure on the PR. LiteLLM fronts Bedrock and bills per token,
+          # so the reviewer degrades in cost, not in availability.
+          #
+          # Harness is `opencode` to match the working reference wiring in
+          # joestump/dotfiles. Model is "litellm/<model>" — "litellm" is the
+          # provider id the action's config template defines; the part after the
+          # slash must be a model LiteLLM actually serves. Both are vars so the
+          # model can be retargeted from Settings without a code change.
+          AIBOT_HARNESS: ${{ vars.AIBOT_HARNESS || 'opencode' }}
+          AIBOT_MODEL:   ${{ vars.AIBOT_MODEL   || 'litellm/claude-haiku-4-5' }}
+          AIBOT_LITELLM_BASE_URL: ${{ secrets.AIBOT_LITELLM_BASE_URL }}  # https://litellm.stump.rocks
+          AIBOT_LITELLM_API_KEY:  ${{ secrets.AIBOT_LITELLM_API_KEY }}
+          # Kept wired so setting vars.AIBOT_HARNESS=crush falls back to Z.ai
+          # without a code change (e.g. if LiteLLM is down).
           AIBOT_ZAI_BASE_URL:  ${{ secrets.AIBOT_ZAI_BASE_URL }}
           AIBOT_ZAI_API_TOKEN: ${{ secrets.AIBOT_ZAI_API_TOKEN }}
           AIBOT_GITEA_HOST:  ${{ github.server_url }}
