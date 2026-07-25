@@ -506,3 +506,71 @@ jobs:
           path: cmd/msgbrowse-desktop/build/bin/msgbrowse
           retention-days: 30
           if-no-files-found: error
+
+  # Publish a real GitHub Release when a v* tag is pushed (issue #219).
+  #
+  # Before this job the tag trigger built the matrix and stopped at
+  # actions/upload-artifact — output that needs a GitHub login to download, is
+  # buried under the Actions tab, and expires after 30 days, while README.md
+  # tells users to "download and unzip msgbrowse-desktop_darwin_universal" as
+  # though it were a release asset. Tagging now produces something a stable URL
+  # can point at.
+  release:
+    name: Publish GitHub Release
+    needs: [darwin, linux]
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    # The workflow defaults to contents: read; publishing a release needs write.
+    # Scoped to this job so the build jobs keep the read-only token.
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      # The macOS artifact is already a zip of the .app (ditto preserves the
+      # bundle's symlinks and the ad-hoc signature). The Linux artifact is a
+      # bare binary, and both zip and actions/upload-artifact drop the execute
+      # bit — the exact papercut README.md documents as "chmod +x msgbrowse".
+      # tar preserves the mode, so the release asset needs no chmod.
+      - name: Package release assets
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          cp artifacts/msgbrowse-desktop_darwin_universal/msgbrowse-desktop_darwin_universal.zip dist/
+          chmod +x artifacts/msgbrowse-desktop_linux_amd64/msgbrowse
+          tar -czf dist/msgbrowse-desktop_linux_amd64.tar.gz \
+            -C artifacts/msgbrowse-desktop_linux_amd64 msgbrowse
+          ls -l dist
+
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          generate_release_notes: true
+          fail_on_unmatched_files: true
+          # The .app is ad-hoc signed until a Developer ID is provisioned, so
+          # every release stays a prerelease rather than implying notarized
+          # bits. Flip this once the signing secrets in the darwin job go live.
+          prerelease: true
+          body: |
+            ## Install
+
+            **macOS** — download `msgbrowse-desktop_darwin_universal.zip`, unzip, then:
+
+            ```
+            xattr -dr com.apple.quarantine msgbrowse.app
+            ```
+
+            The bundle is ad-hoc signed (Developer ID notarization pending), so
+            Gatekeeper blocks the first launch until the quarantine attribute is
+            stripped. That strip is also what lets the embedded Python and
+            exporter binaries run as subprocesses.
+
+            **Linux** — download `msgbrowse-desktop_linux_amd64.tar.gz` and extract.
+            The execute bit is preserved. Needs the WebKit2GTK runtime:
+
+            ```
+            sudo apt-get install libgtk-3-0 libwebkit2gtk-4.1-0
+            ```
