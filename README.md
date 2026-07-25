@@ -54,7 +54,8 @@ messages. Full documentation lives at
 
 ## Contents
 
-- [Quickstart (`go install`)](#quickstart-go-install)
+- [Install](#install)
+- [Quickstart](#quickstart)
 - [Alternative: Docker](#alternative-docker)
 - [Desktop app](#desktop-app)
 - [Device sync](#device-sync)
@@ -66,7 +67,25 @@ messages. Full documentation lives at
 - [Scheduling daily exports with Claude Cowork](#scheduling-daily-exports-with-claude-cowork)
 - [Development](#development)
 
-## Quickstart (`go install`)
+## Install
+
+### Homebrew (preferred)
+
+```sh
+brew tap stump-wtf/tap
+brew install msgbrowse
+```
+
+The formula builds from source, so the binary is compiled on your machine and
+never picks up macOS's `com.apple.quarantine` attribute — no Gatekeeper prompt
+and no `xattr -d` dance.
+
+> **macOS:** reading live iMessage data means reading
+> `~/Library/Messages/chat.db`, which requires **Full Disk Access** for your
+> terminal (System Settings → Privacy & Security → Full Disk Access). That is a
+> separate macOS permission from Gatekeeper, and no install method avoids it.
+
+### `go install`
 
 Requires **Go 1.25+** — and nothing else. The SQLite driver is pure Go (FTS5
 built in), so there is **no C toolchain and no build tag** to deal with.
@@ -74,7 +93,11 @@ built in), so there is **no C toolchain and no build tag** to deal with.
 ```sh
 go install github.com/joestump/msgbrowse/cmd/msgbrowse@latest
 # msgbrowse lands in $(go env GOBIN) (or $(go env GOPATH)/bin) — put that on $PATH
+```
 
+## Quickstart
+
+```sh
 # point at whichever archives you have (any subset works):
 msgbrowse --data-dir ./data \
   --archive-root          ~/"Managed Files/Signal-Archive" \
