@@ -39,6 +39,13 @@ jobs:
       - name: Checkout PR head
         uses: actions/checkout@v4
         with:
+          # The head branch lives in the head REPO, which is not this repo when
+          # the PR comes from a fork. Without this the fork's branch name is
+          # resolved against stump.wtf/msgbrowse, is not found, and the job dies
+          # in ~6s — which is exactly how every run on #216 failed while its head
+          # was on joestump-agent/msgbrowse. Upstream fix:
+          # stumpcloud/gitea-aibot-action#4.
+          repository: ${{ github.event.pull_request.head.repo.full_name || github.repository }}
           ref: ${{ github.event.pull_request.head.ref || github.head_ref }}
           fetch-depth: 0
 
