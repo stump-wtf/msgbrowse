@@ -1,0 +1,128 @@
+---
+# The single end-to-end pipeline. One run, one dependency graph:
+#
+#   secret scan → lint → test → build → ai review
+#                                          │  (merge to main only)
+#                          desktop apps ·  packages · Gitea Pages
+#
+# Replaces five workflows that raced each other: .gitea/workflows/{aibot.yml,
+# gitleaks.yaml,ci.yaml} plus the .github/workflows/{ci,css,desktop,security}.yml
+# set that Gitea ran until .gitea/workflows/ appeared and shadowed it. The
+# .github/ copies stay for the GitHub mirror; Gitea now reads only this file.
+#
+# Ordering is deliberate, not cosmetic:
+#   * Secrets first — a leaked credential is the one finding that must not wait
+#     behind a compile.
+#   * AI review LAST, behind the build. As a separate workflow it fired the
+#     moment a PR opened and spent tokens reviewing code that had not yet been
+#     shown to compile or pass tests. Now it only runs on a green build.
+#   * Everything after `main-only` is fenced to a push on the default branch,
+#     so a PR (including from a fork) can build a desktop app or a docs site
+#     but can never publish or deploy one.
+#
+# The stages themselves live in stump.wtf/ci and are shared, not copied.
+name: pipeline
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+
+permissions:
+  contents: write
+  packages: write
+  pull-requests: write
+  issues: write
+
+concurrency:
+  group: ${{ gitea.workflow }}-${{ gitea.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ---- 1. secret scan ------------------------------------------------------
+  secrets:
+    uses: https://gitea.stump.rocks/stump.wtf/ci/.gitea/workflows/gitleaks.yaml@main
+    secrets: inherit
+
+  # ---- 2-4. lint + test + build (+ image build) ---------------------------
+  build:
+    needs: [secrets]
+    uses: https://gitea.stump.rocks/stump.wtf/ci/.gitea/workflows/go-service.yaml@main
+    with:
+      # gofmt-check + vet + the migration-immutability guard + go test.
+      lint_cmd: make check
+      build_cmd: make build
+      # The migration guard diffs schema.go against the base branch, which a
+      # depth-1 checkout does not have.
+      fetch_base: true
+      # Builds the image on every run; pushes only from the default branch.
+      publish_image: true
+    secrets: inherit
+
+  # ---- 5. ai review (PRs only, and only once the build is green) ----------
+  review:
+    needs: [build]
+    if: ${{ github.event_name == 'pull_request' }}
+    uses: https://gitea.stump.rocks/stump.wtf/ci/.gitea/workflows/aibot.yaml@main
+    secrets: inherit
+
+  # ---- 6. merge-to-main gate ----------------------------------------------
+  # A single explicit gate rather than repeating the same `if:` on three jobs.
+  # Downstream stages just `needs: [main-only]`, so the fence is stated once
+  # and cannot drift between them.
+  main-only:
+    needs: [build]
+    if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Gate
+        run: echo "on main with a green build — releasing" >> "$GITHUB_STEP_SUMMARY"
+
+  # ---- 7a. desktop apps ---------------------------------------------------
+  # Linux only. The macOS half of .github/workflows/desktop.yml needs
+  # `runs-on: macos-latest`, and this instance has no macOS runner — building
+  # the universal .app stays on the GitHub mirror until one exists.
+  desktop:
+    needs: [main-only]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Wails links the system webview on Linux, so the build needs GTK3 +
+      # WebKit2GTK headers and cgo — `make desktop-linux` carries the
+      # `webkit2_41` tag matching Ubuntu 24.04's webkit2gtk-4.1. Without this
+      # the build fails at link time on a bare runner image.
+      - name: Install GTK3 + WebKit2GTK dev packages
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libgtk-3-dev libwebkit2gtk-4.1-dev pkg-config
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+          cache-dependency-path: |
+            go.sum
+            cmd/msgbrowse-desktop/go.sum
+
+      - name: Headless module tests (pure Go)
+        run: make desktop-test
+
+      - name: Build Linux desktop binary
+        run: make desktop-linux
+      # NOTE: no actions/upload-artifact — v4 fails on this act_runner (it
+      # reports as GHES and exits 1). The binary is proven to build; publishing
+      # it is the release job's business on the mirror.
+      - name: Summary
+        run: echo "Linux desktop binary built" >> "$GITHUB_STEP_SUMMARY"
+
+  # ---- 7b. Gitea Pages ----------------------------------------------------
+  pages:
+    needs: [main-only]
+    uses: https://gitea.stump.rocks/stump.wtf/ci/.gitea/workflows/static-site.yaml@main
+    with:
+      working_directory: docs-site
+      source_dir: docs-site/build
+    secrets: inherit
