@@ -2874,3 +2874,51 @@ a.cal-day:hover {
    retired with the body-scroll layout (#190): #main-content is now itself the
    scroll container (see the App shell frame block above), so a boosted swap
    replaces the scroller and lands at its top with nothing overlaying it. */
+
+/* Semantic-index progress bar on the Status card, and the similarity /
+   fused-rank score chip on semantic & hybrid search results. */
+.index-progress-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+.index-progress {
+  appearance: none;
+  -webkit-appearance: none;
+  flex: 1;
+  height: 10px;
+  border: none;
+  border-radius: 999px;
+  overflow: hidden;
+  background: color-mix(in oklab, var(--color-base-content) 12%, transparent);
+}
+.index-progress::-webkit-progress-bar {
+  background: color-mix(in oklab, var(--color-base-content) 12%, transparent);
+  border-radius: 999px;
+}
+.index-progress::-webkit-progress-value {
+  background: var(--color-primary);
+  border-radius: 999px;
+}
+.index-progress::-moz-progress-bar {
+  background: var(--color-primary);
+  border-radius: 999px;
+}
+.index-progress-pct {
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: color-mix(in oklab, var(--color-base-content) 70%, transparent);
+  min-width: 3ch;
+  text-align: right;
+}
+
+.score-chip {
+  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: 10.5px;
+  font-variant-numeric: tabular-nums;
+  padding: 1px 6px;
+  border-radius: 5px;
+  color: var(--color-primary);
+  border: 1px solid color-mix(in oklab, var(--color-primary) 35%, transparent);
+  background: color-mix(in oklab, var(--color-primary) 8%, transparent);
+}

@@ -188,9 +188,19 @@ type statusData struct {
 	// coverage + last-run + in-progress data the Overview card shows, assembled
 	// by overviewEmbedding.
 	Embedding embedStatusData
+	// History is the recent index-run table (newest first): the track record
+	// beside the single latest-run line.
+	History []embedRunView
 	// IndexAvailable reports whether an Indexer is wired: false (browser / no-op
 	// mode) hides the Build controls and shows the unavailable note.
 	IndexAvailable bool
+	// IndexRunning is the web layer's in-memory single-flight flag: true from the
+	// instant a Build / Reset starts, BEFORE the detached goroutine writes the
+	// first embed_runs row. The template ORs it with Embedding.InProgress to
+	// start the live poll (and disable the buttons) immediately after a click,
+	// bridging the gap until the heartbeat row exists. Embedding.InProgress still
+	// catches a run started by a separate `msgbrowse embed` process.
+	IndexRunning bool
 	// IndexResult is the post-POST banner state after a Build / Reset-&-rebuild:
 	// "" (no action), "started", "reset", "inprogress", "nomodel",
 	// "unavailable", or "error" — a fixed enum mapped to prose by the template.
@@ -516,7 +526,7 @@ func (s *Server) handleStatusIndex(w http.ResponseWriter, r *http.Request) {
 	if !s.checkSetupPOST(w, r) {
 		return // 403 already written; no job started
 	}
-	s.renderStatus(w, r, s.startReindex(false))
+	s.renderStatus(w, r, s.startReindex(r.Context(), false))
 }
 
 // handleStatusIndexReset is POST /status/index/reset — the privileged "Reset &
@@ -529,7 +539,7 @@ func (s *Server) handleStatusIndexReset(w http.ResponseWriter, r *http.Request) 
 	if !s.checkSetupPOST(w, r) {
 		return // 403 already written; nothing cleared, no job started
 	}
-	s.renderStatus(w, r, s.startReindex(true))
+	s.renderStatus(w, r, s.startReindex(r.Context(), true))
 }
 
 // renderStatus assembles the Status page and renders it (full document or
@@ -579,6 +589,11 @@ func (s *Server) renderStatus(w http.ResponseWriter, r *http.Request, indexResul
 		s.serverError(w, err)
 		return
 	}
+	history, err := s.embedRunHistory(ctx, embedRunHistoryLimit)
+	if err != nil {
+		s.serverError(w, err)
+		return
+	}
 	data := statusData{
 		baseData:          base,
 		ConversationCount: convCount,
@@ -588,7 +603,9 @@ func (s *Server) renderStatus(w http.ResponseWriter, r *http.Request, indexResul
 		DeviceSyncFeature: s.deviceSyncFeature,
 		Sync:              s.syncStatusSnapshot(ctx),
 		Embedding:         embedding,
+		History:           history,
 		IndexAvailable:    s.indexer != nil,
+		IndexRunning:      s.indexJobRunning(),
 		IndexResult:       indexResult,
 	}
 	// The Build / Reset forms are privileged POSTs: arm them with a live token,

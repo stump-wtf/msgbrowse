@@ -80,6 +80,8 @@ type Store interface {
 	LastSyncTimes(ctx context.Context) (map[string]time.Time, error)
 	DeleteSourceData(ctx context.Context, src string) (int64, error)
 	LatestEmbedRun(ctx context.Context) (*store.EmbedRun, error)
+	RecentEmbedRuns(ctx context.Context, n int) ([]store.EmbedRun, error)
+	SemanticSearch(ctx context.Context, query []float32, model string, opts store.SemanticOptions) ([]store.ScoredMessage, error)
 	EmbeddingCoverage(ctx context.Context, model string) (store.EmbeddingCoverage, error)
 	// Contact merge engine (#11) behind the Settings → Contacts tab (#12).
 	GetMergeRules(ctx context.Context) (store.MergeRules, error)
@@ -413,6 +415,7 @@ func (s *Server) routes() http.Handler {
 	// detached single-flight job and re-render Status with a fixed-enum banner.
 	mux.HandleFunc("POST /status/index", s.handleStatusIndex)
 	mux.HandleFunc("POST /status/index/reset", s.handleStatusIndexReset)
+	mux.HandleFunc("GET /status/index/progress", s.handleStatusIndexProgress)
 	// The Backups tab (issue #2): the encrypted-DB-snapshot inventory, moved out
 	// of /status into its own Settings-shell section. A safe GET, no mutation.
 	mux.HandleFunc("GET /backups", s.handleBackups)

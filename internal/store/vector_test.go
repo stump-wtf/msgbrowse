@@ -219,3 +219,76 @@ func TestPruneOrphanEmbeddings(t *testing.T) {
 		t.Errorf("remaining embeddings = %d, want 1", n)
 	}
 }
+
+// TestSemanticSearchAttachmentAndLinkFilters pins the two filters the Search
+// page's semantic / hybrid modes share with keyword search. Before they existed
+// on SemanticOptions a ticked "Has attachment" was silently dropped on the
+// vector path — and in hybrid only the keyword half honoured it, so the fused
+// list mixed filtered and unfiltered hits. It also pins that a semantic hit
+// carries the glyph flags, so the SAME message renders identically whichever
+// mode surfaced it.
+func TestSemanticSearchAttachmentAndLinkFilters(t *testing.T) {
+	st := newTestStore(t)
+	ctx := context.Background()
+	const model = "test-embed"
+
+	conv, err := st.UpsertConversation(ctx, source.Signal, "Harper")
+	if err != nil {
+		t.Fatal(err)
+	}
+	msgs := []signal.Message{
+		msg("Harper", "2022-03-01 09:00:00", "Harper", "the lease agreement scan",
+			[]signal.Attachment{{Kind: signal.KindFile, RelPath: "media/lease.pdf", OriginalName: "lease.pdf"}}, nil),
+		msg("Harper", "2022-03-01 09:01:00", "Harper", "lease terms explained here",
+			nil, []signal.Link{{URL: "https://example.com/lease"}}),
+		msg("Harper", "2022-03-01 09:02:00", "Harper", "lease renewal thoughts", nil, nil),
+	}
+	if _, err := st.ReplaceConversationMessages(ctx, conv, source.Signal, msgs); err != nil {
+		t.Fatal(err)
+	}
+	// All three sit on the same axis, so ONLY the filters can narrow the set.
+	for _, m := range msgs {
+		if err := st.PutEmbedding(ctx, m.HashWithSource(source.Signal), model, []float32{1, 0}); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	all, err := st.SemanticSearch(ctx, []float32{1, 0}, model, SemanticOptions{K: 10})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(all) != 3 {
+		t.Fatalf("unfiltered hits = %d, want 3", len(all))
+	}
+
+	withAtt, err := st.SemanticSearch(ctx, []float32{1, 0}, model, SemanticOptions{K: 10, HasAttachment: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(withAtt) != 1 {
+		t.Fatalf("HasAttachment hits = %d, want 1 (the filter must narrow the vector scan)", len(withAtt))
+	}
+	if !withAtt[0].HasAttachment {
+		t.Errorf("attachment hit should carry HasAttachment so the card renders the paperclip glyph: %+v", withAtt[0])
+	}
+
+	withLink, err := st.SemanticSearch(ctx, []float32{1, 0}, model, SemanticOptions{K: 10, HasLink: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(withLink) != 1 {
+		t.Fatalf("HasLink hits = %d, want 1", len(withLink))
+	}
+	if !withLink[0].HasLink || withLink[0].HasAttachment {
+		t.Errorf("link hit flags = link:%v att:%v, want link only", withLink[0].HasLink, withLink[0].HasAttachment)
+	}
+
+	// Both filters together: no message carries an attachment AND a link.
+	both, err := st.SemanticSearch(ctx, []float32{1, 0}, model, SemanticOptions{K: 10, HasAttachment: true, HasLink: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(both) != 0 {
+		t.Errorf("attachment+link hits = %d, want 0 (filters must AND)", len(both))
+	}
+}
