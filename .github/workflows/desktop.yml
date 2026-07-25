@@ -136,11 +136,11 @@ jobs:
         # from inside it.
         working-directory: cmd/msgbrowse-desktop
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # check-latest so release artifacts pick up Go patch releases (stdlib
       # security fixes land there — see security.yml).
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v7
         with:
           go-version: ${{ env.GO_VERSION }}
           check-latest: true
@@ -463,7 +463,7 @@ jobs:
       - name: Zip the .app bundle
         run: ditto -c -k --keepParent build/bin/msgbrowse.app msgbrowse-desktop_darwin_universal.zip
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: msgbrowse-desktop_darwin_universal
           path: cmd/msgbrowse-desktop/msgbrowse-desktop_darwin_universal.zip
@@ -474,7 +474,7 @@ jobs:
     name: Linux binary (amd64)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # Wails on Linux links the system webview; ubuntu-latest (24.04) ships
       # webkit2gtk-4.1, matched by the `webkit2_41` tag in `make desktop-linux`.
@@ -485,7 +485,7 @@ jobs:
 
       # check-latest so release artifacts pick up Go patch releases (stdlib
       # security fixes land there — see security.yml).
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v7
         with:
           go-version: ${{ env.GO_VERSION }}
           check-latest: true
@@ -500,7 +500,7 @@ jobs:
       - name: Build Linux desktop binary
         run: make desktop-linux
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: msgbrowse-desktop_linux_amd64
           path: cmd/msgbrowse-desktop/build/bin/msgbrowse
@@ -525,7 +525,7 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           path: artifacts
 
@@ -545,7 +545,7 @@ jobs:
           ls -l dist
 
       - name: Publish release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           files: dist/*
           generate_release_notes: true
