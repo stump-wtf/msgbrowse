@@ -30,7 +30,7 @@
     "@docusaurus/tsconfig": "3.9.2",
     "@docusaurus/types": "3.9.2",
     "chokidar-cli": "^3.0.0",
-    "concurrently": "^9.0.0",
+    "concurrently": "^10.0.4",
     "typescript": "~5.6.2"
   },
   "overrides": {
