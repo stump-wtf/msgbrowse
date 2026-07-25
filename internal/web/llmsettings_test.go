@@ -38,9 +38,17 @@ func (f *fakeLLMConfigurator) ApplyLLM(s llm.Settings) error {
 	f.cur = s
 	return nil
 }
+
 func (f *fakeLLMConfigurator) TestLLM(_ context.Context, s llm.Settings) error {
 	f.tested = append(f.tested, s)
 	return f.testErr
+}
+
+func (f *fakeLLMConfigurator) ListModels(_ context.Context) ([]string, error) {
+	if f.testErr != nil {
+		return nil, f.testErr
+	}
+	return nil, llm.ErrModelsNotSupported
 }
 
 // llmPOST builds a POST /settings/llm with the given origin, token, and form
@@ -638,5 +646,84 @@ func TestLLMSaveClearKeyWipes(t *testing.T) {
 	}
 	if got := fc.applied[0]; got.APIKey != "" || got.APIKeyFromEnv {
 		t.Errorf("applied = %+v, want wiped key (APIKey=\"\", APIKeyFromEnv=false)", got)
+	}
+}
+
+// llmModelsPOST posts to /settings/llm/models with the given origin/token/fields.
+func llmModelsPOST(t *testing.T, srv *Server, origin, token string, fields map[string]string) *httptest.ResponseRecorder {
+	t.Helper()
+	return llmPOSTTo(t, srv, "/settings/llm/models", origin, token, fields)
+}
+
+// TestLLMModelsRefreshUnsupported: ListModels returns ErrModelsNotSupported,
+// the banner says so and the fields remain text inputs.
+func TestLLMModelsRefreshUnsupported(t *testing.T) {
+	srv, _, _ := newTestServer(t)
+	fc := &fakeLLMConfigurator{}
+	srv.SetLLMConfig(fc)
+
+	tok := mintToken(t, srv)
+	rec := llmModelsPOST(t, srv, selfOrigin, tok, validLLMForm())
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d", rec.Code)
+	}
+	body := rec.Body.String()
+	if !contains(body, "Model listing not supported") {
+		t.Error("missing the listing-not-supported banner")
+	}
+}
+
+// TestLLMModelsRefreshCrossOriginRejected: cross-origin → 403, nothing listed.
+func TestLLMModelsRefreshCrossOriginRejected(t *testing.T) {
+	srv, _, _ := newTestServer(t)
+	fc := &fakeLLMConfigurator{}
+	srv.SetLLMConfig(fc)
+
+	tok := mintToken(t, srv)
+	rec := llmModelsPOST(t, srv, "http://evil.example", tok, validLLMForm())
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("cross-origin models POST status = %d, want 403", rec.Code)
+	}
+}
+
+// TestLLMModelsRefreshMissingTokenRejected: tokenless → 403.
+func TestLLMModelsRefreshMissingTokenRejected(t *testing.T) {
+	srv, _, _ := newTestServer(t)
+	fc := &fakeLLMConfigurator{}
+	srv.SetLLMConfig(fc)
+
+	rec := llmModelsPOST(t, srv, selfOrigin, "", validLLMForm())
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("missing-token models POST status = %d, want 403", rec.Code)
+	}
+}
+
+// TestLLMModelsRefreshUnavailable: no configurator → unavailable banner.
+func TestLLMModelsRefreshUnavailable(t *testing.T) {
+	srv, _, _ := newTestServer(t)
+	tok := mintToken(t, srv)
+	rec := llmModelsPOST(t, srv, selfOrigin, tok, validLLMForm())
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d", rec.Code)
+	}
+	if !contains(rec.Body.String(), "Model listing is not available here.") {
+		t.Error("missing the models-unavailable banner")
+	}
+}
+
+// TestLLMModelsRefreshValidationRejected: invalid form → re-renders with error,
+// no ListModels call.
+func TestLLMModelsRefreshValidationRejected(t *testing.T) {
+	srv, _, _ := newTestServer(t)
+	fc := &fakeLLMConfigurator{}
+	srv.SetLLMConfig(fc)
+
+	tok := mintToken(t, srv)
+	rec := llmModelsPOST(t, srv, selfOrigin, tok, map[string]string{"base_url": ""})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d", rec.Code)
+	}
+	if !contains(rec.Body.String(), "A base URL is required") {
+		t.Error("missing the base-URL field error")
 	}
 }

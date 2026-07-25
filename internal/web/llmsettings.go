@@ -25,6 +25,7 @@ import (
 	"context"
 	"net/http"
 	"net/url"
+	"sort"
 	"strings"
 	"unicode"
 
@@ -56,6 +57,11 @@ type LLMConfigurator interface {
 	// affordance so a user can verify an endpoint before saving. Returns nil
 	// on success, an error otherwise.
 	TestLLM(ctx context.Context, s llm.Settings) error
+	// ListModels fetches the model ids from the currently configured
+	// endpoint's /v1/models listing. Returns llm.ErrModelsNotSupported
+	// when the endpoint returns 404 or a non-JSON body. Returns the
+	// underlying error when the endpoint is unreachable.
+	ListModels(ctx context.Context) ([]string, error)
 }
 
 // SetLLMConfig wires the live LLM settings source. Call it after NewServer
@@ -91,12 +97,24 @@ type llmSettingsData struct {
 	// "unreachable" (probe failed — no raw error is echoed), or "unavailable"
 	// (no configurator wired).
 	TestResult string
+	// ModelsResult is the post-refresh banner state for the "Refresh models"
+	// button: "" (no refresh attempted), "ok" (listing succeeded),
+	// "unsupported" (endpoint returned 404/non-JSON), "unreachable"
+	// (connection failed), or "unavailable" (no configurator wired).
+	ModelsResult string
+	// Models is the list of model ids returned by the last successful listing,
+	// used to populate the embed and facts model dropdowns.
+	Models []string
 	// Per-field validation errors: "" (valid), "required", "scheme",
 	// "invalid", or "toolong".
 	ErrBaseURL    string
 	ErrEmbedModel string
 	ErrFactsModel string
 	ErrAPIKey     string
+	// EmbedModelChanged is true when the saved embed model differs from the
+	// model that was last used by the index, signalling that the index needs
+	// a rebuild.
+	EmbedModelChanged bool
 }
 
 // HasErrors reports whether any field failed validation, for the template's
@@ -119,13 +137,15 @@ func (s *Server) currentLLM() llm.Settings {
 // form.
 func (s *Server) handleSettingsLLM(w http.ResponseWriter, r *http.Request) {
 	cur := s.currentLLM()
-	s.renderLLMSettings(w, r, llmSettingsData{
+	data := llmSettingsData{
 		BaseURL:       cur.BaseURL,
 		EmbedModel:    cur.EmbedModel,
 		FactsModel:    cur.ChatModel,
 		HasAPIKey:     cur.APIKey != "",
 		APIKeyFromEnv: cur.APIKeyFromEnv,
-	})
+	}
+	data.EmbedModelChanged = s.embedModelChanged(r.Context(), cur.EmbedModel)
+	s.renderLLMSettings(w, r, data)
 }
 
 // handleSettingsLLMSave is POST /settings/llm — the privileged save. Gate
@@ -203,12 +223,13 @@ func (s *Server) handleSettingsLLMSave(w http.ResponseWriter, r *http.Request) {
 
 	applied := s.llmConfig.CurrentLLM()
 	s.renderLLMSettings(w, r, llmSettingsData{
-		BaseURL:       applied.BaseURL,
-		EmbedModel:    applied.EmbedModel,
-		FactsModel:    applied.ChatModel,
-		HasAPIKey:     applied.APIKey != "",
-		APIKeyFromEnv: applied.APIKeyFromEnv,
-		SaveResult:    "ok",
+		BaseURL:           applied.BaseURL,
+		EmbedModel:        applied.EmbedModel,
+		FactsModel:        applied.ChatModel,
+		HasAPIKey:         applied.APIKey != "",
+		APIKeyFromEnv:     applied.APIKeyFromEnv,
+		SaveResult:        "ok",
+		EmbedModelChanged: s.embedModelChanged(r.Context(), applied.EmbedModel),
 	})
 }
 
@@ -356,4 +377,87 @@ func validateLLMModel(m string) string {
 		}
 	}
 	return ""
+}
+
+// handleSettingsLLMModels is POST /settings/llm/models — the "Refresh models"
+// trigger. Gated exactly like the save (checkSetupPOST: same-origin +
+// per-session token + body cap, 403 before any work), it reads the currently
+// entered (unsaved) base URL and API key, probes the endpoint's /v1/models
+// listing, and re-renders the tab with the result. The form fields are echoed
+// back unchanged so the user can adjust the URL and retry.
+func (s *Server) handleSettingsLLMModels(w http.ResponseWriter, r *http.Request) {
+	if !s.checkSetupPOST(w, r) {
+		return
+	}
+
+	apiKey := strings.TrimSpace(r.PostFormValue("api_key"))
+	if apiKey == "" {
+		apiKey = s.currentLLM().APIKey
+	}
+
+	data := llmSettingsData{
+		BaseURL:    strings.TrimSpace(r.PostFormValue("base_url")),
+		EmbedModel: strings.TrimSpace(r.PostFormValue("embed_model")),
+		FactsModel: strings.TrimSpace(r.PostFormValue("facts_model")),
+		HasAPIKey:  apiKey != "",
+	}
+	data.ErrBaseURL = validateLLMBaseURL(data.BaseURL)
+	data.ErrEmbedModel = validateLLMModel(data.EmbedModel)
+	data.ErrFactsModel = validateLLMModel(data.FactsModel)
+	data.ErrAPIKey = validateLLMAPIKey(apiKey)
+	if data.HasErrors() {
+		// Validation errors are not a models-list concern — re-render cleanly
+		// and the user's next save/test will surface them.
+		s.renderLLMSettings(w, r, data)
+		return
+	}
+
+	if s.llmConfig == nil {
+		data.ModelsResult = "unavailable"
+		s.renderLLMSettings(w, r, data)
+		return
+	}
+
+	models, err := s.llmConfig.ListModels(r.Context())
+	if err != nil {
+		s.log.Warn("LLM model listing failed",
+			"base_url", data.BaseURL, "error", err)
+		if err == llm.ErrModelsNotSupported {
+			data.ModelsResult = "unsupported"
+		} else {
+			data.ModelsResult = "unreachable"
+		}
+		s.renderLLMSettings(w, r, data)
+		return
+	}
+
+	// Filter: reject models that fail validation (non-printable, too long).
+	filtered := make([]string, 0, len(models))
+	for _, m := range models {
+		if validateLLMModel(m) == "" {
+			filtered = append(filtered, m)
+		}
+	}
+	// Sort for stable display.
+	sort.Strings(filtered)
+
+	s.log.Info("LLM model listing succeeded",
+		"base_url", data.BaseURL, "models", len(filtered))
+	data.Models = filtered
+	data.ModelsResult = "ok"
+	s.renderLLMSettings(w, r, data)
+}
+
+// embedModelChanged reports whether the given embed model differs from the
+// model that was last used by the semantic index. When true, the template
+// shows a warning that the index needs a rebuild.
+func (s *Server) embedModelChanged(ctx context.Context, model string) bool {
+	if model == "" {
+		return false
+	}
+	run, err := s.store.LatestEmbedRun(ctx)
+	if err != nil || run == nil {
+		return false
+	}
+	return run.Model != "" && run.Model != model
 }

@@ -60,6 +60,26 @@
       <p class="link-card-title">Testing is not available here.</p>
       <p class="link-card-sub">This server was started without a live LLM client to probe with.</p>
     </div>
+    {{- else if eq .ModelsResult "ok"}}
+    <div class="notice-card" role="status">
+      <p class="link-card-title">Models refreshed.</p>
+      <p class="link-card-sub">{{len .Models}} model(s) discovered from the endpoint. Select one from the dropdowns below.</p>
+    </div>
+    {{- else if eq .ModelsResult "unsupported"}}
+    <div class="notice-card" role="status">
+      <p class="link-card-title">Model listing not supported.</p>
+      <p class="link-card-sub">This endpoint does not serve a /v1/models listing. You can type a model name manually.</p>
+    </div>
+    {{- else if eq .ModelsResult "unreachable"}}
+    <div class="notice-card" role="status">
+      <p class="link-card-title">Could not reach the endpoint.</p>
+      <p class="link-card-sub">Check the base URL and API key, then try again. See Logs for details.</p>
+    </div>
+    {{- else if eq .ModelsResult "unavailable"}}
+    <div class="notice-card" role="status">
+      <p class="link-card-title">Model listing is not available here.</p>
+      <p class="link-card-sub">This server was started without a live LLM client to probe with.</p>
+    </div>
     {{- else if .HasErrors}}
     <div class="notice-card" role="status">
       <p class="link-card-title">Nothing was saved.</p>
@@ -93,10 +113,23 @@
 
         <div class="space-y-1">
           <label class="eyebrow block" for="llm-embed-model">Embed model</label>
+          {{- if .Models}}
+          <select id="llm-embed-model" name="embed_model" class="filter-input w-full font-mono"
+                  {{if .ErrEmbedModel}}aria-invalid="true" aria-describedby="llm-embed-model-error"{{else}}aria-describedby="llm-embed-model-hint"{{end}}>
+            <option value="">— none (semantic search off) —</option>
+            {{- range .Models}}
+            <option value="{{.}}"{{if eq $.EmbedModel .}} selected{{end}}>{{.}}</option>
+            {{- end}}
+            {{- if and .EmbedModel (not (has .Models .EmbedModel))}}
+            <option value="{{.EmbedModel}}" selected>⚠ {{.EmbedModel}} (not offered by this endpoint)</option>
+            {{- end}}
+          </select>
+          {{- else}}
           <input id="llm-embed-model" name="embed_model" type="text" class="filter-input w-full font-mono"
                  value="{{.EmbedModel}}" autocomplete="off" spellcheck="false"
                  placeholder="local-embed"
                  {{if .ErrEmbedModel}}aria-invalid="true" aria-describedby="llm-embed-model-error"{{else}}aria-describedby="llm-embed-model-hint"{{end}}>
+          {{- end}}
           {{- if .ErrEmbedModel}}
           <p id="llm-embed-model-error" class="setup-note setup-note-warn">
             {{- if eq .ErrEmbedModel "toolong"}}That model name is too long.
@@ -104,14 +137,31 @@
           {{- end}}
           <p id="llm-embed-model-hint" class="status-note">The embedding model behind semantic search.
             Leave empty to turn semantic search off.</p>
+          {{- if .EmbedModelChanged}}
+          <p class="setup-note setup-note-warn">The embed model changed. The existing semantic index was built with a
+            different model — <a href="/status" class="underline">reset and rebuild the index</a>.</p>
+          {{- end}}
         </div>
 
         <div class="space-y-1">
           <label class="eyebrow block" for="llm-facts-model">Facts model</label>
+          {{- if .Models}}
+          <select id="llm-facts-model" name="facts_model" class="filter-input w-full font-mono"
+                  {{if .ErrFactsModel}}aria-invalid="true" aria-describedby="llm-facts-model-error"{{else}}aria-describedby="llm-facts-model-hint"{{end}}>
+            <option value="">— none —</option>
+            {{- range .Models}}
+            <option value="{{.}}"{{if eq $.FactsModel .}} selected{{end}}>{{.}}</option>
+            {{- end}}
+            {{- if and .FactsModel (not (has .Models .FactsModel))}}
+            <option value="{{.FactsModel}}" selected>⚠ {{.FactsModel}} (not offered by this endpoint)</option>
+            {{- end}}
+          </select>
+          {{- else}}
           <input id="llm-facts-model" name="facts_model" type="text" class="filter-input w-full font-mono"
                  value="{{.FactsModel}}" autocomplete="off" spellcheck="false"
                  placeholder="local-chat"
                  {{if .ErrFactsModel}}aria-invalid="true" aria-describedby="llm-facts-model-error"{{else}}aria-describedby="llm-facts-model-hint"{{end}}>
+          {{- end}}
           {{- if .ErrFactsModel}}
           <p id="llm-facts-model-error" class="setup-note setup-note-warn">
             {{- if eq .ErrFactsModel "toolong"}}That model name is too long.
@@ -157,17 +207,21 @@
           {{- end}}
         </div>
 
-        {{/* Two submit buttons share the form. "Save and apply" posts to the
+        {{/* Three submit buttons share the form. "Save and apply" posts to the
              form's action (/settings/llm). "Test connection" probes the
              CURRENTLY-ENTERED values without saving: hx-post retargets the
              boosted submit to /settings/llm/test (inheriting the form's
              hx-target/hx-select/hx-swap), and formaction gives the identical
-             route to the no-JS plain-POST fallback. No inline JS — CSP-safe. */}}
+             route to the no-JS plain-POST fallback. "Refresh models" fetches
+             the endpoint's /v1/models listing. No inline JS — CSP-safe. */}}
         <div class="flex flex-wrap gap-3">
           <button type="submit" class="setup-btn">Save and apply</button>
           <button type="submit" class="setup-btn setup-btn-ghost"
                   formaction="/settings/llm/test"
                   hx-post="/settings/llm/test">Test connection</button>
+          <button type="submit" class="setup-btn setup-btn-ghost"
+                  formaction="/settings/llm/models"
+                  hx-post="/settings/llm/models">Refresh models</button>
         </div>
       </form>
 

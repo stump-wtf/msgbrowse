@@ -258,6 +258,14 @@ func NewServer(st Store, cfg *config.Config, log *slog.Logger) (*Server, error) 
 		"imgTileState":     s.imgTileState,
 		"convRowCtx":       convRowCtx,
 		"galleryConvURL":   galleryConvURL,
+		"has": func(slice []string, s string) bool {
+			for _, v := range slice {
+				if v == s {
+					return true
+				}
+			}
+			return false
+		},
 	}).ParseFS(templatesFS, "templates/*.html")
 	if err != nil {
 		return nil, fmt.Errorf("parse templates: %w", err)
@@ -443,6 +451,7 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("GET /settings/llm", s.handleSettingsLLM)
 	mux.HandleFunc("POST /settings/llm", s.handleSettingsLLMSave)
 	mux.HandleFunc("POST /settings/llm/test", s.handleSettingsLLMTest)
+	mux.HandleFunc("POST /settings/llm/models", s.handleSettingsLLMModels)
 	// The Settings → Contacts tab (#12): the merge-rules settings, de-dup
 	// candidate review, and the manual merge/split overrides. A safe GET render
 	// plus three privileged POSTs (save rules / merge / split), each gated by

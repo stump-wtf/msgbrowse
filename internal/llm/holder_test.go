@@ -24,9 +24,11 @@ func (m markerClient) Chat(context.Context, ChatRequest) (string, error) { retur
 func (m markerClient) Transcribe(context.Context, []byte, string) (string, error) {
 	return "", nil
 }
+
 func (m markerClient) Vision(context.Context, []byte, string, string) (string, error) {
 	return "", nil
 }
+func (m markerClient) ListModels(context.Context) ([]string, error) { return nil, nil }
 
 // TestHolderSwapChangesClientAndSettings is the live-swap contract (#191):
 // calls delegate to client A, then — after Swap — to client B, and the model

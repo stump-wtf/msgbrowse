@@ -131,6 +131,57 @@ func TestVision(t *testing.T) {
 	}
 }
 
+func TestListModels(t *testing.T) {
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/models" {
+			t.Errorf("path = %s", r.URL.Path)
+		}
+		if r.Method != "GET" {
+			t.Errorf("method = %s", r.Method)
+		}
+		if got := r.Header.Get("Authorization"); got != "Bearer test-key" {
+			t.Errorf("auth header = %q", got)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"data":[
+			{"id":"nomic-embed-text"},
+			{"id":"llama3"},
+			{"id":"llama3:70b"}
+		]}`)
+	})
+	models, err := c.ListModels(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(models) != 3 {
+		t.Fatalf("got %d models", len(models))
+	}
+	if models[0] != "nomic-embed-text" || models[1] != "llama3" || models[2] != "llama3:70b" {
+		t.Errorf("models = %v", models)
+	}
+}
+
+func TestListModels404(t *testing.T) {
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+		_, _ = io.WriteString(w, `{"error":"not found"}`)
+	})
+	_, err := c.ListModels(context.Background())
+	if err != ErrModelsNotSupported {
+		t.Errorf("expected ErrModelsNotSupported, got %v", err)
+	}
+}
+
+func TestListModelsNonJSON(t *testing.T) {
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.WriteString(w, `not json`)
+	})
+	_, err := c.ListModels(context.Background())
+	if err != ErrModelsNotSupported {
+		t.Errorf("expected ErrModelsNotSupported, got %v", err)
+	}
+}
+
 func TestErrorStatus(t *testing.T) {
 	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusTooManyRequests)

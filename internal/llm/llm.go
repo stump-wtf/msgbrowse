@@ -9,7 +9,10 @@
 // default is a local route so message content never leaves the machine.
 package llm
 
-import "context"
+import (
+	"context"
+	"fmt"
+)
 
 // Client is the provider-agnostic interface the rest of msgbrowse depends on.
 // All methods are safe for concurrent use.
@@ -29,7 +32,16 @@ type Client interface {
 	// Vision returns a short caption/description of an image. Used by the
 	// journal's media-first digests. mimeType is the image's content type.
 	Vision(ctx context.Context, image []byte, mimeType, prompt string) (string, error)
+
+	// ListModels returns the model ids advertised by the endpoint's
+	// /v1/models endpoint. Returns ErrModelsNotSupported when the endpoint
+	// returns 404 or a non-JSON body.
+	ListModels(ctx context.Context) ([]string, error)
 }
+
+// ErrModelsNotSupported is returned by ListModels when the endpoint does
+// not serve a /v1/models listing (404 or non-JSON body).
+var ErrModelsNotSupported = fmt.Errorf("llm: endpoint does not support model listing")
 
 // Role identifies the author of a chat message.
 type Role string

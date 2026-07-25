@@ -104,6 +104,41 @@ func (c *OpenAIClient) Embed(ctx context.Context, inputs []string) ([][]float32,
 	return out, nil
 }
 
+// --- Model listing ---
+
+type modelsResponse struct {
+	Data []struct {
+		ID string `json:"id"`
+	} `json:"data"`
+}
+
+// ListModels implements Client.
+func (c *OpenAIClient) ListModels(ctx context.Context) ([]string, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+"/models", nil)
+	if err != nil {
+		return nil, err
+	}
+	c.setAuth(req)
+
+	respBody, err := c.do(req)
+	if err != nil {
+		// A 404 means the endpoint doesn't support model listing.
+		if strings.Contains(err.Error(), "404") {
+			return nil, ErrModelsNotSupported
+		}
+		return nil, err
+	}
+	var resp modelsResponse
+	if err := json.Unmarshal(respBody, &resp); err != nil {
+		return nil, ErrModelsNotSupported
+	}
+	out := make([]string, 0, len(resp.Data))
+	for _, m := range resp.Data {
+		out = append(out, m.ID)
+	}
+	return out, nil
+}
+
 // --- Chat ---
 
 type chatRequest struct {

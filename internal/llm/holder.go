@@ -111,6 +111,11 @@ func (h *Holder) Vision(ctx context.Context, image []byte, mimeType, prompt stri
 	return h.current().Vision(ctx, image, mimeType, prompt)
 }
 
+// ListModels implements Client by delegating to the current client.
+func (h *Holder) ListModels(ctx context.Context) ([]string, error) {
+	return h.current().ListModels(ctx)
+}
+
 // Applier binds a Holder to a persistence function: it is the object the web
 // layer's Settings → LLM tab drives (web.LLMConfigurator). ApplyLLM persists
 // the settings FIRST and only then swaps the live client, so a failed write
@@ -135,6 +140,11 @@ func NewApplier(holder *Holder, timeout time.Duration, persist func(Settings) er
 
 // CurrentLLM returns the settings behind the live client.
 func (a *Applier) CurrentLLM() Settings { return a.holder.Settings() }
+
+// ListModels fetches model ids from the current endpoint via the holder.
+func (a *Applier) ListModels(ctx context.Context) ([]string, error) {
+	return a.holder.ListModels(ctx)
+}
 
 // ApplyLLM persists s and then swaps the live client to one built from it —
 // including its API key. On a persist error nothing is swapped.
