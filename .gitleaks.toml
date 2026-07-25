@@ -1,0 +1,30 @@
+# msgbrowse secret-scan config.
+#
+# Extends gitleaks' built-in ruleset (useDefault = true — we do NOT redefine or
+# weaken any rule) and adds ONE allowlist: the two test-fixture paths whose fake
+# API keys trip the generic-api-key rule. These are never real secrets:
+#
+#   - internal/syncthing/client_test.go — `testAPIKey`, a placeholder enforced
+#     by the httptest stub of Syncthing's REST API (nothing leaves the test).
+#   - internal/whatsapp/testdata/*.json — captured WhatsApp export fixtures with
+#     placeholder FIXTUREKEY values.
+#
+# Why a path allowlist instead of .gitleaksignore: gitleaks fingerprints are
+# `commit:file:rule:line`, and the introducing commit gitleaks attributes a
+# finding to is not stable across versions (8.21 vs 8.30 pointed at different
+# commits for the same line, and a line present in many commits yields a finding
+# per commit). A path allowlist is version-stable and can't mask a real secret
+# elsewhere in the tree.
+#
+# The stumpcloud/gitleaks-action auto-loads .gitleaks.toml (entrypoint.sh:56).
+title = "msgbrowse secret scan (extends gitleaks defaults)"
+
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Test fixtures with fake/placeholder API keys (never real secrets)."
+paths = [
+    '''internal/syncthing/client_test\.go''',
+    '''internal/whatsapp/testdata/.*\.json''',
+]
