@@ -3,13 +3,31 @@ package config
 import (
 	"testing"
 	"time"
+
+	"github.com/spf13/viper"
 )
 
-func TestLoadDefaults(t *testing.T) {
+// loadHermetic runs Load("") with the host config search paths neutralized:
+// HOME and XDG_CONFIG_HOME point at an empty temp dir, so ReadInConfig finds no
+// file and the built-in defaults are exercised regardless of whether the
+// developer has a real config.yaml installed under ~/.config/msgbrowse or (on
+// macOS) ~/Library/Application Support/msgbrowse. Without this, default-asserting
+// tests pass only on machines with no installed config. Mirrors the hermetic-HOME
+// fix in internal/setup (PR #214).
+func loadHermetic(t *testing.T) *viper.Viper {
+	t.Helper()
+	dir := t.TempDir()
+	t.Setenv("HOME", dir)
+	t.Setenv("XDG_CONFIG_HOME", dir)
 	v, err := Load("")
 	if err != nil {
 		t.Fatal(err)
 	}
+	return v
+}
+
+func TestLoadDefaults(t *testing.T) {
+	v := loadHermetic(t)
 	cfg, err := Unmarshal(v)
 	if err != nil {
 		t.Fatal(err)
@@ -57,10 +75,7 @@ func TestEnvOverride(t *testing.T) {
 	t.Setenv("MSGBROWSE_LOG_LEVEL", "debug")
 	t.Setenv("MSGBROWSE_WHATSAPP_ARCHIVE_ROOT", "/wapp-from-env")
 
-	v, err := Load("")
-	if err != nil {
-		t.Fatal(err)
-	}
+	v := loadHermetic(t)
 	cfg, err := Unmarshal(v)
 	if err != nil {
 		t.Fatal(err)
@@ -131,7 +146,7 @@ func TestValidate(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			v, _ := Load("")
+			v := loadHermetic(t)
 			cfg, _ := Unmarshal(v)
 			tt.mutate(cfg)
 			err := cfg.Validate()
