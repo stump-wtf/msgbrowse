@@ -52,6 +52,7 @@ func (f *fakeClient) Transcribe(context.Context, []byte, string) (string, error)
 func (f *fakeClient) Vision(context.Context, []byte, string, string) (string, error) {
 	return "", errors.New("unused")
 }
+func (f *fakeClient) ListModels(context.Context) ([]string, error) { return nil, nil }
 
 func (f *fakeClient) callCount() int {
 	f.mu.Lock()

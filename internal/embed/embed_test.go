@@ -39,6 +39,7 @@ func (f *fakeClient) Transcribe(context.Context, []byte, string) (string, error)
 func (f *fakeClient) Vision(context.Context, []byte, string, string) (string, error) {
 	return "", nil
 }
+func (f *fakeClient) ListModels(context.Context) ([]string, error) { return nil, nil }
 
 func newStore(t *testing.T) *store.Store {
 	t.Helper()
