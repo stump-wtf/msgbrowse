@@ -1334,6 +1334,145 @@ a.meta-chip:hover {
   color: color-mix(in oklab, var(--color-base-content) 50%, transparent);
 }
 
+/* --- Home reading-room cards (#239) --------------------------------------- */
+/* "On this day" and "Jump back in": the two cards the design brief puts between
+   the stat strip and the quick links. Same bordered-surface language as
+   .status-card — borders, never shadows (ADR-0012) — with a slightly larger
+   radius because the brief treats these as reading surfaces rather than
+   diagnostics. Every colour is a theme token or a color-mix over one, so both
+   the slate and slate-light themes track automatically; no literal hex here. */
+.home-card {
+  border: 1px solid var(--color-neutral);
+  border-radius: 0.875rem;
+  background: var(--color-base-200);
+  padding: 1.15rem 1.25rem;
+}
+/* Accent eyebrow ("ON THIS DAY · 6 YEARS AGO"), tracked small caps. */
+.home-card-eyebrow {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-primary);
+}
+/* The dim counterpart for a card whose header is not accented ("JUMP BACK IN"). */
+.home-card-label {
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: color-mix(in oklab, var(--color-base-content) 42%, transparent);
+  margin-bottom: 0.4rem;
+}
+.home-card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.25rem 1rem;
+  margin-top: 0.85rem;
+}
+.home-card-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  font-size: 12px;
+  color: var(--color-primary);
+  text-decoration: none;
+}
+.home-card-action:hover {
+  text-decoration: underline;
+}
+.home-card-action:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+  border-radius: 0.25rem;
+}
+/* The secondary action (the always-resolvable conversation link) sits behind the
+   brief's primary "Open that day" affordance without competing with it. */
+.home-card-action-dim {
+  color: color-mix(in oklab, var(--color-base-content) 50%, transparent);
+}
+.home-card-action-dim:hover {
+  color: var(--color-base-content);
+}
+.home-resurfaced {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.625rem;
+  margin-top: 0.8rem;
+}
+.home-resurfaced-who {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--color-base-content);
+}
+.home-resurfaced-when {
+  font-size: 12px;
+  font-weight: 400;
+  color: color-mix(in oklab, var(--color-base-content) 40%, transparent);
+  font-variant-numeric: tabular-nums;
+}
+/* The resurfaced excerpt. Server-truncated, so the clamp is a second line of
+   defence rather than the only one; word-break keeps an unbroken URL from
+   widening the card past the reading column.
+   The curly quotes the design brief shows are CSS ::before/::after, NOT
+   concatenated into the string: the excerpt is untrusted message content and
+   must stay a single html/template-escaped interpolation. */
+.home-quote {
+  margin-top: 0.2rem;
+  font-size: 13px;
+  line-height: 1.5;
+  color: color-mix(in oklab, var(--color-base-content) 72%, transparent);
+  word-break: break-word;
+}
+.home-quote::before {
+  content: "\201C";
+}
+.home-quote::after {
+  content: "\201D";
+}
+/* One recent-conversation row. Hover treatment matches .link-card:hover so the
+   two Home surfaces feel like one system. */
+.jumpback-row {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  padding: 0.45rem 0.5rem;
+  margin-inline: -0.5rem;
+  border-radius: 0.5rem;
+  text-decoration: none;
+  color: inherit;
+  @media (prefers-reduced-motion: no-preference) {
+    transition: background-color 0.12s ease;
+  }
+}
+.jumpback-row:hover {
+  background: color-mix(in oklab, var(--color-primary) 6%, transparent);
+}
+.jumpback-row:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+.jumpback-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13.5px;
+  font-weight: 500;
+  color: var(--color-base-content);
+}
+.jumpback-rel {
+  flex-shrink: 0;
+  font-size: 11.5px;
+  color: color-mix(in oklab, var(--color-base-content) 40%, transparent);
+  font-variant-numeric: tabular-nums;
+}
+
 /* --- Contact profile message-volume sparkline (redesign Phase 1) ---------- */
 /* The bars/labels inherit currentColor (the accent) via fill="currentColor";
    geometry + opacity are presentational SVG attributes (CSP forbids inline

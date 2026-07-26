@@ -41,10 +41,97 @@
         </div>
       </div>
 
-      {{/* Per-provider freshness (issue #1): one row per source with imported
-           data or a recorded ingest run, in canonical source order. "Last
-           synced" is the source's most recent completed ingest; "—" means none
-           was ever recorded (e.g. data synced in from another device). */}}
+      {{/* Reading-room cards (#239, design brief §Home): "On this day" beside
+           "Jump back in", between the stat strip and the quick links. This is
+           the first screenful now — the diagnostics below are subordinate to it.
+           The whole grid is gated, so an archive with no qualifying prior year
+           AND no conversations renders no empty frame rather than two bordered
+           voids. The two-column split is applied only when BOTH cards render —
+           with one card, md:grid-cols-2 would pin it to half width beside an
+           empty column. Boost attributes ride the wrapper, matching the
+           quick-link grid, so every link inside swaps only #main-content. */}}
+      {{if or .OnThisDay.Show .JumpBack}}
+      <div class="grid grid-cols-1 {{if and .OnThisDay.Show .JumpBack}}md:grid-cols-2 {{end}}gap-4 mb-4"
+           hx-boost="true" hx-target="#main-content" hx-select="#main-content" hx-swap="outerHTML" hx-push-url="true">
+        {{if .OnThisDay.Show}}
+        {{/* Every field here is server-derived and server-truncated; the body is
+             message content, so it stays a plain interpolation and is escaped by
+             html/template — never printed raw, never into an href. */}}
+        <div class="home-card">
+          <div class="home-card-eyebrow">{{template "icon-calendar" .}} On this day · {{.OnThisDay.YearsLabel}}</div>
+          <div class="home-resurfaced">
+            <span class="avatar-mono avatar-sm {{.OnThisDay.AvatarColor}}" aria-hidden="true">{{.OnThisDay.Initials}}</span>
+            <div class="min-w-0">
+              <div class="home-resurfaced-who">{{.OnThisDay.ConversationName}}
+                <span class="home-resurfaced-when">· {{.OnThisDay.DateLabel}}</span></div>
+              <p class="home-quote">{{.OnThisDay.Body}}</p>
+              <div class="home-resurfaced-when">{{.OnThisDay.Sender}} · <span class="mono">{{.OnThisDay.Time}}</span></div>
+            </div>
+          </div>
+          {{/* TWO ways onward, deliberately. "Open that day" is the brief's
+               affordance, but /journal?day= only resolves once the journal has
+               been built — on an import-only install handleJournal short-circuits
+               to "No journal yet" and drops the ?day= entirely, which would make
+               this card's only action a dead end. The conversation link is
+               derived from the message itself, so it always resolves. */}}
+          <div class="home-card-actions">
+            <a href="{{.OnThisDay.JournalURL}}" class="home-card-action">Open that day →</a>
+            <a href="{{.OnThisDay.ConvURL}}" class="home-card-action home-card-action-dim">Open the conversation →</a>
+          </div>
+        </div>
+        {{end}}
+        {{if .JumpBack}}
+        <div class="home-card">
+          <div class="home-card-label">Jump back in</div>
+          {{- range .JumpBack}}
+          <a href="{{.URL}}" class="jumpback-row">
+            <span class="avatar-mono avatar-sm {{.AvatarColor}}" aria-hidden="true">{{.Initials}}</span>
+            <span class="jumpback-name">{{.Name}}</span>
+            <span class="jumpback-rel mono">{{.Rel}}</span>
+          </a>
+          {{- end}}
+        </div>
+        {{end}}
+      </div>
+      {{end}}
+
+      {{/* Quick-links: compact square icon tiles (accent icon + label + a dim
+           subtitle, per the design brief's 4-up grid) that fit four across
+           inside the 780px reading column. Boosted (same scoped #main-content
+           swap as the sidebar nav) for instant loads. */}}
+      <div class="grid grid-cols-2 sm:grid-cols-4 gap-3"
+           hx-boost="true" hx-target="#main-content" hx-select="#main-content" hx-swap="outerHTML" hx-push-url="true">
+        <a href="/search" class="link-card">
+          <span class="link-card-icon">{{template "icon-search" .}}</span>
+          <span class="link-card-title">Search</span>
+          <span class="link-card-sub">Full-text, filtered</span>
+        </a>
+        <a href="/gallery" class="link-card">
+          <span class="link-card-icon">{{template "icon-photo" .}}</span>
+          <span class="link-card-title">Media</span>
+          <span class="link-card-sub">Images, files, links</span>
+        </a>
+        {{/* Sparkles, not the book glyph it shipped with (#238): the journal's
+             own editorial eyebrow already uses icon-sparkles, so the quick-link
+             and the surface it opens now read as the same feature. */}}
+        <a href="/journal" class="link-card">
+          <span class="link-card-icon">{{template "icon-sparkles" .}}</span>
+          <span class="link-card-title">Journal</span>
+          <span class="link-card-sub">Editorialized days</span>
+        </a>
+        <a href="/status" class="link-card">
+          <span class="link-card-icon">{{template "icon-server" .}}</span>
+          <span class="link-card-title">Status</span>
+          <span class="link-card-sub">Archive &amp; backups</span>
+        </a>
+      </div>
+
+      {{/* Diagnostics, subordinate to the reading room above (#239). Per-provider freshness
+           (issue #1): one row per source with imported data or a recorded
+           ingest run, in canonical source order. "Last synced" is the source's
+           most recent completed ingest; "—" means none was ever recorded (e.g.
+           data synced in from another device). */}}
+      <div class="mt-8">
       {{if .Providers}}
       <div class="status-card mb-4">
         <div class="status-card-title">By provider</div>
@@ -108,32 +195,7 @@
              them rather than duplicating the Build / Reset buttons here. */}}
         <p class="status-note mt-4"><a href="/status" class="link link-hover">Manage index →</a></p>
       </div>
-
-      {{/* Quick-links: compact square icon tiles (accent icon + label) that fit
-           four across inside the 780px reading column. Boosted (same scoped
-           #main-content swap as the sidebar nav) for instant loads. */}}
-      <div class="grid grid-cols-2 sm:grid-cols-4 gap-3"
-           hx-boost="true" hx-target="#main-content" hx-select="#main-content" hx-swap="outerHTML" hx-push-url="true">
-        <a href="/search" class="link-card">
-          <span class="link-card-icon">{{template "icon-search" .}}</span>
-          <span class="link-card-title">Search</span>
-        </a>
-        <a href="/gallery" class="link-card">
-          <span class="link-card-icon">{{template "icon-photo" .}}</span>
-          <span class="link-card-title">Media</span>
-        </a>
-        {{/* Sparkles, not the book glyph it shipped with (#238): the journal's
-             own editorial eyebrow already uses icon-sparkles, so the quick-link
-             and the surface it opens now read as the same feature. */}}
-        <a href="/journal" class="link-card">
-          <span class="link-card-icon">{{template "icon-sparkles" .}}</span>
-          <span class="link-card-title">Journal</span>
-        </a>
-        <a href="/status" class="link-card">
-          <span class="link-card-icon">{{template "icon-server" .}}</span>
-          <span class="link-card-title">Status</span>
-        </a>
-      </div>
+      </div>{{/* end diagnostics block */}}
       {{else}}
       <div class="notice-card">
         <p class="link-card-title">No messages have been ingested yet.</p>

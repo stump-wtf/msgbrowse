@@ -75,6 +75,12 @@ type Store interface {
 	JournalMonth(ctx context.Context, year int, month time.Month) ([]store.JournalMonthDay, error)
 	JournalStats(ctx context.Context, year int, exclude []string) (store.JournalStats, error)
 	GetJournalDay(ctx context.Context, day string) (store.JournalDayView, bool, error)
+	// Home's two resurfacing cards (#239). Both are LIMITed and index-served so
+	// they can run on the boosted #main-content path too (REQ-0008-006) — which
+	// ListConversations deliberately cannot.
+	MessageYearRange(ctx context.Context) (first, last int, err error)
+	OnThisDayCandidates(ctx context.Context, days []string, perDay, limit int, exclude []string) ([]store.OnThisDayMessage, error)
+	RecentConversations(ctx context.Context, n int) ([]store.RecentConversation, error)
 	SourcesPresent(ctx context.Context) ([]string, error)
 	SourceCounts(ctx context.Context) (map[string]store.SourceCount, error)
 	LastSyncTimes(ctx context.Context) (map[string]time.Time, error)

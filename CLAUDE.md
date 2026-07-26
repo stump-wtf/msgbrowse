@@ -20,9 +20,29 @@ Each spec is a paired artifact: `spec.md` (requirements) and `design.md`
 ### SDD Configuration
 
 #### Tracker
-- **Type**: github
-- **Owner**: joestump
+
+**Gitea is the source of truth.** Issues, pull requests and CI all live at
+`https://gitea.stump.rocks/stump.wtf/msgbrowse`. The GitHub side
+(`github.com/stump-wtf/msgbrowse`) is a downstream push mirror: it carries code
+only, and has no issues and no pull requests. A `#123` reference in this repo
+means a Gitea issue — resolving one against GitHub 404s.
+
+This block previously read `github` / `joestump`, which pointed every tool that
+reads it at the archived personal repo.
+
+- **Type**: gitea
+- **Host**: https://gitea.stump.rocks
+- **Owner**: stump.wtf
 - **Repo**: msgbrowse
+
+> **Remote layout.** `origin` is Gitea (`stump.wtf/msgbrowse`); the GitHub
+> mirror is the remote named `github`. It was the other way round until
+> 2026-07-26, and the inversion was a trap worth remembering: `make check` runs
+> the migration guard against `origin/main`, so with `origin` pointing at the
+> stale GitHub fork it falsely reported "N shipped migration(s) modified", and
+> repo-relative links resolved to GitHub, where none of these issues exist. If a
+> checkout still has `origin` on GitHub, either fix the remotes or pass
+> `make check MIGRATION_BASE_REF=<gitea-remote>/main`.
 
 #### Branch Conventions
 - **Enabled**: true

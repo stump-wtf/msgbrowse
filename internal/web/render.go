@@ -282,6 +282,68 @@ func clockTime(ts string) string {
 	return ts
 }
 
+// wallNow converts the current local wall clock into the same
+// parsed-as-UTC space the store's ts_unix column lives in.
+//
+// ts_unix is NOT a true instant: it is a wall-clock string parsed as UTC (see
+// signal.TimestampLayout), used purely as an ordering key. Subtracting a real
+// time.Now().Unix() from it would be off by the machine's UTC offset — five
+// hours of phantom age in New York — so any age arithmetic has to put "now"
+// through the identical round-trip first.
+func wallNow(now time.Time) time.Time {
+	t, err := time.Parse(signal.TimestampLayout, now.Format(signal.TimestampLayout))
+	if err != nil {
+		return now.UTC()
+	}
+	return t
+}
+
+// relTimeLabel renders a stored message timestamp as the coarse relative label
+// Home's "Jump back in" card shows ("2m", "3h", "Yesterday", "4d"). now must
+// already be wall-clock space — pass wallNow(time.Now()).
+//
+// Buckets are deliberately coarse and calendar-aware rather than purely
+// arithmetic: "Yesterday" means the previous calendar day, not 24-48 hours ago,
+// which is what a reader means by it. A future timestamp (clock skew, an archive
+// imported from a machine running ahead) reads "just now" rather than a negative
+// age.
+func relTimeLabel(tsUnix int64, now time.Time) string {
+	t := time.Unix(tsUnix, 0).UTC()
+	d := now.Sub(t)
+	switch {
+	case d < time.Minute:
+		return "just now"
+	case d < time.Hour:
+		return fmt.Sprintf("%dm", int(d/time.Minute))
+	}
+	nowDay := now.Truncate(24 * time.Hour)
+	tsDay := t.Truncate(24 * time.Hour)
+	switch days := int(nowDay.Sub(tsDay) / (24 * time.Hour)); {
+	case days <= 0:
+		return fmt.Sprintf("%dh", int(d/time.Hour))
+	case days == 1:
+		return "Yesterday"
+	case days < 7:
+		return fmt.Sprintf("%dd", days)
+	}
+	return shortDateLabel(t)
+}
+
+// shortDateLabel renders an absolute fallback date ("Oct 22, 2022") for
+// timestamps too old for a relative label.
+func shortDateLabel(t time.Time) string {
+	mo := int(t.Month())
+	if mo < 1 || mo > 12 {
+		return t.Format("2006-01-02")
+	}
+	return fmt.Sprintf("%s %d, %d", monthAbbrevs[mo], t.Day(), t.Year())
+}
+
+// monthAbbrevs indexes 1-12; index 0 is unused so the month number indexes
+// directly, matching monthNames.
+var monthAbbrevs = [...]string{"", "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+	"Jul", "Aug", "Sep", "Oct", "Nov", "Dec"}
+
 // dateLabel renders a stored timestamp's calendar date as a human day-separator
 // label ("2022-10-22 20:17:13" → "October 22, 2022"). Falls back to the raw
 // date prefix if parsing fails.
