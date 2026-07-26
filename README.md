@@ -27,12 +27,29 @@ read-only, and the only internet egress is to the OpenAI-compatible LLM endpoint
 
 ## Install
 
-**Homebrew** (preferred — builds from source, so no Gatekeeper quarantine):
+**Homebrew — CLI** (preferred; builds from source, so no Gatekeeper quarantine):
 
 ```sh
 brew tap stump-wtf/tap
 brew install msgbrowse
 ```
+
+**Homebrew — desktop app** (macOS 11+): the native `.app` — same embedded server
+as `msgbrowse serve`, plus bundled exporters, so a fresh Mac with no Homebrew
+Python can export and import offline:
+
+```sh
+brew install --cask msgbrowse-desktop
+```
+
+The formula and the cask are **different artifacts of the same project** —
+installing one does not get you the other. `msgbrowse` builds the CLI from
+source; `msgbrowse-desktop` downloads the prebuilt universal `.app` into
+`/Applications`. Homebrew forbids a formula from installing an `.app` into
+`/Applications`, which is why they ship under separate tokens rather than one.
+They coexist fine. Releases are ad-hoc signed pending a
+Developer ID, so the cask's `postflight` strips `com.apple.quarantine` for you —
+no manual `xattr` step, and the app's embedded exporters actually run.
 
 **`go install`** — needs Go 1.25+ and nothing else; the SQLite driver is pure Go
 (FTS5 built in), so there's no C toolchain and no build tag:
@@ -42,8 +59,9 @@ go install github.com/joestump/msgbrowse/cmd/msgbrowse@latest
 ```
 
 Reading live iMessage data requires **Full Disk Access** for your terminal
-(System Settings → Privacy & Security). Docker, the native desktop app, and the
-upstream exporters are covered in the
+(System Settings → Privacy & Security) — a separate macOS permission from
+Gatekeeper that no install method avoids. Docker and the upstream exporters are
+covered in the
 [installation guide](https://joestump.github.io/msgbrowse/docs/getting-started/installation/).
 
 ## Quickstart
