@@ -222,6 +222,14 @@ type Server struct {
 	// mechanical journal_days was built with — otherwise the message-scanning
 	// stats would leak an excluded conversation's activity (ADR-0023).
 	journalExclude []string
+
+	// backupMgr runs the Create / Prune / Restore snapshot operations behind
+	// the Backups tab (ADR-0026 / SPEC-0026). nil (browser mode, no data_dir)
+	// renders the tab's unavailable state and makes the mutating POSTs report
+	// themselves so.
+	backupMgr      BackupManager
+	backupMu       sync.Mutex
+	backupInFlight bool
 }
 
 // NewServer constructs a Server, parsing templates and wiring routes.
@@ -455,9 +463,14 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("POST /status/index", s.handleStatusIndex)
 	mux.HandleFunc("POST /status/index/reset", s.handleStatusIndexReset)
 	mux.HandleFunc("GET /status/index/progress", s.handleStatusIndexProgress)
-	// The Backups tab (issue #2): the encrypted-DB-snapshot inventory, moved out
-	// of /status into its own Settings-shell section. A safe GET, no mutation.
+	// The Backups tab (ADR-0026 / SPEC-0026): msgbrowse-owned snapshots
+	// (Create / Prune / Restore) plus the read-only external .snapshots
+	// inventory. The mutating POSTs follow the Status page's
+	// checkSetupPOST gate.
 	mux.HandleFunc("GET /backups", s.handleBackups)
+	mux.HandleFunc("POST /backups/create", s.handleBackupsCreate)
+	mux.HandleFunc("POST /backups/prune", s.handleBackupsPrune)
+	mux.HandleFunc("POST /backups/restore", s.handleBackupsRestore)
 	// The Setup surface is presented to the user as "Providers" (its route is
 	// /providers); /setup 301-redirects for compatibility with any existing links
 	// or bookmarks. The privileged POSTs keep the /setup/* prefix — they are

@@ -8,11 +8,11 @@ import (
 	"testing"
 )
 
-// TestBackupsPage (issue #2): the Backups tab renders the snapshot inventory
-// that used to live on /status — total footprint, count, and the per-snapshot
-// table (name, taken-at, size, retention tier). The fixture archive carries a
-// .snapshots dir with three tarballs (daily/monthly/yearly tiers), so the card
-// and its rows must render.
+// TestBackupsPage (ADR-0026): the Backups tab renders both the owned snapshot
+// section (when a manager is wired) and the external .snapshots inventory
+// (read-only, ADR-0010 §5). The fixture archive carries a .snapshots dir
+// with three tarballs (daily/monthly/yearly tiers), so the external card and
+// its rows must render.
 func TestBackupsPage(t *testing.T) {
 	srv, _, _ := newTestServer(t)
 	rec := get(t, srv, "/backups")
@@ -21,9 +21,9 @@ func TestBackupsPage(t *testing.T) {
 	}
 	body := rec.Body.String()
 
-	// The snapshot card, its footprint copy, and the per-tier rows.
+	// The external snapshot card, its footprint copy, and the per-tier rows.
 	for _, want := range []string{
-		"Encrypted DB snapshots",
+		"External snapshots (read-only)",
 		"Total footprint",
 		"never opens or decrypts",
 		"status-table",
@@ -52,28 +52,22 @@ func TestBackupsPage(t *testing.T) {
 // TestBackupsPageNoPipeline is the issue-#164 behavior, preserved on the new
 // tab: with no snapshots recorded and no .snapshots dir in the signal archive
 // (the desktop-onboarded shape — newManagedRootServer's temp managed root),
-// the Encrypted-DB-snapshots card is replaced by one neutral line; growing a
-// .snapshots dir brings the card back even before any rows are ingested.
+// the external snapshots card is absent; growing a .snapshots dir brings it
+// back even before any rows are ingested.
 func TestBackupsPageNoPipeline(t *testing.T) {
 	srv, _, managed := newManagedRootServer(t)
 
 	body := get(t, srv, "/backups").Body.String()
-	if contains(body, "Encrypted DB snapshots") {
-		t.Error("/backups rendered the snapshots card with no snapshot pipeline")
-	}
-	if !contains(body, "No snapshot pipeline on this machine.") {
-		t.Error("/backups missing the neutral no-pipeline line")
+	if contains(body, "External snapshots (read-only)") {
+		t.Error("/backups rendered the external snapshots card with no snapshot pipeline")
 	}
 
 	if err := os.MkdirAll(filepath.Join(managed, ".snapshots"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	body = get(t, srv, "/backups").Body.String()
-	if !contains(body, "Encrypted DB snapshots") {
-		t.Error("/backups hid the snapshots card despite a .snapshots dir in the archive")
-	}
-	if contains(body, "No snapshot pipeline on this machine.") {
-		t.Error("/backups kept the no-pipeline line beside the snapshots card")
+	if !contains(body, "External snapshots (read-only)") {
+		t.Error("/backups hid the external snapshots card despite a .snapshots dir in the archive")
 	}
 }
 
@@ -90,7 +84,7 @@ func TestBackupsBoostedPartial(t *testing.T) {
 	if !contains(body, "<title>Backups · msgbrowse</title>") {
 		t.Errorf("boosted partial missing its owning title; body starts %q", body[:min(120, len(body))])
 	}
-	if !contains(body, `id="main-content"`) || !contains(body, "Encrypted DB snapshots") {
+	if !contains(body, `id="main-content"`) || !contains(body, "External snapshots (read-only)") {
 		t.Error("boosted partial missing the #main-content snapshot inventory")
 	}
 	// No shell in the boosted swap.

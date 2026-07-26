@@ -143,6 +143,18 @@ func TestValidate(t *testing.T) {
 			c.DeviceSync.Enabled = false
 			c.DeviceSync.ListenAddr = ""
 		}, false},
+		// ADR-0026: backups.dir MUST NOT be inside archive_root.
+		{"backups dir inside archive root rejected", func(c *Config) {
+			c.ArchiveRoot = "/tmp/archive"
+			c.Backups.Dir = "/tmp/archive/.snapshots"
+		}, true},
+		{"backups dir outside archive root ok", func(c *Config) {
+			c.ArchiveRoot = "/tmp/archive"
+			c.Backups.Dir = "/tmp/backups"
+		}, false},
+		{"backups dir empty (default) ok", func(c *Config) {
+			c.Backups.Dir = ""
+		}, false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
