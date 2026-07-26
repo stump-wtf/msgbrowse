@@ -11,7 +11,10 @@ import (
 	"github.com/joestump/msgbrowse/internal/store"
 )
 
-// snapshotsDir is the archive subdirectory holding raw encrypted DB backups.
+// snapshotsDir is the archive subdirectory holding raw encrypted DB backups
+// produced by an external backup job. msgbrowse inventories these for display
+// only (ADR-0010 §5: never opens or decrypts). msgbrowse-owned snapshots live
+// under a separate configurable backups.dir (ADR-0026).
 const snapshotsDir = ".snapshots"
 
 // snapshotNameRe matches a snapshot tar: db-YYYYMMDD-HHMMSS.tar.
@@ -21,8 +24,10 @@ var snapshotNameRe = regexp.MustCompile(`^db-(\d{8})-(\d{6})\.tar$`)
 const snapshotTimeLayout = "20060102-150405"
 
 // GFS tier age boundaries, measured from "now". These describe which retention
-// tier a snapshot currently falls into for display purposes; msgbrowse never
-// creates or prunes snapshots (the upstream backup job does).
+// tier a snapshot currently falls into. msgbrowse-owned snapshots (created,
+// pruned, and restorable from the Backups tab) use these as enforced policy;
+// the external .snapshots inventory uses them as a display classification.
+// See ADR-0026 (msgbrowse owns its own snapshots).
 const (
 	dailyMaxAge     = 14 * 24 * time.Hour      // daily backups kept ≤ 14 days
 	monthlyMaxAge   = 395 * 24 * time.Hour     // ~13 months
