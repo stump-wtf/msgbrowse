@@ -162,27 +162,28 @@ func TestCreateSingleFlight(t *testing.T) {
 }
 
 func TestCreateNoPartialFileOnFailure(t *testing.T) {
-	// If the target directory is unwritable, Create must fail and leave no
-	// partial snapshot in the listing.
+	// If the target directory cannot be created, Create must fail and leave
+	// no partial snapshot in the listing. We make the snapshot dir path
+	// point inside a FILE (not a directory) so mkdir fails regardless of
+	// user/root — a chmod trick does not stop root from writing.
 	m, _, _, _ := newTestManager(t)
 	ctx := context.Background()
 
-	// Make the snapshot dir unwritable.
-	snapDir := m.dir
-	if err := os.MkdirAll(snapDir, 0o700); err != nil {
-		t.Fatalf("mkdir snap dir: %v", err)
+	// Create a file where the snapshot directory would be, so MkdirAll
+	// fails (cannot create a directory inside a file).
+	blockerPath := filepath.Join(filepath.Dir(m.dir), "blocker-file")
+	if err := os.WriteFile(blockerPath, []byte("x"), 0o600); err != nil {
+		t.Fatalf("write blocker: %v", err)
 	}
-	if err := os.Chmod(snapDir, 0o500); err != nil {
-		t.Fatalf("chmod snap dir read-only: %v", err)
-	}
-	t.Cleanup(func() { _ = os.Chmod(snapDir, 0o700) })
+	m.dir = filepath.Join(blockerPath, "backups")
 
 	_, err := m.Create(ctx)
 	if err == nil {
 		t.Fatal("Create on unwritable dir succeeded; want error")
 	}
 
-	// Listing must be empty — no partial snapshot.
+	// Reset to a valid dir and verify the listing is empty — no partial snapshot.
+	m.dir = filepath.Join(filepath.Dir(blockerPath), "backups")
 	snaps, err := m.List()
 	if err != nil {
 		t.Fatalf("List after failed Create: %v", err)
