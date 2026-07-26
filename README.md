@@ -6,105 +6,45 @@
 
 > Self-hosted, **local-only** browser, search engine, and AI-editorialized
 > journal over your personal message archives — **Signal, Apple iMessage, and
-> WhatsApp** — built on the upstream exporters
-> [`signal-export`](https://github.com/carderne/signal-export),
-> [`imessage-exporter`](https://github.com/ReagentX/imessage-exporter), and
-> [`WhatsApp-Chat-Exporter`](https://github.com/KnugiHK/WhatsApp-Chat-Exporter).
-> A calm, private reading room for everything you've ever said.
+> WhatsApp**. A calm, private reading room for everything you've ever said.
 
 [![msgbrowse](docs-site/static/img/hero-screenshot.png)](https://joestump.github.io/msgbrowse/)
 
-msgbrowse renders a fast local UI over on-disk exports, adds keyword + semantic
-search, and exposes an **MCP server** so Claude can answer natural-language
-questions over your message history — every answer traceable to source
-messages. Full documentation lives at
-**[joestump.github.io/msgbrowse](https://joestump.github.io/msgbrowse/)**.
+msgbrowse renders a fast local UI over on-disk exports from
+[`signal-export`](https://github.com/carderne/signal-export),
+[`imessage-exporter`](https://github.com/ReagentX/imessage-exporter), and
+[`WhatsApp-Chat-Exporter`](https://github.com/KnugiHK/WhatsApp-Chat-Exporter),
+adds keyword + semantic search, and exposes an **MCP server** so Claude can
+answer natural-language questions over your history — every answer traceable to
+source messages.
 
-> [!IMPORTANT]
-> **Nothing leaves your machine.** The web UI binds loopback only, archives are
-> treated strictly read-only, and the only *internet* egress msgbrowse ever
-> makes is to the OpenAI-compatible LLM endpoint **you** configure (default: a
-> local LiteLLM → Ollama route). Opt-in [device sync](#device-sync) adds
-> LAN-only Syncthing traffic to devices you pair — no global discovery, no
-> relays, nothing off your network. Encrypted `.snapshots/*.tar` backups are
-> inventoried but never opened. See [`SECURITY.md`](SECURITY.md) for the full
-> threat model.
-
-> [!NOTE]
-> **Status:** working today — all three sources (import/browse/transcript with
-> reaction badges), FTS + semantic search, media & links gallery, AI contact
-> facts, the MCP server, a web UI that answers boosted navigations in ~20 ms
-> on a 400k-message archive, the [desktop app](#desktop-app) with menubar
-> residency ([#97](https://github.com/joestump/msgbrowse/issues/97)),
-> [QR device pairing + archive sync](#device-sync)
-> ([#98](https://github.com/joestump/msgbrowse/issues/98)), and the
-> AI-editorialized journal. In development: Gitea-primary release publishing
-> ([#99](https://github.com/joestump/msgbrowse/issues/99)).
+Nothing leaves your machine. The web UI binds loopback only, archives are
+read-only, and the only internet egress is to the OpenAI-compatible LLM endpoint
+**you** configure. See [`SECURITY.md`](SECURITY.md) for the threat model.
 
 > [!WARNING]
 > **Alpha software** — expect rough edges while this is under active testing.
-> If you're on the **macOS desktop app**, the `.app` is only ad-hoc signed
-> (Developer ID notarization is pending), so Gatekeeper blocks the first
-> launch. Before opening it, run:
-> ```
-> xattr -dr com.apple.quarantine msgbrowse.app
-> ```
-> See [Desktop app](#desktop-app) for the full explanation and the GUI-only
-> alternative if you'd rather not use the terminal.
-
-## Contents
-
-- [Install](#install)
-- [Quickstart](#quickstart)
-- [Alternative: Docker](#alternative-docker)
-- [Desktop app](#desktop-app)
-- [Device sync](#device-sync)
-- [The data layout it reads](#the-data-layout-it-reads)
-- [Commands](#commands)
-- [Connecting Claude (MCP)](#connecting-claude-mcp)
-- [Configuration reference](#configuration-reference)
-- [Security](#security)
-- [Scheduling daily exports with Claude Cowork](#scheduling-daily-exports-with-claude-cowork)
-- [Development](#development)
 
 ## Install
 
-### Homebrew (preferred)
-
-The **CLI** is a formula; the macOS **desktop app** is a separate cask. Pick
-either or install both — they coexist.
+**Homebrew** (preferred — builds from source, so no Gatekeeper quarantine):
 
 ```sh
 brew tap stump-wtf/tap
-
-brew install msgbrowse                  # CLI (msgbrowse serve / import / export)
-brew install --cask msgbrowse-desktop   # macOS .app → /Applications
+brew install msgbrowse
 ```
 
-`brew install msgbrowse` does **not** give you the desktop app: Homebrew forbids
-a formula from installing an `.app` into `/Applications`, so the two ship under
-different tokens. See [Desktop app](#desktop-app) for what the cask installs.
-
-The formula builds from source, so the binary is compiled on your machine and
-never picks up macOS's `com.apple.quarantine` attribute — no Gatekeeper prompt
-and no `xattr -d` dance. The cask downloads a prebuilt `.app` and so *would*
-be quarantined; it strips the attribute for you in a `postflight` step, for the
-reasons in [Desktop app](#desktop-app).
-
-> **macOS:** reading live iMessage data means reading
-> `~/Library/Messages/chat.db`, which requires **Full Disk Access** for your
-> terminal (System Settings → Privacy & Security → Full Disk Access). That is a
-> separate macOS permission from Gatekeeper, and no install method avoids it.
-
-### `go install`
-
-Requires **Go 1.25+** — and nothing else. The SQLite driver is pure Go (FTS5
-built in), so there is **no C toolchain and no build tag** to deal with.
+**`go install`** — needs Go 1.25+ and nothing else; the SQLite driver is pure Go
+(FTS5 built in), so there's no C toolchain and no build tag:
 
 ```sh
 go install github.com/joestump/msgbrowse/cmd/msgbrowse@latest
-# msgbrowse lands in $(go env GOBIN) (or $(go env GOPATH)/bin) — put that on $PATH
 ```
+
+Reading live iMessage data requires **Full Disk Access** for your terminal
+(System Settings → Privacy & Security). Docker, the native desktop app, and the
+upstream exporters are covered in the
+[installation guide](https://joestump.github.io/msgbrowse/docs/getting-started/installation/).
 
 ## Quickstart
 
@@ -121,260 +61,54 @@ msgbrowse --data-dir ./data embed    # optional; needs an LLM endpoint
 msgbrowse --data-dir ./data serve    # auto-opens http://127.0.0.1:8787
 ```
 
-Archive roots can also live in config/env (see
-[Configuration](#configuration-reference)). Imports share one database and are
-**incremental and idempotent** — re-run after each new export. `embed` computes
-vectors for semantic search; browsing and keyword search work without any LLM.
-
-> [!TIP]
-> Prefer clicking to typing? The web UI ships a guided setup surface:
-> **Settings → Providers** detects Signal, iMessage, and WhatsApp on the
-> machine and runs the export + import for each source with one click (Enable
-> once, Refresh any time); exporter run logs live under **Settings → Logs**.
-> The macOS [desktop app](#desktop-app) bundles the exporters, so that path
-> needs no installs at all. `msgbrowse sync` is the CLI equivalent — the whole
-> export → import → media → embed → facts pipeline in one command.
-
-> [!TIP]
-> Run `msgbrowse doctor` after every setup change. It validates the data dir,
-> schema, archive roots, attachment health, image converter, embeddings, and
-> exporter availability — and its hints name the exact flag or command that
-> fixes each finding. `--check-llm` adds an endpoint reachability probe.
-
-> [!WARNING]
-> **iMessage exports must copy attachments.** Run `imessage-exporter` with
-> `-c clone` (and grant your terminal Full Disk Access), or the export contains
-> absolute `~/Library/...` references and every image renders broken. The same
-> applies to WhatsApp: the Mac companion app syncs a shallow media set, so
-> expect placeholders until you export from a full iPhone backup. `doctor`
-> detects both conditions and prints the fix.
-
-> [!TIP]
-> **LLM endpoint.** msgbrowse only talks to **your own** OpenAI-compatible
-> endpoint — set `MSGBROWSE_LLM_BASE_URL` (`…/v1`) and `MSGBROWSE_LLM_API_KEY`.
-> Until one is reachable, `embed`, `facts`, and the journal fail; everything
-> else works. No proxy? The Docker path below can run a bundled local
-> LiteLLM → Ollama for you.
-
-### Use it from Claude (MCP over stdio)
-
-`msgbrowse mcp` speaks stdio, so any MCP client (Claude Desktop, Claude Code,
-…) can launch the installed binary directly. Run `msgbrowse embed` first so
-semantic search has vectors, then add:
-
-```json
-{
-  "mcpServers": {
-    "msgbrowse": {
-      "command": "msgbrowse",
-      "args": ["--data-dir", "/absolute/path/to/data", "mcp"]
-    }
-  }
-}
-```
-
-Use the absolute binary path (e.g. `/home/you/go/bin/msgbrowse`) if it isn't on
-the client's `PATH`. See [Connecting Claude (MCP)](#connecting-claude-mcp).
-
-## Alternative: Docker
-
-Prefer containers? msgbrowse ships a Dockerfile and a compose stack — the image
-is a fully static binary on a distroless base.
-
-```sh
-cp .env.example .env
-# edit .env:
-#   MSGBROWSE_ARCHIVE_HOST  → your archive's absolute path
-#   MSGBROWSE_LLM_BASE_URL  → your LiteLLM proxy (…/v1), MSGBROWSE_LLM_API_KEY → its key
-
-make up            # build + start msgbrowse (points at your external LiteLLM)
-make signal-import # import the signal-export archive into the local DB
-make embed         # compute embeddings for semantic search (optional)
-# open http://127.0.0.1:8787
-```
-
-`make logs` tails the server; `make down` stops the stack. The archive is
-mounted read-only, app data lives in a named volume, and the UI is published to
-host loopback only.
-
-> [!TIP]
-> No LiteLLM proxy? Run the **bundled** local one (LiteLLM → Ollama) with
-> `make up-bundled` and `MSGBROWSE_LLM_BASE_URL=http://litellm:4000/v1`, then
-> uncomment the `ollama` service in `docker-compose.yml` and pull models:
-> `docker compose exec ollama ollama pull nomic-embed-text` / `… pull llama3.1`.
-> If LiteLLM runs on the Docker host instead, use
-> `http://host.docker.internal:4000/v1`.
-
-## Desktop app
-
-msgbrowse also ships as a native desktop app (the `msgbrowse` app — same
-product, native window): a
-[Wails v2](https://wails.io) window over the exact same embedded web server —
-same pages, same handlers, zero divergence from `msgbrowse serve`. Webview
-shells can't be cross-compiled, so per-OS artifacts are built by a CI matrix
-([`desktop.yml`](.github/workflows/desktop.yml)) on `v*` tags and attached to
-the [GitHub Release](https://github.com/stump-wtf/msgbrowse/releases) for that
-tag. Browser mode (`msgbrowse serve`) remains the universal fallback on every
-platform.
-
-**macOS — install it with Homebrew:**
-
-```sh
-brew tap stump-wtf/tap
-brew install --cask msgbrowse-desktop
-```
-
-That downloads the universal `.app`, installs it to `/Applications`, and strips
-the quarantine attribute for you (see [signing status](#signing-status) below).
-`brew uninstall --cask msgbrowse-desktop` removes it; add `--zap` to also delete
-`~/Library/Application Support/msgbrowse`.
-
-**Bundled exporter toolchain (macOS).** The macOS `.app` embeds the three
-upstream exporters under `Contents/Resources/tools` — a relocatable Python
-runtime (python-build-standalone) plus a venv with
-[`signal-export`](https://github.com/carderne/signal-export) and
-[`whatsapp-chat-exporter`](https://github.com/KnugiHK/WhatsApp-Chat-Exporter),
-and the [`imessage-exporter`](https://github.com/ReagentX/imessage-exporter)
-native binary — so a fresh Mac with no Homebrew and no Python can export and
-import offline, with no manual tool installs. The app resolves those bundled
-paths directly and never consults `$PATH`
-([ADR-0020](docs/adr/0020-bundled-exporters-guided-setup.md),
-[SPEC-0013](docs/openspec/specs/desktop-onboarding/spec.md)). The `.app` also
-bundles a pinned, integrity-checked [Syncthing](https://syncthing.net) binary
-as the [device sync](#device-sync) engine (browser/CLI mode resolves
-`syncthing` from `$PATH` or `device_sync.syncthing_bin` instead). The CLI
-(`msgbrowse export`) keeps its bring-your-own-exporter path — it still resolves
-`sigexport` / `imessage-exporter` / `wtsexporter` from `$PATH` or your
-`--*-bin` overrides — so advanced users lose nothing; only the `.app` bundles.
-
-<a id="signing-status"></a>
-**Signing status — ad-hoc today, Developer ID notarization pending.** The
-shipped `.app` and every embedded binary are **ad-hoc code-signed**
-(`codesign -s -`) in CI, not yet notarized with an Apple Developer ID (that is
-an owner-gated follow-up — the real Developer ID signing + notarization steps
-are already wired in `desktop.yml` behind CI secrets and activate the moment
-the identity is provisioned). Until then Gatekeeper blocks the first launch
-unless the quarantine attribute is stripped — and that strip is what lets the
-ad-hoc-signed embedded Python and exporter binaries run as subprocesses, not
-just the app itself. Without it Gatekeeper kills them and export/import fails.
-
-Because every release is ad-hoc signed, each one is published as a **GitHub
-prerelease** rather than implying notarized bits.
-
-**macOS via Homebrew (recommended)** — nothing to do. The cask's `postflight`
-runs the `xattr` strip for you, so `brew install --cask msgbrowse-desktop`
-yields an app that launches on the first double-click.
-
-**macOS by hand** — download and unzip
-`msgbrowse-desktop_darwin_universal.zip` from the
-[release](https://github.com/stump-wtf/msgbrowse/releases), then:
-
-- **Terminal (required until notarization lands):** `xattr -dr com.apple.quarantine msgbrowse.app`, then open it normally. Or
-- **GUI:** double-click (it gets blocked), then System Settings → **Privacy & Security** → scroll to Security → **Open Anyway** next to the msgbrowse notice → authenticate. (The `xattr` strip is still the reliable path for the *embedded* binaries on macOS 15+.)
-
-Either grant is one-time; afterward it launches with a normal double-click.
-Once a Developer ID is provisioned and the release is notarized, no `xattr`
-strip will be needed and the cask's `postflight` block goes away.
-
-**Linux** — download `msgbrowse-desktop_linux_amd64.tar.gz` from the release and
-extract it; the tarball preserves the execute bit, so no `chmod +x` is needed.
-The binary links the system webview, so the WebKit2GTK runtime must be
-installed (Ubuntu 24.04+ / Debian 13:
-`sudo apt-get install libgtk-3-0 libwebkit2gtk-4.1-0`; most GNOME desktops
-already have it). Building from source instead needs the dev headers:
-`sudo apt-get install libgtk-3-dev libwebkit2gtk-4.1-dev pkg-config`, then
-`make desktop-linux` (on distros still shipping webkit2gtk-4.0:
-`make desktop-linux DESKTOP_TAGS=desktop,production`). No WebKit2GTK? Use
-browser mode.
-
-**Windows** — not built yet; the matrix leg is tracked in
-[#119](https://github.com/joestump/msgbrowse/issues/119). Use browser mode in
-the meantime.
-
-## Device sync
-
-Opt-in, LAN-only archive sync between your machines
-([ADR-0021](docs/adr/0021-syncthing-sync-engine.md),
-[SPEC-0014](docs/openspec/specs/device-sync-syncthing/spec.md)): the Mac that
-runs the exporters (the **importer**) replicates its managed archives to
-paired **replica** devices — a home server, a laptop — and each replica
-imports the synced copy into its own local database automatically. msgbrowse
-supervises [Syncthing](https://syncthing.net) as the transfer engine: the
-desktop `.app` runs its bundled, pinned copy, while `msgbrowse serve` resolves
-`syncthing` from `$PATH` (or `device_sync.syncthing_bin`).
-
-1. Set `device_sync.enabled: true` on both devices (see the `device_sync:`
-   block in [`config.example.yaml`](config.example.yaml)) and restart the app
-   / `msgbrowse serve`.
-2. Open **Settings** on both devices and pair by scanning the QR code (or
-   pasting the Syncthing device ID). Pairing is mutual — both ends must
-   accept before any data moves.
-3. Watch it work: `msgbrowse devices status` shows engine, peer-connection,
-   and folder-completion state; `msgbrowse devices list` shows paired peers;
-   `msgbrowse doctor` includes sync checks. `msgbrowse devices unpair` stops
-   syncing to a device (already-synced local data stays).
-
-The posture is deliberately conservative: with `device_sync.enabled` false
-(the default) no sync process runs at all, and when enabled the generated
-Syncthing config is **LAN-only** — global discovery, relaying, and NAT
-traversal are all off; connections are mutual TLS pinned to the paired device
-IDs. The sync listener (default `:8788`) is the one socket beyond loopback,
-and sync traffic never crosses the internet. See
-[`SECURITY.md`](SECURITY.md) for the full trust model.
-
-## The data layout it reads
-
-msgbrowse treats every archive as **strictly read-only**. The signal-export
-layout:
-
-```
-Signal-Archive/
-├── export/                      # the browsable, decrypted corpus
-│   └── <ChatName>/
-│       ├── chat.md              # the conversation, plaintext markdown
-│       └── media/               # attachments for this conversation
-└── .snapshots/                  # timestamped RAW encrypted DB backups
-    └── db-YYYYMMDD-HHMMSS.tar   # SQLCipher-encrypted; LISTED, never decrypted
-```
-
-iMessage is a flat directory of `<ChatName>.txt` files plus an `attachments/`
-tree (`imessage-exporter -f txt -c clone`). WhatsApp is the
-`WhatsApp-Chat-Exporter` output — `result.json` plus the media folders the tool
-copies. The [export guide](https://joestump.github.io/msgbrowse/docs/getting-started/exporting-your-archives/)
-covers all three end to end, including the macOS WhatsApp-app route
-(`ChatStorage.sqlite` without a phone backup).
+Imports share one database and are incremental and idempotent — re-run after
+each new export. Browsing and keyword search work without any LLM. Prefer
+clicking? **Settings → Providers** in the web UI runs export + import per source
+with one click. See the
+[first import guide](https://joestump.github.io/msgbrowse/docs/getting-started/first-import/).
 
 ## Commands
 
 | Command | What it does |
 | --- | --- |
-| `msgbrowse export` | Run the upstream exporters into the configured roots: `sigexport` (Signal), `imessage-exporter -f txt -c clone` (iMessage), and `wtsexporter` (WhatsApp). Tools must be on PATH or set via `--signal-export-bin` / `--imessage-exporter-bin` / `--whatsapp-exporter-bin`; `--skip-on-error` continues past a failing source; per-tool extra args plus trailing `-- …` passthrough. msgbrowse stores no secrets. |
-| `msgbrowse sync` | **One-command onboarding**: the whole pipeline — export → import → media → embed → facts — in order. `--no-export` / `--no-media` / `--no-embed` / `--no-facts` skip stages (import always runs — it is the incremental core); `--skip-on-error` continues past a failing stage; embed/facts warn-and-continue when no LLM is reachable. |
-| `msgbrowse import` | **All-in-one**: import every configured archive (Signal + iMessage + WhatsApp) into one DB. Unset sources are skipped. |
-| `msgbrowse signal-import` | Import/refresh a signal-export archive (incremental, idempotent). |
-| `msgbrowse imessage-import` | Import/refresh an imessage-exporter archive (`-f txt`, 4.2.0). |
-| `msgbrowse whatsapp-import` | Import/refresh a WhatsApp-Chat-Exporter JSON archive. |
-| `msgbrowse doctor` | Read-only setup diagnostics across all sources — catches non-copy-mode exports, absolute media paths, missing converters, schema drift. `--check-llm` probes the endpoint. Exits non-zero only on a ✗. |
-| `msgbrowse embed` | Compute embeddings for new messages (semantic search). `--prune` reclaims orphans. |
-| `msgbrowse facts` | Extract AI facts about each contact (incremental, cited; shown on the conversation page). `--reset` rebuilds. |
-| `msgbrowse media` | Transcode non-web images (HEIC/TIFF) to cached JPEGs for the gallery. Incremental; `import` runs it automatically. |
-| `msgbrowse serve` | Run the local HTMX web UI. `--port`/`--host` (or `--listen-addr`); `--open=false` for headless. Default `127.0.0.1:8787`. |
-| `msgbrowse mcp` | Run the MCP server (stdio by default; `--http` for streamable HTTP). |
-| `msgbrowse devices` | Manage [device-sync](#device-sync) peers: `list` paired devices, `unpair <device-id>` (stop syncing; local data stays), `status` (engine, peer connections, folder completion). |
-| `msgbrowse journal` | Build the per-day journal: a deterministic local rollup (message/conversation counts, per-source counts, top senders) plus one optional LLM prose digest per day (cached, versioned by model+prompt), surfaced at `/journal` and from the home-page **Journal** tile. Incremental (only days without a current digest) and resumable. `--since YYYY-MM-DD` floors the range; `--backfill` digests oldest-first; `--regenerate` clears cached digests and re-derives every day; `--dry-run` reports the eligible day count + a rough token estimate without calling the LLM. |
+| `msgbrowse sync` | One-command pipeline: export → import → media → embed → facts. |
+| `msgbrowse export` | Run the upstream exporters into the configured roots. |
+| `msgbrowse import` | Import every configured archive into one DB (also `signal-import`, `imessage-import`, `whatsapp-import`). |
+| `msgbrowse doctor` | Read-only setup diagnostics; hints name the exact fix. `--check-llm` probes the endpoint. |
+| `msgbrowse embed` | Compute embeddings for semantic search. |
+| `msgbrowse facts` | Extract cited AI facts about each contact. |
+| `msgbrowse media` | Transcode HEIC/TIFF to cached JPEGs for the gallery. |
+| `msgbrowse journal` | Build the per-day journal rollup + optional LLM digest. |
+| `msgbrowse serve` | Run the local HTMX web UI (default `127.0.0.1:8787`). |
+| `msgbrowse mcp` | Run the MCP server (stdio; `--http` for streamable HTTP). |
+| `msgbrowse devices` | Manage LAN-only device-sync peers: `list`, `status`, `unpair`. |
 | `msgbrowse version` | Print version. |
+
+Full flags for every command: [CLI reference](https://joestump.github.io/msgbrowse/docs/reference/cli/).
+
+## Configuration
+
+Resolved low→high: defaults < `config.yaml` < `MSGBROWSE_*` env < flags. See
+[`config.example.yaml`](config.example.yaml) and the
+[full reference](https://joestump.github.io/msgbrowse/docs/reference/configuration/).
+
+| Env | Default | Notes |
+| --- | --- | --- |
+| `MSGBROWSE_ARCHIVE_ROOT` | — | read-only signal-export archive |
+| `MSGBROWSE_IMESSAGE_ARCHIVE_ROOT` | — | read-only imessage-exporter archive |
+| `MSGBROWSE_WHATSAPP_ARCHIVE_ROOT` | — | read-only WhatsApp-Chat-Exporter output |
+| `MSGBROWSE_DATA_DIR` | `./data` | writable DB/embeddings dir |
+| `MSGBROWSE_LISTEN_ADDR` | `127.0.0.1:8787` | loopback by default |
+| `MSGBROWSE_LLM_BASE_URL` | `http://127.0.0.1:4000/v1` | the only internet egress |
+| `MSGBROWSE_LLM_API_KEY` | — | env wins; never commit |
+| `MSGBROWSE_LLM_CHAT_MODEL` | `local-chat` | RAG + digests |
+| `MSGBROWSE_LLM_EMBED_MODEL` | `local-embed` | embeddings |
+| `MSGBROWSE_DEVICE_SYNC_ENABLED` | `false` | opt-in LAN-only device sync |
+| `MSGBROWSE_LOG_LEVEL` | `info` | debug/info/warn/error |
 
 ## Connecting Claude (MCP)
 
-msgbrowse exposes citation-faithful retrieval tools (`search_messages` [hybrid
-keyword+vector], `semantic_search`, `get_conversation`, `list_conversations`,
-`get_context`, `list_media`, `list_links`). Run `msgbrowse embed` first so
-semantic search has vectors.
-
-**Claude Desktop / Claude Code** — add to your MCP config
-(`claude_desktop_config.json` or the Claude Code MCP settings):
-
-Local binary (stdio) — the `go install` path:
+Run `msgbrowse embed` first so semantic search has vectors, then add:
 
 ```json
 {
@@ -387,185 +121,36 @@ Local binary (stdio) — the `go install` path:
 }
 ```
 
-Via Docker (stdio; reuses the compose data volume):
+Use the absolute binary path if it isn't on the client's `PATH`. Tools, prompts,
+and the Docker variant: [MCP server docs](https://joestump.github.io/msgbrowse/docs/features/mcp-server/).
 
-```json
-{
-  "mcpServers": {
-    "msgbrowse": {
-      "command": "docker",
-      "args": ["compose", "-f", "/absolute/path/to/msgbrowse/docker-compose.yml",
-               "run", "--rm", "-T", "msgbrowse", "mcp"]
-    }
-  }
-}
-```
+## Documentation
 
-Then ask Claude things like *"what did MJ say about the lease?"* or *"summarize
-my thread with Harper about the trip."* Every answer can be traced to source
-messages (conversation, sender, timestamp, message id).
+Everything lives at
+**[joestump.github.io/msgbrowse](https://joestump.github.io/msgbrowse/)**:
 
-## Configuration reference
-
-Resolved low→high: built-in defaults < `config.yaml` < `MSGBROWSE_*` env <
-flags. See [`config.example.yaml`](config.example.yaml) and the
-[full reference](https://joestump.github.io/msgbrowse/docs/reference/configuration/).
-
-| Key | Env | Default | Notes |
-| --- | --- | --- | --- |
-| `archive_root` | `MSGBROWSE_ARCHIVE_ROOT` | — | read-only signal-export archive |
-| `imessage_archive_root` | `MSGBROWSE_IMESSAGE_ARCHIVE_ROOT` | — | read-only imessage-exporter archive |
-| `whatsapp_archive_root` | `MSGBROWSE_WHATSAPP_ARCHIVE_ROOT` | — | read-only WhatsApp-Chat-Exporter output |
-| `signal_export_bin` | `MSGBROWSE_SIGNAL_EXPORT_BIN` | — | override the `sigexport` path for `export` (else PATH) |
-| `imessage_exporter_bin` | `MSGBROWSE_IMESSAGE_EXPORTER_BIN` | — | override the `imessage-exporter` path (else PATH) |
-| `whatsapp_exporter_bin` | `MSGBROWSE_WHATSAPP_EXPORTER_BIN` | — | override the `wtsexporter` path (else PATH) |
-| `data_dir` | `MSGBROWSE_DATA_DIR` | `./data` | writable DB/embeddings dir |
-| `listen_addr` | `MSGBROWSE_LISTEN_ADDR` | `127.0.0.1:8787` | loopback by default |
-| `llm.base_url` | `MSGBROWSE_LLM_BASE_URL` | `http://127.0.0.1:4000/v1` | the only internet egress |
-| `llm.api_key` | `MSGBROWSE_LLM_API_KEY` | — | env wins; settable in Settings → LLM (0600 config file); never commit |
-| `llm.chat_model` | `MSGBROWSE_LLM_CHAT_MODEL` | `local-chat` | RAG + digests |
-| `llm.embed_model` | `MSGBROWSE_LLM_EMBED_MODEL` | `local-embed` | embeddings |
-| `vector_backend` | `MSGBROWSE_VECTOR_BACKEND` | `sqlite-vec` | brute-force today (ADR-0002) |
-| `device_sync.enabled` | `MSGBROWSE_DEVICE_SYNC_ENABLED` | `false` | opt-in LAN-only [device sync](#device-sync) (ADR-0021) |
-| `device_sync.listen_addr` | `MSGBROWSE_DEVICE_SYNC_LISTEN_ADDR` | `:8788` | Syncthing P2P listener — the one socket beyond loopback |
-| `device_sync.device_name` | `MSGBROWSE_DEVICE_SYNC_DEVICE_NAME` | hostname | this node's name as shown on paired peers |
-| `device_sync.syncthing_bin` | `MSGBROWSE_DEVICE_SYNC_SYNCTHING_BIN` | — | Syncthing path for `serve` (else PATH); the `.app` uses its bundled copy |
-| `journal.digest_enabled` | — | `true` | gate the LLM digest pass (mechanical rollup is always built) |
-| `journal.digest_prompt` | — | built-in | digest instruction; editing it re-derives affected days |
-| `journal.exclude_conversations` | — | `[]` | never sent to the LLM |
-| `journal.max_days_per_run` | — | `0` | cap days digested per run (`0` = unbounded); runs resume |
-| `log_level` | `MSGBROWSE_LOG_LEVEL` | `info` | debug/info/warn/error |
-
-## Security
-
-Loopback-only by default, archives mounted read-only, container runs non-root
-with a read-only root filesystem and all capabilities dropped, the encrypted
-`.snapshots` are never opened, and the **only** outbound internet call is to
-your configured `llm.base_url`. Opt-in [device sync](#device-sync) adds
-LAN-only Syncthing connections to explicitly paired devices — mutual TLS,
-no global discovery, no relays.
-
-> [!CAUTION]
-> Pointing `llm.base_url` at a **hosted** model means message text (and, if you
-> enable captioning/transcription, media) leaves your machine for that
-> provider. Keep it local if that matters to you — that's the default. Read
-> [`SECURITY.md`](SECURITY.md) for the exact data-sent-to-the-LLM boundary.
-
-## Scheduling daily exports with Claude Cowork
-
-You don't need Cowork to create an archive anymore — the **Settings →
-Providers** page (one-click Enable/Refresh, exporters bundled in the macOS
-app) and the `msgbrowse export` / `msgbrowse sync` commands run the exporters
-directly. What the prompts below add is **unattended freshness**: a scheduled
-daily launchd pipeline on your Mac with timestamped snapshot retention, so the
-archive keeps itself current without anyone clicking Refresh. If that appeals,
-paste them into Claude Cowork. (WhatsApp needs no
-scheduled job to start — the [export guide](https://joestump.github.io/msgbrowse/docs/getting-started/exporting-your-archives/)
-covers the one-command `wtsexporter` run against the Mac app's local database.)
-
-**Signal:**
-
-```
-Set up a recurring daily job on my Mac that runs `signal-export` to dump my Signal Desktop
-history into ~/Managed Files/Signal-Archive, building a searchable, ever-growing archive.
-
-Do it as a careful, in-the-loop setup — propose a plan and wait for my approval before
-installing anything or changing system state. Requirements:
-
-1. Discovery first (read-only): confirm Signal Desktop is installed/linked, locate
-   ~/Library/Application Support/Signal (sql/db.sqlite + config.json), and check that the
-   config has an `encryptedKey` (v10 / Electron safeStorage, macOS Keychain-wrapped). Confirm
-   Python 3.11+ is available (Homebrew). Flag the known breakage point: recent Signal Desktop
-   encrypts the SQLCipher key via the macOS Keychain ("Signal Safe Storage"), so the export
-   needs a one-time "Always Allow" on a Keychain prompt; after that, unattended runs are silent.
-
-2. Install `signal-export` in an isolated venv (not system pip): a dedicated
-   ~/Managed Files/Signal-Archive/.venv. Markdown output only (--no-html --no-json), keep
-   attachments.
-
-3. Write a wrapper script that, each run:
-   - copies config.json + sql/db.sqlite{,-wal,-shm} to a private same-volume work dir (avoids
-     the live DB lock / "I/O disk error" without quitting Signal), and SYMLINKS the large,
-     immutable media dirs (attachments.noindex, avatars.noindex, stickers.noindex,
-     badges.noindex) so attachments export without copying gigabytes;
-   - persists a timestamped RAW DB snapshot as an uncompressed .tar under .snapshots/ — note
-     the SQLCipher DB is encrypted and therefore incompressible, so compression is skipped and
-     footprint is controlled by GFS retention instead;
-   - runs `sigexport --source <copy> --old <archive> --no-html --no-json <staging>` so messages
-     that roll past Signal's ~45-day linked-device window are merged in and never lost;
-   - atomically swaps the new export into place;
-   - prunes snapshots with GFS compaction: keep all dailies ≤14d, then 1 per month (≤~13mo),
-     1 per quarter (≤~3y), 1 per year forever — the oldest snapshot in each period is its
-     anchor (~37 snapshots / ~12 GB steady state at a ~350 MB DB).
-
-4. Schedule it with a macOS launchd LaunchAgent (~/Library/LaunchAgents/) running DAILY at
-   09:00 in my user session (so it can reach the Keychain), runs without Cowork open.
-
-5. Do a one-time interactive test run so I can click "Always Allow" on the Keychain prompt,
-   confirm the markdown export + a snapshot landed, then bootstrap the LaunchAgent and verify
-   with `launchctl list`. Lock down perms (archive dir 700, snapshots 600); my disk is already
-   FileVault-encrypted, which covers the plaintext export at rest.
-```
-
-**iMessage:**
-
-```
-Set up a recurring daily job on my Mac that runs `imessage-exporter` to dump my iMessage
-history into ~/Managed Files/iMessage-Archive in Markdown, building a searchable archive that
-msgbrowse can import alongside my Signal export.
-
-Do it as a careful, in-the-loop setup — propose a plan and wait for my approval before
-installing anything or changing system state. Requirements:
-
-1. Discovery first (read-only): confirm ~/Library/Messages/chat.db exists and is readable.
-   Note that reading it requires the terminal/job to have Full Disk Access in System Settings →
-   Privacy & Security; flag that as the one-time manual grant I must approve.
-
-2. Install `imessage-exporter` via Homebrew (or cargo). Pin the version.
-
-3. Write a wrapper script that, each run, exports to a staging dir with Markdown output
-   (`imessage-exporter -f txt -c clone -o <staging>`), keeps attachments/media, then atomically
-   swaps the result into ~/Managed Files/iMessage-Archive. Do NOT modify chat.db.
-
-4. Schedule it with a macOS launchd LaunchAgent running DAILY at 09:15 in my user session.
-
-5. Do a one-time interactive test run so I can grant Full Disk Access, confirm the Markdown
-   export + attachments landed, then bootstrap the LaunchAgent and verify with `launchctl list`.
-   Lock down perms (archive dir 700); FileVault covers the plaintext export at rest.
-```
+- [What is msgbrowse](https://joestump.github.io/msgbrowse/docs/getting-started/what-is-msgbrowse/) · [Installation](https://joestump.github.io/msgbrowse/docs/getting-started/installation/) · [Exporting your archives](https://joestump.github.io/msgbrowse/docs/getting-started/exporting-your-archives/) · [First import](https://joestump.github.io/msgbrowse/docs/getting-started/first-import/)
+- [Browsing](https://joestump.github.io/msgbrowse/docs/features/browsing/) · [Search](https://joestump.github.io/msgbrowse/docs/features/search/) · [Media gallery](https://joestump.github.io/msgbrowse/docs/features/media-gallery/) · [AI features](https://joestump.github.io/msgbrowse/docs/features/ai-features/) · [MCP server](https://joestump.github.io/msgbrowse/docs/features/mcp-server/) · [Device sync](https://joestump.github.io/msgbrowse/docs/features/device-sync/) · [Status & backups](https://joestump.github.io/msgbrowse/docs/features/status-and-backups/)
+- [CLI](https://joestump.github.io/msgbrowse/docs/reference/cli/) · [Configuration](https://joestump.github.io/msgbrowse/docs/reference/configuration/) · [Security model](https://joestump.github.io/msgbrowse/docs/reference/security-model/) · [Troubleshooting](https://joestump.github.io/msgbrowse/docs/reference/troubleshooting/)
+- [Architecture](https://joestump.github.io/msgbrowse/architecture) — ADRs in [`docs/adr/`](docs/adr/), specs in [`docs/openspec/specs/`](docs/openspec/specs/)
 
 ## Development
 
-Full guides live on the docs site: the
+See the
 [local development guide](https://joestump.github.io/msgbrowse/docs/development/local-development/)
-(toolchain, CSS pipeline + drift guard, desktop builds, fixtures) and the
-[macOS signing & notarization runbook](https://joestump.github.io/msgbrowse/docs/development/release-signing/).
+and the
+[signing & notarization runbook](https://joestump.github.io/msgbrowse/docs/development/release-signing/).
 
 ```sh
-make build      # build ./bin/msgbrowse (pure Go, no cgo, no build tag)
-make install    # go install into $GOBIN / $GOPATH/bin
-make test       # run the test suite
-make check      # gofmt + go vet + tests (the CI gate)
-make cover      # coverage summary
-make css        # rebuild internal/web/static/app.css (Tailwind + daisyUI)
-
-make desktop-linux  # build cmd/msgbrowse-desktop/build/bin/msgbrowse (cgo; needs GTK3/WebKit2GTK dev packages)
-make desktop-test   # desktop module's headless tests (pure Go, CGO_ENABLED=0)
+make build   # build ./bin/msgbrowse
+make test    # run the test suite
+make check   # gofmt + go vet + tests (the CI gate)
+make css     # rebuild internal/web/static/app.css (Tailwind + daisyUI)
 ```
 
-**UI styling.** The web UI uses Tailwind CSS + daisyUI with the custom
-**slate** theme (dark) and **slate-light**, plus vendored Hero Icons. The built
-`app.css` is committed and `go:embed`-served, so the **runtime needs no
-toolchain** (no Node, no CDN — keeps the strict CSP intact). When you change
-template classes, run `make css` to regenerate: it fetches the Tailwind
-standalone CLI + daisyUI into a gitignored `.tools/` (no npm) and rebuilds. CI
-fails if `app.css` is stale.
-
-Architecture decisions live in [`docs/adr/`](docs/adr/) and specs in
-[`docs/openspec/specs/`](docs/openspec/specs/) — both rendered on the
-[docs site](https://joestump.github.io/msgbrowse/architecture). Contributions
-should keep `make check` green and add tests for new ingest/search/MCP
-behavior.
+The built `app.css` is committed and `go:embed`-served, so the runtime needs no
+Node toolchain — CI fails if it's stale. Contributions should keep `make check`
+green and add tests for new ingest/search/MCP behavior.
 
 ## License
 
