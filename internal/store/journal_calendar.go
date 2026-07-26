@@ -34,6 +34,10 @@ type JournalMonthDay struct {
 	MessageCount int
 	Mood         string // "" when no digest — the cell renders count-only/neutral
 	HasDigest    bool
+	// Stale is true when this day carries a digest that was written before more
+	// messages landed on it (#240). A zero captured count means UNKNOWN — a
+	// pre-v15 digest — and deliberately does NOT read as stale.
+	Stale bool
 }
 
 // JournalStats are the journal's headline numbers for a year (year 0 = all-time).
@@ -55,12 +59,13 @@ func (s *Store) GetJournalDay(ctx context.Context, day string) (JournalDayView, 
 	var srcJSON, sendersJSON string
 	err := s.db.QueryRowContext(ctx, `
 SELECT jd.day, jd.message_count, jd.conversation_count, jd.source_counts, jd.top_senders, jd.updated_at,
-       COALESCE(dg.body,''), COALESCE(dg.model,''), COALESCE(dg.structured,''), COALESCE(dg.mood,'')
+       COALESCE(dg.body,''), COALESCE(dg.model,''), COALESCE(dg.structured,''), COALESCE(dg.mood,''),
+       COALESCE(dg.message_count, 0)
   FROM journal_days jd
   LEFT JOIN journal_digests dg ON dg.day = jd.day
  WHERE jd.day = ?`, day).
 		Scan(&v.Day, &v.MessageCount, &v.ConversationCount, &srcJSON, &sendersJSON, &v.UpdatedAt,
-			&v.DigestBody, &v.DigestModel, &v.DigestStructured, &v.Mood)
+			&v.DigestBody, &v.DigestModel, &v.DigestStructured, &v.Mood, &v.DigestMessageCount)
 	if err == sql.ErrNoRows {
 		return JournalDayView{}, false, nil
 	}
@@ -132,7 +137,8 @@ func (s *Store) JournalMonth(ctx context.Context, year int, month time.Month) ([
 	startStr := start.Format("2006-01-02")
 	endStr := start.AddDate(0, 1, 0).Format("2006-01-02")
 	rows, err := s.db.QueryContext(ctx, `
-SELECT jd.day, jd.message_count, COALESCE(dg.mood,''), dg.day IS NOT NULL
+SELECT jd.day, jd.message_count, COALESCE(dg.mood,''), dg.day IS NOT NULL,
+       COALESCE(dg.message_count, 0) > 0 AND dg.message_count <> jd.message_count
   FROM journal_days jd
   LEFT JOIN journal_digests dg ON dg.day = jd.day
  WHERE jd.day >= ? AND jd.day < ?
@@ -144,7 +150,7 @@ SELECT jd.day, jd.message_count, COALESCE(dg.mood,''), dg.day IS NOT NULL
 	var out []JournalMonthDay
 	for rows.Next() {
 		var d JournalMonthDay
-		if err := rows.Scan(&d.Day, &d.MessageCount, &d.Mood, &d.HasDigest); err != nil {
+		if err := rows.Scan(&d.Day, &d.MessageCount, &d.Mood, &d.HasDigest, &d.Stale); err != nil {
 			return nil, err
 		}
 		out = append(out, d)
@@ -264,4 +270,40 @@ func longestStreak(days []string) int {
 		prev, havePrev = t, true
 	}
 	return best
+}
+
+// JournalCoverage is the journal's build footprint: how much of the mechanical
+// day layer carries a digest, and how much of that has since gone out of date.
+// It is the journal's answer to the semantic index's coverage figure.
+type JournalCoverage struct {
+	Days         int    // days with activity (rows in journal_days)
+	Digested     int    // of those, how many carry a digest
+	Stale        int    // of those, how many were written before more messages landed
+	BuiltThrough string // MAX(journal_days.day); "" when the journal was never built
+}
+
+// JournalCoverage returns the build footprint in one pass over journal_days
+// joined to its digests.
+//
+// This is a few thousand tiny rows even on a decade-long archive — unlike
+// EmbeddingCoverage, which scans messages — so it is safe on every Journal
+// render. It deliberately does NOT try to report "days with messages but no
+// journal_days row": that needs a GROUP BY over messages, i.e. a full scan. The
+// UI compares BuiltThrough against the newest message timestamp instead, which
+// is already loaded.
+func (s *Store) JournalCoverage(ctx context.Context) (JournalCoverage, error) {
+	var c JournalCoverage
+	err := s.db.QueryRowContext(ctx, `
+SELECT COUNT(*),
+       COALESCE(SUM(dg.day IS NOT NULL), 0),
+       COALESCE(SUM(dg.day IS NOT NULL AND dg.message_count > 0
+                    AND dg.message_count <> jd.message_count), 0),
+       COALESCE(MAX(jd.day), '')
+  FROM journal_days jd
+  LEFT JOIN journal_digests dg ON dg.day = jd.day`).
+		Scan(&c.Days, &c.Digested, &c.Stale, &c.BuiltThrough)
+	if err != nil {
+		return JournalCoverage{}, fmt.Errorf("journal coverage: %w", err)
+	}
+	return c, nil
 }

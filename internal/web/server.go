@@ -87,6 +87,10 @@ type Store interface {
 	DeleteSourceData(ctx context.Context, src string) (int64, error)
 	LatestEmbedRun(ctx context.Context) (*store.EmbedRun, error)
 	RecentEmbedRuns(ctx context.Context, n int) ([]store.EmbedRun, error)
+	// In-app journal build (#240).
+	LatestJournalRun(ctx context.Context) (*store.JournalRun, error)
+	RecentJournalRuns(ctx context.Context, n int) ([]store.JournalRun, error)
+	JournalCoverage(ctx context.Context) (store.JournalCoverage, error)
 	SemanticSearch(ctx context.Context, query []float32, model string, opts store.SemanticOptions) ([]store.ScoredMessage, error)
 	EmbeddingCoverage(ctx context.Context, model string) (store.EmbeddingCoverage, error)
 	// Contact merge engine (#11) behind the Settings → Contacts tab (#12).
@@ -196,6 +200,16 @@ type Server struct {
 	// coalesces to a no-op rather than starting a duplicate SQLite writer.
 	indexMu  sync.Mutex
 	indexing bool
+
+	// journalBuilder runs the journal pass behind the Journal page's Build /
+	// Rebuild controls (#240); nil (browser / no-op mode) renders the
+	// unavailable state and no controls at all.
+	journalBuilder JournalBuilder
+	// journalMu guards journalRunning, the single-flight flag for the ONE
+	// journal job the web layer runs at a time. Digests are billable outbound
+	// calls, so a raced double-start costs money, not just duplicated work.
+	journalMu      sync.Mutex
+	journalRunning bool
 	// addressBook is the pluggable address-book provider behind contact
 	// merging (issue #9): the macOS desktop shell wires a Contacts-backed
 	// contacts.Resolver via SetContactResolver; nil (Linux, browser mode,
@@ -415,6 +429,17 @@ func (s *Server) routes() http.Handler {
 	// editorial day card. Navigation is by query params (?year&month&day), all
 	// boosted — no separate continuation route.
 	mux.HandleFunc("GET /journal", s.handleJournal)
+	// In-app journal building (#240): privileged POSTs behind the same
+	// checkSetupPOST gate as every other mutating endpoint. Build fills the
+	// mechanical layer plus missing digests; Rebuild all regenerates from
+	// scratch; Rebuild day redoes exactly one day. All three start a detached
+	// single-flight job and re-render Journal with a fixed-enum banner.
+	mux.HandleFunc("POST /journal/build", s.handleJournalBuild)
+	mux.HandleFunc("POST /journal/rebuild", s.handleJournalRebuildAll)
+	mux.HandleFunc("POST /journal/rebuild/day", s.handleJournalRebuildDay)
+	// Live progress fragment: the build card polls this while a run is in
+	// flight and stops when the fresh HTML drops the trigger.
+	mux.HandleFunc("GET /journal/build/progress", s.handleJournalBuildProgress)
 	mux.HandleFunc("GET /c/{id}", s.handleConversation)
 	// Per-person Contact + AI Facts + Profile page (redesign Phase 1), keyed by
 	// contact id (the merged-person grain), reached from the transcript header.

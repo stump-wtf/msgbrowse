@@ -1334,6 +1334,14 @@ a.meta-chip:hover {
   color: color-mix(in oklab, var(--color-base-content) 50%, transparent);
 }
 
+/* A day whose cached digest predates later messages on that day (#240). A ring
+   rather than a fill, so it composes with the mood tint underneath instead of
+   replacing it, and it survives greyscale — the mood colours do not encode this.
+   --color-warning is the same token the "Out of date" badge uses. */
+.cal-day--stale {
+  box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--color-warning) 55%, transparent);
+}
+
 /* --- Home reading-room cards (#239) --------------------------------------- */
 /* "On this day" and "Jump back in": the two cards the design brief puts between
    the stat strip and the quick links. Same bordered-surface language as

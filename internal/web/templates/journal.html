@@ -7,7 +7,11 @@
      client JS state. Every structured-digest field is model-derived and
      untrusted → printed through html/template auto-escaping (never raw href). */}}
 {{define "journal_content"}}<title>{{.Title}}</title>
-    <main id="main-content" class="flex-1" tabindex="0">
+    {{/* hx-history="false": the Build / Rebuild forms carry a live per-session
+         setup token, and htmx's history cache would persist that token into
+         localStorage. A page that renders a credential must not be snapshotted
+         (#240; same reasoning as the Status page's index controls). */}}
+    <main id="main-content" class="flex-1" tabindex="0" hx-history="false">
   <div class="px-6 lg:px-10 py-10">
     <div class="screen-col">
       <header class="mb-6 flex items-baseline justify-between gap-3 flex-wrap">
@@ -22,6 +26,59 @@
         {{- end}}
       </header>
 
+
+      {{/* Build result banner (#240). Every arm is selected by a fixed
+           server-side enum — no request-derived string reaches the banner
+           choice or a class attribute. "" falls through and renders nothing. */}}
+      {{- if eq .BuildResult "started"}}
+      <div class="notice-card mb-4">
+        <p class="link-card-title">Building the journal.</p>
+        <p class="link-card-sub">Computing the day layer and digesting the days that do not have one yet —
+          this page reports progress while it runs.</p>
+      </div>
+      {{- else if eq .BuildResult "rebuilt"}}
+      <div class="notice-card mb-4">
+        <p class="link-card-title">Rebuilding every day.</p>
+        <p class="link-card-sub">Cached digests were cleared and are being re-derived from scratch.</p>
+      </div>
+      {{- else if eq .BuildResult "day"}}
+      <div class="notice-card mb-4">
+        <p class="link-card-title">Rebuilding this day.</p>
+        <p class="link-card-sub">Just this day&rsquo;s digest is being regenerated; every other day is untouched.</p>
+      </div>
+      {{- else if eq .BuildResult "inprogress"}}
+      <div class="notice-card mb-4">
+        <p class="link-card-title">A run is already in progress.</p>
+        <p class="link-card-sub">Nothing new was started — the running job continues.</p>
+      </div>
+      {{- else if eq .BuildResult "nomodel"}}
+      <div class="notice-card mb-4">
+        <p class="link-card-title">Building day counts only.</p>
+        <p class="link-card-sub">The mechanical day layer is being built — that part needs no model. For the
+          editorial digests, set a chat model on the
+          <a href="/settings/llm" class="link link-hover">LLM settings</a> tab and build again.</p>
+      </div>
+      {{- else if eq .BuildResult "digestoff"}}
+      <div class="notice-card mb-4">
+        <p class="link-card-title">Building day counts only.</p>
+        <p class="link-card-sub">Digests are turned off in config
+          (<code class="font-mono">journal.digest_enabled</code>), so only the day layer is being built.</p>
+      </div>
+      {{- else if eq .BuildResult "badday"}}
+      <div class="notice-card mb-4">
+        <p class="link-card-title">That day is not in the journal.</p>
+        <p class="link-card-sub">Nothing was started. Pick a highlighted day on the calendar.</p>
+      </div>
+      {{- else if eq .BuildResult "unavailable"}}
+      <div class="notice-card mb-4">
+        <p class="link-card-title">Journal building is not available here.</p>
+        <p class="link-card-sub">This server was started without a journal builder. Run
+          <code class="font-mono">msgbrowse journal</code> from the command line instead.</p>
+      </div>
+      {{- end}}
+
+      {{template "journal_build_card" .}}
+
       {{/* Empty state (#238): the Journal is now a header tab, so this is a
            destination a user lands on deliberately — it has to say what the
            surface is and how to fill it, not just name a CLI command they may
@@ -30,12 +87,18 @@
       {{- if .Empty}}
       <div class="notice-card">
         <p class="link-card-title">No journal yet.</p>
-        <p class="link-card-sub">Run <code class="font-mono">msgbrowse journal</code> to build it. That reads
-          your archive one day at a time and fills the mood calendar with the days you have messages —
-          mechanical, local, and no LLM call (REQ-0016-001).</p>
-        <p class="link-card-sub">The per-day editorial digests are the part that needs a model: set a
-          facts/chat model on the <a href="/settings/llm" class="link link-hover">LLM settings</a> tab and
-          the same command writes those too. Without one you still get the calendar and its day counts.</p>
+        <p class="link-card-sub">Building it reads your archive one day at a time and fills the mood calendar
+          with the days you have messages — mechanical, local, and no LLM call (REQ-0016-001). The per-day
+          editorial digests are the part that needs a chat model, set on the
+          <a href="/settings/llm" class="link link-hover">LLM settings</a> tab; without one you still get the
+          calendar and its day counts.</p>
+        {{- if not .Build.Available}}
+        <p class="link-card-sub">Run <code class="font-mono">msgbrowse journal</code> from the command line
+          to build it.</p>
+        {{- else}}
+        <p class="link-card-sub">Use <strong>Build journal</strong> above, or run
+          <code class="font-mono">msgbrowse journal</code> from the command line.</p>
+        {{- end}}
       </div>
       {{- else}}
 
@@ -53,7 +116,8 @@
           {{- range .Grid}}{{- range .}}
           {{- if .InMonth}}
           {{- if .HasContent}}
-          <a class="cal-day {{.MoodClass}}{{if .Selected}} cal-day--selected{{end}}" href="{{.URL}}"
+          <a class="cal-day {{.MoodClass}}{{if .Stale}} cal-day--stale{{end}}{{if .Selected}} cal-day--selected{{end}}" href="{{.URL}}"
+             {{- if .Stale}} title="This day&rsquo;s digest is out of date"{{end}}
              hx-boost="true" hx-target="#main-content" hx-select="#main-content" hx-swap="outerHTML" hx-push-url="true">
             <span class="cal-day-num">{{.DayNum}}</span><span class="cal-day-count font-mono">{{num .Count}}</span>
           </a>
@@ -84,6 +148,16 @@
           <span class="font-mono">{{num .MessageCount}}</span> messages · <span class="font-mono">{{num .ConversationCount}}</span> conversations
           {{- if .Mood}} · <span class="journal-mood {{.MoodClass}}">{{.Mood}}</span>{{end}}
         </div>
+        {{/* Staleness (#240): this digest was written BEFORE later messages
+             landed on the day, so it is describing an incomplete day. Shown only
+             when the captured count is known — a digest predating the count
+             column reads as unknown, not stale. */}}
+        {{- if .Stale}}
+        <p class="status-note"><span class="sync-badge sync-badge-warn">Out of date</span>
+          {{if gt .NewMessages 0}}{{num .NewMessages}} more messages have landed on this day since its
+          digest was written.{{else}}This day&rsquo;s messages have changed since its digest was
+          written.{{end}}</p>
+        {{- end}}
         {{- if .Digest}}
         <p class="journal-summary">{{.Digest.Summary}}</p>
         {{- if .Digest.Highlights}}
@@ -105,8 +179,24 @@
         <p class="journal-day-mechanical">
           {{- if .TopSenders}}Most with {{range $i, $s := .TopSenders}}{{if $i}}, {{end}}{{humanName $s.Name}}{{end}}.
           {{- else}}A quiet day.{{end}}
+          {{- if not $.Build.Available}}
           <span class="opacity-50">Run <code class="font-mono">msgbrowse journal</code> to editorialize this day.</span>
+          {{- end}}
         </p>
+        {{- end}}
+        {{/* Per-day Rebuild (#240). The dot inside `with` is the day card, so
+             the token and busy flag must come off the ROOT ($) — {{.SetupToken}}
+             here would silently render empty and every POST would 403. The day
+             travels as a form field and is re-validated server-side against
+             journal_days. */}}
+        {{- if $.Build.Available}}
+        <form method="post" action="/journal/rebuild/day" class="mt-4"
+              hx-boost="true" hx-target="#main-content" hx-select="#main-content" hx-swap="outerHTML">
+          <input type="hidden" name="setup_token" value="{{$.SetupToken}}">
+          <input type="hidden" name="day" value="{{.Day}}">
+          <button type="submit" class="setup-btn setup-btn-ghost"{{if $.Build.Busy}} disabled{{end}}>
+            {{if .Stale}}Rebuild this day&rsquo;s digest{{else if .Digest}}Regenerate this digest{{else}}Editorialize this day{{end}}</button>
+        </form>
         {{- end}}
       </section>
       {{- else}}
@@ -117,4 +207,143 @@
     </div>
   </div>
     </main>
+{{end}}
+
+{{/* journal_build_card (#240) is the in-app Build / Rebuild surface, modelled on
+     the Status page's semantic-index card. Three-way availability, in this
+     order, so a mode that cannot build never renders a dead button:
+       1. no builder wired  → explain the CLI path, NO forms and NO token;
+       2. digests disabled  → note it, still offer the mechanical build;
+       3. otherwise         → the full card.
+     Controls disable while anything is running, from either the cross-process
+     journal_runs heartbeat or this process's single-flight flag, so a second
+     click cannot race the guard into a duplicate (billable) run. */}}
+{{define "journal_build_card"}}
+      {{/* Self-terminating poll: hx-swap="outerHTML" replaces this card, and the
+           replacement omits the trigger once the run ends, so the polling stops
+           on its own. No aria-live on the CARD — the live region is scoped to
+           the one line that actually changes, below. */}}
+      <div id="journal-build-card" class="status-card mb-6"
+           {{- if .Build.Busy}} hx-get="/journal/build/progress" hx-trigger="every 2s" hx-target="#journal-build-card" hx-swap="outerHTML"{{end}}>
+        <div class="status-card-title">Journal build</div>
+        {{- if not .Build.Available}}
+        <p class="status-note">Journal building is unavailable in this mode. Run
+          <code class="font-mono">msgbrowse journal</code> from the command line to build the day layer and
+          its editorial digests.</p>
+        {{- else}}
+
+        {{- if .Build.InProgress}}
+        <p class="status-note mb-3" role="status" aria-live="polite"><span class="sync-badge sync-badge-info">Building…</span>
+          {{num .Build.RunDigested}} days digested so far in the current run.</p>
+        {{- else if .Build.Running}}
+        <p class="status-note mb-3" role="status" aria-live="polite"><span class="sync-badge sync-badge-info">Building…</span>
+          The run has just started.</p>
+        {{- else if .Build.Stalled}}
+        <p class="status-note mb-3"><span class="sync-badge sync-badge-warn">Interrupted</span>
+          The last journal run stopped before finishing — building again resumes from the days that still
+          have no digest, so nothing already paid for is re-derived.</p>
+        {{- end}}
+
+        {{/* Digest coverage over the days that have activity. <progress> (not an
+             inline-styled div) keeps this CSP-clean. */}}
+        {{- if gt .Build.Days 0}}
+        <div class="index-progress-row mb-4">
+          <progress class="index-progress" value="{{.Build.Digested}}" max="{{.Build.Days}}"></progress>
+          <span class="index-progress-pct mono">{{.Build.Percent}}%</span>
+        </div>
+        {{- end}}
+
+        <div class="status-grid">
+          <div><div class="status-metric-label">Digest coverage</div>
+            <div class="status-metric-value">{{num .Build.Digested}} of {{num .Build.Days}} days ({{.Build.Percent}}%)
+              {{- if gt .Build.Stale 0}} · <span class="sync-badge sync-badge-warn">{{num .Build.Stale}} out of date</span>{{end}}</div></div>
+          <div><div class="status-metric-label">Chat model</div>
+            <div class="status-metric-value">
+              {{- if .Build.Model}}{{.Build.Model}}
+                {{- if not .Build.DigestOn}} <span class="opacity-60">(digests off in config)</span>{{end}}
+              {{- else}}<span class="opacity-60">not configured — day counts only;
+                set one on the <a href="/settings/llm" class="link link-hover">LLM settings</a> tab</span>{{end -}}
+            </div></div>
+          <div><div class="status-metric-label">Last journal run</div>
+            <div class="status-metric-value">
+              {{- if .Build.HasLastRun}}{{.Build.LastFinished}} · {{num .Build.LastDigested}} digested in {{num .Build.LastDurationMS}} ms
+              {{- else if .Build.Busy}}running now
+              {{- else}}never{{end -}}
+            </div></div>
+          <div><div class="status-metric-label">Built through</div>
+            <div class="status-metric-value">
+              {{- if .Build.BuiltThrough}}<span class="mono">{{.Build.BuiltThrough}}</span>
+                {{- if and .Build.NewestDay (ne .Build.NewestDay .Build.BuiltThrough)}}
+                <span class="opacity-60">(newest message <span class="mono">{{.Build.NewestDay}}</span>)</span>{{end}}
+              {{- else}}never built{{end -}}
+            </div></div>
+        </div>
+        {{- if .Build.LastError}}
+        <p class="status-note mt-4"><span class="sync-badge sync-badge-err">Failed</span>
+          Last run aborted: <span class="font-mono">{{.Build.LastError}}</span></p>
+        {{- end}}
+
+        {{- if .Build.History}}
+        <div class="status-subtable mt-5">
+          <div class="status-metric-label mb-2">Recent runs</div>
+          <div class="overflow-x-auto">
+            <table class="w-full text-sm">
+              <thead>
+                <tr class="text-left opacity-60">
+                  <th class="pb-2 pr-4 font-medium">Started</th>
+                  <th class="pb-2 pr-4 font-medium">Scope</th>
+                  <th class="pb-2 pr-4 font-medium">Status</th>
+                  <th class="pb-2 pr-4 font-medium">Digested</th>
+                  <th class="pb-2 pr-4 font-medium">Duration</th>
+                  <th class="pb-2 font-medium">Model</th>
+                </tr>
+              </thead>
+              <tbody>
+                {{- range .Build.History}}
+                <tr class="border-t border-base-300/40">
+                  <td class="whitespace-nowrap py-2 pr-4 mono">{{.Started}}</td>
+                  <td class="whitespace-nowrap py-2 pr-4">{{.Scope}}</td>
+                  <td class="whitespace-nowrap py-2 pr-4"><span class="sync-badge sync-badge-{{.Badge}}">{{.Status}}</span>
+                    {{- if .Error}} <span class="opacity-60 font-mono">{{.Error}}</span>{{end}}</td>
+                  <td class="whitespace-nowrap py-2 pr-4 mono">{{num .Digested}}</td>
+                  <td class="whitespace-nowrap py-2 pr-4 mono">{{.Duration}}</td>
+                  <td class="whitespace-nowrap py-2 mono opacity-70">{{.Model}}</td>
+                </tr>
+                {{- end}}
+              </tbody>
+            </table>
+          </div>
+        </div>
+        {{- end}}
+
+        {{/* Privileged same-origin form POSTs carrying the per-session token,
+             boosted to swap only #main-content (no inline JS; CSP-clean). */}}
+        <div class="flex flex-wrap gap-3 mt-5">
+          <form method="post" action="/journal/build"
+                hx-boost="true" hx-target="#main-content" hx-select="#main-content" hx-swap="outerHTML">
+            <input type="hidden" name="setup_token" value="{{.SetupToken}}">
+            <button type="submit" class="setup-btn"{{if .Build.Busy}} disabled{{end}}>Build journal</button>
+          </form>
+          {{- if gt .Build.Digested 0}}
+          {{/* The count is stated ON the control, before the click: re-running
+               every digest is billable outbound LLM work, so the price has to be
+               visible at the moment of the decision, not afterwards. */}}
+          <form method="post" action="/journal/rebuild"
+                hx-boost="true" hx-target="#main-content" hx-select="#main-content" hx-swap="outerHTML">
+            <input type="hidden" name="setup_token" value="{{.SetupToken}}">
+            <button type="submit" class="setup-btn setup-btn-ghost"{{if .Build.Busy}} disabled{{end}}>
+              Rebuild all {{num .Build.Digested}} digests</button>
+          </form>
+          {{- end}}
+        </div>
+        <p class="status-note mt-3">Build fills in what is missing and leaves existing digests alone.
+          {{- if gt .Build.Digested 0}} Rebuild all re-derives every cached digest — that is
+          {{num .Build.Digested}} fresh calls to your LLM endpoint. Each one is replaced only when its
+          replacement succeeds, so a failure part-way leaves what you already have intact.{{end}}</p>
+        {{- if not .Build.DigestOn}}
+        <p class="status-note mt-2">Digests are turned off in config
+          (<code class="font-mono">journal.digest_enabled</code>); a build writes the day layer only.</p>
+        {{- end}}
+        {{- end}}
+      </div>
 {{end}}

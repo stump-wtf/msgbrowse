@@ -192,7 +192,11 @@ func TestRunStalePromptReDigests(t *testing.T) {
 	}
 }
 
-func TestRunRegenerateWipesCache(t *testing.T) {
+// TestRunRegenerateReDigestsEveryDay: Regenerate makes every day eligible again.
+// It no longer WIPES the cache first — each digest is overwritten only when its
+// replacement succeeds, so a failure part-way leaves the old ones intact (see
+// TestRegenerateNeverDeletesBeforeSucceeding).
+func TestRunRegenerateReDigestsEveryDay(t *testing.T) {
 	st := openTestStore(t)
 	ctx := context.Background()
 	seedConv(t, st, source.Signal, "Harper", []signal.Message{
@@ -423,5 +427,151 @@ func TestRunSkipsMalformedDigest(t *testing.T) {
 	}
 	if sum.Digested != 0 || sum.Skipped != 1 {
 		t.Errorf("malformed-digest run = %+v, want Digested:0 Skipped:1", sum)
+	}
+}
+
+// TestRegenerateNeverDeletesBeforeSucceeding is the regression for the worst bug
+// this feature shipped with. Regenerate used to ResetDigests UP FRONT, before a
+// single LLM call. The model != "" check does not catch a configured-but-DEAD
+// endpoint, so one click on "Rebuild all N digests" deleted every cached digest
+// and then failed on the first call — destroying an archive's worth of billable
+// output with no partial restore, while the banner claimed it was re-deriving
+// them.
+//
+// The contract now: a failing regenerate leaves every existing digest intact,
+// because each is replaced only when its replacement succeeds.
+func TestRegenerateNeverDeletesBeforeSucceeding(t *testing.T) {
+	st := openTestStore(t)
+	ctx := context.Background()
+	seedConv(t, st, source.Signal, "Harper", []signal.Message{
+		mk("Harper", "2023-05-01 09:00:00", "Harper", "hello"),
+		mk("Harper", "2023-05-02 09:00:00", "Harper", "world"),
+	})
+	if _, err := Run(ctx, st, &fakeClient{resp: jsonDigest("original")}, baseOpts()); err != nil {
+		t.Fatal(err)
+	}
+	before, ok, err := st.GetJournalDay(ctx, "2023-05-01")
+	if err != nil || !ok || before.DigestBody == "" {
+		t.Fatalf("expected a cached digest first (ok=%v err=%v)", ok, err)
+	}
+
+	regen := baseOpts()
+	regen.Regenerate = true
+	if _, err := Run(ctx, st, &fakeClient{chatErr: errors.New("connection refused")}, regen); err == nil {
+		t.Fatal("expected the failing regenerate to return an error")
+	}
+
+	after, ok, err := st.GetJournalDay(ctx, "2023-05-01")
+	if err != nil || !ok {
+		t.Fatalf("journal day vanished: ok=%v err=%v", ok, err)
+	}
+	if after.DigestBody != before.DigestBody {
+		t.Errorf("a failed regenerate destroyed the cached digest: before=%q after=%q",
+			before.DigestBody, after.DigestBody)
+	}
+}
+
+// TestScopedRegenerateOnEmptyDayKeepsDigest: a per-day Rebuild for a day whose
+// messages are no longer eligible (its conversation was added to the denylist)
+// used to delete the digest, rebuild nothing, and record a clean success — an
+// unrecoverable loss from a button labelled "Regenerate this digest".
+func TestScopedRegenerateOnEmptyDayKeepsDigest(t *testing.T) {
+	st := openTestStore(t)
+	ctx := context.Background()
+	seedConv(t, st, source.Signal, "Harper", []signal.Message{
+		mk("Harper", "2023-05-01 09:00:00", "Harper", "hello"),
+	})
+	if _, err := Run(ctx, st, &fakeClient{resp: jsonDigest("original")}, baseOpts()); err != nil {
+		t.Fatal(err)
+	}
+	before, _, _ := st.GetJournalDay(ctx, "2023-05-01")
+	if before.DigestBody == "" {
+		t.Fatal("expected a cached digest first")
+	}
+
+	scoped := baseOpts()
+	scoped.Day = "2023-05-01"
+	scoped.Regenerate = true
+	scoped.Exclude = []string{"Harper"} // the day now yields nothing
+	if _, err := Run(ctx, st, &fakeClient{resp: jsonDigest("x")}, scoped); err != nil {
+		t.Fatalf("scoped regenerate: %v", err)
+	}
+	after, ok, _ := st.GetJournalDay(ctx, "2023-05-01")
+	if !ok || after.DigestBody == "" {
+		t.Error("a scoped regenerate over a now-empty day destroyed the digest and rebuilt nothing")
+	}
+}
+
+// TestRunRecordsRunLog: begin/heartbeat/terminal, and a FAILED run still stamps
+// its terminal row — otherwise the page reads "building…" until the heartbeat
+// goes stale, which is worse than reporting the error.
+func TestRunRecordsRunLog(t *testing.T) {
+	st := openTestStore(t)
+	ctx := context.Background()
+	seedConv(t, st, source.Signal, "Harper", []signal.Message{
+		mk("Harper", "2023-05-01 09:00:00", "Harper", "hello"),
+	})
+	if _, err := Run(ctx, st, &fakeClient{resp: jsonDigest("d")}, baseOpts()); err != nil {
+		t.Fatal(err)
+	}
+	run, err := st.LatestJournalRun(ctx)
+	if err != nil || run == nil {
+		t.Fatalf("expected a recorded run: %v", err)
+	}
+	if run.InFlight() {
+		t.Error("a completed run must record its terminal write")
+	}
+	if run.Digested != 1 || run.Error != "" {
+		t.Errorf("run = %+v, want Digested:1 with no error", run)
+	}
+
+	// A failing run must still land a terminal row, carrying the reason.
+	if _, err := Run(ctx, st, &fakeClient{chatErr: errors.New("boom")}, func() Options {
+		o := baseOpts()
+		o.Regenerate = true
+		return o
+	}()); err == nil {
+		t.Fatal("expected an error")
+	}
+	failed, err := st.LatestJournalRun(ctx)
+	if err != nil || failed == nil {
+		t.Fatalf("expected a recorded failed run: %v", err)
+	}
+	if failed.InFlight() {
+		t.Error("an aborted run must still stamp finished_at, or the page sticks on building…")
+	}
+	if failed.Error == "" {
+		t.Error("an aborted run must record why")
+	}
+}
+
+// TestBuildRefreshesStaleDigest: the UI flags a day whose message count has moved
+// as "Out of date", so a plain Build must pick it up. Otherwise the app reports a
+// problem its primary control refuses to fix.
+func TestBuildRefreshesStaleDigest(t *testing.T) {
+	st := openTestStore(t)
+	ctx := context.Background()
+	seedConv(t, st, source.Signal, "Harper", []signal.Message{
+		mk("Harper", "2023-05-01 09:00:00", "Harper", "hello"),
+	})
+	if _, err := Run(ctx, st, &fakeClient{resp: jsonDigest("first")}, baseOpts()); err != nil {
+		t.Fatal(err)
+	}
+	// More messages land on the same day.
+	seedConv(t, st, source.Signal, "Harper", []signal.Message{
+		mk("Harper", "2023-05-01 09:00:00", "Harper", "hello"),
+		mk("Harper", "2023-05-01 10:00:00", "Harper", "and more"),
+		mk("Harper", "2023-05-01 11:00:00", "Harper", "and more again"),
+	})
+	sum, err := Run(ctx, st, &fakeClient{resp: jsonDigest("second")}, baseOpts())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sum.Digested != 1 {
+		t.Errorf("Build digested %d days; a stale digest must be refreshed (summary %+v)", sum.Digested, sum)
+	}
+	v, _, _ := st.GetJournalDay(ctx, "2023-05-01")
+	if v.DigestStale() {
+		t.Error("the refreshed digest should no longer read as stale")
 	}
 }

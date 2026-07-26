@@ -61,7 +61,13 @@ type JournalDigest struct {
 	Body          string // plain-text summary (fallback + empty-response guard)
 	Structured    string // canonical JSON of the editorial digest ("" = prose-only)
 	Mood          string // denormalized mood label ("" = none), for the calendar tint
-	UpdatedAt     string
+	// MessageCount is the day's mechanical message count AT THE TIME this digest
+	// was written (#240). Comparing it against the day's CURRENT count is what
+	// tells the UI a digest is out of date. Zero means UNKNOWN — a pre-v15 row
+	// that predates the column — and must never be read as "zero messages", or
+	// every legacy digest would render as stale.
+	MessageCount int
+	UpdatedAt    string
 }
 
 // JournalDayView is a mechanical day joined with its digest (if any), as the
@@ -73,6 +79,22 @@ type JournalDayView struct {
 	DigestModel      string
 	DigestStructured string // canonical JSON ("" = prose-only / no digest); parsed on read in the web layer
 	Mood             string // "" = no digest
+	// DigestMessageCount is the count captured when the digest was written; 0
+	// means unknown (no digest, or a pre-v15 row). Stale() compares it against
+	// MessageCount.
+	DigestMessageCount int
+}
+
+// DigestStale reports whether the day's cached digest was written before more
+// messages landed on that day. It is deliberately conservative: a zero captured
+// count means UNKNOWN (a digest written before the count column existed), and
+// unknown must not read as stale — otherwise every pre-v15 digest would light up
+// the moment the column shipped.
+func (v JournalDayView) DigestStale() bool {
+	if v.DigestBody == "" && v.DigestStructured == "" {
+		return false // no digest at all — nothing to be out of date
+	}
+	return v.DigestMessageCount > 0 && v.DigestMessageCount != v.MessageCount
 }
 
 // DayTranscriptLine is one message in a day's cross-conversation transcript,
@@ -230,6 +252,92 @@ func (s *Store) BuildJournalDays(ctx context.Context, sinceDay string, exclude [
 	return out, nil
 }
 
+// BuildJournalDay rebuilds exactly one day's mechanical rollup.
+//
+// This exists because BuildJournalDays(sinceDay) is a LOWER BOUND: it rebuilds
+// that day and every day after it, so wiring the per-day Rebuild control to it
+// would re-scan seven years of archive to refresh one day in 2019. Here the
+// window is closed on both ends by dayUnixWindow, which is also sargable on
+// idx_messages_ts_unix — unlike the date(ts_unix,'unixepoch') >= ? predicate the
+// bulk builder uses, which cannot be.
+//
+// ok is false when the day has no qualifying messages at all; the caller decides
+// whether that means "delete the row" or "nothing to do".
+func (s *Store) BuildJournalDay(ctx context.Context, day string, exclude []string) (JournalDay, bool, error) {
+	start, end, err := dayUnixWindow(day)
+	if err != nil {
+		return JournalDay{}, false, err
+	}
+	excl, err := s.excludedConversationIDs(ctx, exclude)
+	if err != nil {
+		return JournalDay{}, false, err
+	}
+
+	d := JournalDay{Day: day, SourceCounts: map[string]int{}}
+	// Pass 1: per-source message and distinct-conversation counts, same filter
+	// as the bulk builder so a rebuilt day is byte-identical to a bulk-built one.
+	{
+		args := []any{start, end}
+		q := `SELECT source, COUNT(*), COUNT(DISTINCT conversation_id)
+		        FROM messages
+		       WHERE ts_unix >= ? AND ts_unix < ? AND is_system = 0 AND TRIM(body) <> ''`
+		q += notInClause("conversation_id", excl, &args)
+		q += ` GROUP BY source`
+		rows, err := s.db.QueryContext(ctx, q, args...)
+		if err != nil {
+			return JournalDay{}, false, fmt.Errorf("journal day %s counts: %w", day, err)
+		}
+		defer rows.Close()
+		for rows.Next() {
+			var src string
+			var msgs, convs int
+			if err := rows.Scan(&src, &msgs, &convs); err != nil {
+				return JournalDay{}, false, err
+			}
+			d.MessageCount += msgs
+			d.ConversationCount += convs
+			d.SourceCounts[src] += msgs
+		}
+		if err := rows.Err(); err != nil {
+			return JournalDay{}, false, fmt.Errorf("journal day %s counts rows: %w", day, err)
+		}
+	}
+	if d.MessageCount == 0 {
+		return JournalDay{}, false, nil
+	}
+
+	// Pass 2: top senders, owner excluded.
+	{
+		args := []any{start, end, signal.OwnerSender}
+		q := `SELECT sender, COUNT(*) AS c
+		        FROM messages
+		       WHERE ts_unix >= ? AND ts_unix < ? AND is_system = 0 AND TRIM(body) <> '' AND sender <> ?`
+		q += notInClause("conversation_id", excl, &args)
+		q += ` GROUP BY sender`
+		rows, err := s.db.QueryContext(ctx, q, args...)
+		if err != nil {
+			return JournalDay{}, false, fmt.Errorf("journal day %s senders: %w", day, err)
+		}
+		defer rows.Close()
+		for rows.Next() {
+			var sender string
+			var c int
+			if err := rows.Scan(&sender, &c); err != nil {
+				return JournalDay{}, false, err
+			}
+			d.TopSenders = append(d.TopSenders, SenderCount{Name: sender, Count: c})
+		}
+		if err := rows.Err(); err != nil {
+			return JournalDay{}, false, fmt.Errorf("journal day %s senders rows: %w", day, err)
+		}
+	}
+	sort.SliceStable(d.TopSenders, func(i, j int) bool { return d.TopSenders[i].Count > d.TopSenders[j].Count })
+	if len(d.TopSenders) > topSendersPerDay {
+		d.TopSenders = d.TopSenders[:topSendersPerDay]
+	}
+	return d, true, nil
+}
+
 // PutJournalDay upserts one day's mechanical rollup. It DO UPDATEs so a rebuild
 // refreshes counts in place (the rollup is deterministic, so re-running is
 // idempotent).
@@ -345,18 +453,28 @@ func (s *Store) GetDayDigest(ctx context.Context, day string) (body, model, prom
 func (s *Store) PutDayDigest(ctx context.Context, d JournalDigest) error {
 	now := time.Now().UTC().Format(time.RFC3339)
 	_, err := s.db.ExecContext(ctx, `
-INSERT INTO journal_digests(day, model, prompt_version, body, structured, mood, updated_at)
-VALUES (?, ?, ?, ?, ?, ?, ?)
+INSERT INTO journal_digests(day, model, prompt_version, body, structured, mood, message_count, updated_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT(day) DO UPDATE SET
     model          = excluded.model,
     prompt_version = excluded.prompt_version,
     body           = excluded.body,
     structured     = excluded.structured,
     mood           = excluded.mood,
+    message_count  = excluded.message_count,
     updated_at     = excluded.updated_at`,
-		d.Day, d.Model, d.PromptVersion, d.Body, d.Structured, d.Mood, now)
+		d.Day, d.Model, d.PromptVersion, d.Body, d.Structured, d.Mood, d.MessageCount, now)
 	if err != nil {
 		return fmt.Errorf("put day digest: %w", err)
+	}
+	return nil
+}
+
+// DeleteDayDigest removes exactly one day's cached digest — the per-day Rebuild
+// control — leaving journal_days and every other day's digest untouched.
+func (s *Store) DeleteDayDigest(ctx context.Context, day string) error {
+	if _, err := s.db.ExecContext(ctx, `DELETE FROM journal_digests WHERE day = ?`, day); err != nil {
+		return fmt.Errorf("delete day digest %s: %w", day, err)
 	}
 	return nil
 }

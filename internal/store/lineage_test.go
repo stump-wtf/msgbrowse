@@ -214,8 +214,20 @@ func TestRepairMigrationIsIdempotent(t *testing.T) {
 	}
 	// Re-apply v14 directly against the finished schema — the repair path a
 	// converging database takes.
-	if err := s.applyMigration(ctx, schemaVersion, migrations[schemaVersion]); err != nil {
-		t.Fatalf("re-apply v%d: %v", schemaVersion, err)
+	//
+	// Pinned to 14, not schemaVersion. v14 is THE repair migration: it
+	// deliberately re-asserts the union of the contested v11/v12/v13 DDL, so a
+	// database that took any lineage converges, and being re-applied to an
+	// already-complete schema is its whole job. That is a property of v14
+	// specifically, not of "the newest migration" — the `migrations` invariant
+	// only requires idempotency WITHIN a version transition, and an ordinary
+	// additive migration (v15's ALTER TABLE ADD COLUMN; SQLite has no IF NOT
+	// EXISTS for that) is correctly non-repeatable. Reading schemaVersion here
+	// made this test fail the moment any normal migration was appended, which
+	// says nothing about the repair path.
+	const repairVersion = 14
+	if err := s.applyMigration(ctx, repairVersion, migrations[repairVersion]); err != nil {
+		t.Fatalf("re-apply v%d: %v", repairVersion, err)
 	}
 	var rules int
 	if err := db.QueryRow(`SELECT count(*) FROM contact_merge_rules`).Scan(&rules); err != nil {

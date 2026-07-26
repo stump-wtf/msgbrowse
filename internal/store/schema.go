@@ -6,7 +6,7 @@ import "context"
 // `user_version` pragma. On Open, the migrations runner brings any older
 // database forward to this version. Bump it and append a migration whenever the
 // schema changes.
-const schemaVersion = 14
+const schemaVersion = 15
 
 // SchemaVersion returns the schema revision this binary expects (and migrates a
 // database forward to on Open). Read-only callers — notably `msgbrowse doctor` —
@@ -53,6 +53,7 @@ var migrations = []string{
 	12: schemaV12,
 	13: schemaV13,
 	14: schemaV14,
+	15: schemaV15,
 }
 
 // schemaV1 is the initial Signal-only schema. It is preserved verbatim so a
@@ -662,3 +663,46 @@ CREATE INDEX IF NOT EXISTS idx_journal_digests_updated ON journal_digests(update
 // Databases created after this migration never exercise the repair path; they
 // walk 1…14 in order and v14 is a no-op on a schema that is already complete.
 const schemaV14 = schemaV11 + schemaV12 + schemaV13
+
+// schemaV15 adds what in-app journal building needs to be observable (#240).
+//
+//   - journal_digests.message_count records the day's mechanical message count
+//     AT THE TIME the digest was written. A digest written before more messages
+//     landed on that day is stale, and without this there is nothing to compare
+//     against. Legacy rows default to 0, which means UNKNOWN, NOT "zero
+//     messages" — every staleness test must require `> 0` explicitly, or every
+//     pre-v15 digest would read as stale the moment this ships.
+//   - journal_runs is the durable log of journal passes: the journal analogue of
+//     embed_runs (v12). Without it there is nowhere for "last run", "duration",
+//     "digests so far", or "interrupted" to come from. It is also the only
+//     channel between a `msgbrowse journal` CLI process and a running
+//     `msgbrowse serve` sharing the same SQLite file, which is what lets the
+//     page refuse to start a second run rather than race one already in flight.
+//
+// scope is ” for a whole-archive pass, else the single day a per-day Rebuild
+// targeted. Timestamps are RFC3339 UTC strings, matching embed_runs and
+// ingest_runs.
+//
+// A plain additive ALTER with a DEFAULT (SQLite requires one when adding a NOT
+// NULL column to a populated table); precedent: schemaV5, schemaV8. Deliberately
+// NOT folded into schemaV11 (which owns journal_digests) — shipped migrations
+// are immutable, and CREATE TABLE IF NOT EXISTS would skip an existing table
+// anyway, so the column would silently never appear.
+const schemaV15 = `
+ALTER TABLE journal_digests ADD COLUMN message_count INTEGER NOT NULL DEFAULT 0;
+
+CREATE TABLE IF NOT EXISTS journal_runs (
+    id          INTEGER PRIMARY KEY,
+    model       TEXT    NOT NULL,
+    scope       TEXT    NOT NULL DEFAULT '',
+    started_at  TEXT    NOT NULL,
+    updated_at  TEXT    NOT NULL,
+    finished_at TEXT    NOT NULL DEFAULT '',
+    duration_ms INTEGER NOT NULL DEFAULT 0,
+    days        INTEGER NOT NULL DEFAULT 0,
+    digested    INTEGER NOT NULL DEFAULT 0,
+    cached      INTEGER NOT NULL DEFAULT 0,
+    skipped     INTEGER NOT NULL DEFAULT 0,
+    error       TEXT    NOT NULL DEFAULT ''
+);
+`

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/joestump/msgbrowse/internal/journal"
@@ -28,6 +29,13 @@ type journalData struct {
 	PeakHourLabel string   // "11 PM" ("" when no activity)
 	Moods         []string // legend order (journal.Moods)
 	Selected      *dayCard // the selected day's editorial card (nil = none)
+	// Build drives the in-app build card (#240); BuildResult is the fixed-enum
+	// banner from a just-completed Build / Rebuild POST ("" on a plain GET).
+	Build       journalBuildData
+	BuildResult string
+	// SetupToken arms the privileged build POSTs. "" when no builder is wired,
+	// in which case no forms render at all.
+	SetupToken string
 }
 
 // calCell is one day cell in the month grid. A zero-value cell (InMonth false)
@@ -38,6 +46,7 @@ type calCell struct {
 	Count      int
 	MoodClass  string // "cal-day--upbeat" etc; "" when no digest
 	HasContent bool   // true → the cell links to ?day=
+	Stale      bool   // digest predates later messages on this day (#240)
 	Selected   bool
 	URL        string
 }
@@ -53,11 +62,25 @@ type dayCard struct {
 	Digest            *journal.Digest     // parsed structured digest (nil when none)
 	Body              string              // prose fallback (older/parse-failed digests)
 	TopSenders        []store.SenderCount // mechanical fallback when no digest at all
+	// Stale marks a digest written BEFORE later messages landed on this day
+	// (#240). NewMessages is how many arrived since. Both stay zero-valued when
+	// the captured count is unknown (a pre-v15 digest), so an old digest is
+	// never accused of being out of date on no evidence.
+	Stale       bool
+	NewMessages int
 }
 
 // handleJournal renders the journal as a mood-tinted month calendar with an
 // editorial day card. Boosted navigations swap only #main-content.
 func (s *Server) handleJournal(w http.ResponseWriter, r *http.Request) {
+	s.renderJournalPage(w, r, "")
+}
+
+// renderJournalPage assembles and renders the Journal page (full document or
+// boosted #main-content partial). buildResult is the fixed-enum banner from a
+// just-completed Build / Rebuild POST, "" on a plain GET — the same shape
+// renderStatus uses for the index controls.
+func (s *Server) renderJournalPage(w http.ResponseWriter, r *http.Request, buildResult string) {
 	ctx := r.Context()
 	var base baseData
 	if isPartialRequest(r) {
@@ -79,22 +102,55 @@ func (s *Server) handleJournal(w http.ResponseWriter, r *http.Request) {
 	// after a boosted swap shell.js re-derives the active tab from location.
 	base.NavTab = navTabJournal
 
+	build, err := s.journalBuildStatus(ctx)
+	if err != nil {
+		s.serverError(w, err)
+		return
+	}
+	// The build forms are privileged POSTs: arm them with a live token, but only
+	// when there is a builder to drive. Browser / no-op mode renders the
+	// unavailable note and no forms, so it needs no token.
+	token := ""
+	if s.journalBuilder != nil {
+		tok, terr := s.setupTokens.mint()
+		if terr != nil {
+			s.serverError(w, terr)
+			return
+		}
+		token = tok
+	}
+
 	latest, err := s.store.LatestJournalDay(ctx)
 	if err != nil {
 		s.serverError(w, err)
 		return
 	}
 	if latest == "" {
-		s.render(w, r, "journal", journalData{baseData: base, Empty: true})
+		// The empty state is now the PRIMARY place a first-time user starts a
+		// build, so it carries the full card rather than a CLI instruction.
+		s.render(w, r, "journal", journalData{
+			baseData: base, Empty: true,
+			Build: build, BuildResult: buildResult, SetupToken: token,
+		})
 		return
 	}
 
+	// Day/month context comes from the query on a GET, and from the FORM on the
+	// build POSTs — their URLs (/journal/build etc.) carry no query at all, so
+	// reading only r.URL.Query() would silently bounce the user from the day they
+	// acted on to the newest day in the archive.
 	q := r.URL.Query()
-	day := q.Get("day")
+	pick := func(name string) string {
+		if v := q.Get(name); v != "" {
+			return v
+		}
+		return strings.TrimSpace(r.PostFormValue(name))
+	}
+	day := pick("day")
 	if !isValidDay(day) {
 		day = ""
 	}
-	yearQ, monthQ := q.Get("year"), q.Get("month")
+	yearQ, monthQ := pick("year"), pick("month")
 	if day == "" {
 		switch {
 		case yearQ == "":
@@ -148,6 +204,9 @@ func (s *Server) handleJournal(w http.ResponseWriter, r *http.Request) {
 		Moods:         journal.Moods,
 		WeekdayLabel:  weekdayLabel(stats),
 		PeakHourLabel: peakHourLabel(stats),
+		Build:         build,
+		BuildResult:   buildResult,
+		SetupToken:    token,
 	}
 	if day != "" {
 		if view, ok, err := s.store.GetJournalDay(ctx, day); err != nil {
@@ -210,6 +269,9 @@ func buildMonthGrid(year int, month time.Month, days []store.JournalMonthDay, se
 				cell.MoodClass = "cal-day--" + md.Mood
 			}
 		}
+		if md, ok := byDOM[dom]; ok && md.Stale {
+			cell.Stale = true
+		}
 		cell.Selected = dayStr == selected
 		row = append(row, cell)
 		if len(row) == 7 {
@@ -249,6 +311,16 @@ func buildDayCard(v store.JournalDayView) *dayCard {
 		var d journal.Digest
 		if err := json.Unmarshal([]byte(v.DigestStructured), &d); err == nil {
 			c.Digest = &d
+		}
+	}
+	if v.DigestStale() {
+		c.Stale = true
+		// Only a GROWN day has "more messages". A day can also shrink — a
+		// re-ingest that dropped rows, or a conversation added to the journal
+		// denylist — and that digest is equally out of date, but the count would
+		// be negative, so the template falls back to a countless wording.
+		if n := v.MessageCount - v.DigestMessageCount; n > 0 {
+			c.NewMessages = n
 		}
 	}
 	return c

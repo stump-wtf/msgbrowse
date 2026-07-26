@@ -12,6 +12,7 @@ import (
 	"github.com/joestump/msgbrowse/internal/config"
 	"github.com/joestump/msgbrowse/internal/embed"
 	"github.com/joestump/msgbrowse/internal/ingest"
+	"github.com/joestump/msgbrowse/internal/journal"
 	"github.com/joestump/msgbrowse/internal/onboardsvc"
 	"github.com/joestump/msgbrowse/internal/setup"
 	"github.com/joestump/msgbrowse/internal/source"
@@ -86,6 +87,10 @@ func newServeCommand() *cobra.Command {
 			llmHolder := newLLMHolder(cfg)
 			srv.SetLLMConfig(newLLMApplier(cfg, llmHolder))
 			srv.SetIndexer(embed.NewIndexer(st, llmHolder, slog.Default()))
+			// Same story for the Journal page's Build / Rebuild controls (#240):
+			// one live holder, so a build started after an LLM save digests
+			// against the new endpoint.
+			srv.SetJournalBuilder(journal.NewBuilder(st, llmHolder, cfg.Journal, slog.Default()))
 
 			// Device sync (ADR-0021) is gated behind the `devicesync` build
 			// tag — it is NOT compiled into release binaries. wireDeviceSync is

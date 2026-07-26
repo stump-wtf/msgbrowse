@@ -57,6 +57,11 @@ type Options struct {
 	MaxDaysPerRun int
 	// Since floors the day range ('YYYY-MM-DD', '' = all history).
 	Since string
+	// Day restricts the run to EXACTLY one day ('YYYY-MM-DD'); '' runs the whole
+	// archive. Set by the web layer's per-day Rebuild control (#240). It is not
+	// the same as Since, which is only a lower bound: rebuilding one 2019 day via
+	// Since would re-scan every day after it too.
+	Day string
 	// Backfill digests eligible days OLDEST-first (fill in history) instead of the
 	// default newest-first (keep recent days fresh). Only observable when
 	// MaxDaysPerRun caps the run.
@@ -93,7 +98,7 @@ type Summary struct {
 // MaxDaysPerRun. DryRun makes no writes and no LLM calls. A digest transport
 // error aborts the run; because each day is persisted as it completes, a re-run
 // resumes where this one stopped.
-func Run(ctx context.Context, st *store.Store, client llm.Client, opts Options) (Summary, error) {
+func Run(ctx context.Context, st *store.Store, client llm.Client, opts Options) (sum Summary, err error) {
 	log := opts.Logger
 	if log == nil {
 		log = slog.Default()
@@ -109,12 +114,69 @@ func Run(ctx context.Context, st *store.Store, client llm.Client, opts Options) 
 	}
 	model := strings.TrimSpace(opts.Model)
 	start := time.Now()
-	var sum Summary
+
+	// --- Run log (#240) ---
+	// The durable record the Journal page reads: begin, a heartbeat per digested
+	// day, and a terminal write. Skipped entirely for a dry run, which makes no
+	// writes at all.
+	//
+	// The terminal write is DEFERRED so it happens on every exit path — including
+	// the fatal transport error mid-digest and a cancelled context. A run that
+	// dies without it leaves the page reading "building…" until the heartbeat
+	// goes stale, which is a worse failure than reporting the error. It writes
+	// through a context detached from cancellation for the same reason: the usual
+	// way a run dies is ctx being cancelled, and the record must still land.
+	var runID int64
+	if !opts.DryRun {
+		var berr error
+		// A failed INSERT must NOT abort the pass: run logging is bookkeeping,
+		// and losing it is not a reason to refuse the work the user asked for.
+		// runID stays 0, the heartbeat and terminal write are skipped, and the
+		// build proceeds — the same posture embed.Run takes. (SQLITE_BUSY here is
+		// realistic: a concurrent ingest can hold the write lock past the 5s
+		// busy_timeout.)
+		runID, berr = st.BeginJournalRun(ctx, model, opts.Day, start)
+		if berr != nil {
+			log.Warn("journal: could not record run start; continuing without a run log", "error", berr)
+			runID = 0
+		}
+		defer func() {
+			if runID == 0 {
+				return // no row to finish
+			}
+			finishCtx := context.WithoutCancel(ctx)
+			msg := ""
+			if err != nil {
+				msg = err.Error()
+			}
+			if ferr := st.FinishJournalRun(finishCtx, store.JournalRun{
+				ID: runID, FinishedAt: time.Now(),
+				DurationMS: time.Since(start).Milliseconds(),
+				Days:       sum.Days, Digested: sum.Digested,
+				Cached: sum.Cached, Skipped: sum.Skipped, Error: msg,
+			}); ferr != nil {
+				log.Error("journal: could not record run completion", "error", ferr)
+			}
+		}()
+	}
 
 	// --- Mechanical layer (always, unless dry-run, which is read-only) ---
-	days, err := st.BuildJournalDays(ctx, opts.Since, opts.Exclude)
-	if err != nil {
-		return sum, err
+	var days []store.JournalDay
+	if opts.Day != "" {
+		// Single-day scope: bounded on BOTH ends, so a per-day rebuild never
+		// re-scans everything newer the way BuildJournalDays(since) would.
+		d, ok, derr := st.BuildJournalDay(ctx, opts.Day, opts.Exclude)
+		if derr != nil {
+			return sum, derr
+		}
+		if ok {
+			days = []store.JournalDay{d}
+		}
+	} else {
+		days, err = st.BuildJournalDays(ctx, opts.Since, opts.Exclude)
+		if err != nil {
+			return sum, err
+		}
 	}
 	if !opts.DryRun {
 		for _, d := range days {
@@ -150,12 +212,24 @@ func Run(ctx context.Context, st *store.Store, client llm.Client, opts Options) 
 		return sum, nil
 	}
 
-	if opts.Regenerate && !opts.DryRun {
-		if err := st.ResetDigests(ctx); err != nil {
-			return sum, err
-		}
-		log.Info("journal: regenerate — cleared cached digests")
-	}
+	// Regenerate deliberately DELETES NOTHING.
+	//
+	// digestCurrent returns false for every day when Regenerate is set, so the
+	// whole scope is already eligible, and PutDayDigest upserts — each cached
+	// digest is replaced at the moment its replacement succeeds. Clearing first
+	// (the old ResetDigests / DeleteDayDigest path) bought nothing and opened a
+	// window with real teeth: the endpoint being down is not caught by the
+	// model != "" check above, so a "Rebuild all 1,842 digests" click against a
+	// dead endpoint deleted all 1,842 rows and then failed on the first call —
+	// destroying an archive's worth of billable output with no partial restore,
+	// while the banner said it was re-deriving them. The scoped version was
+	// worse still: a day whose messages had since been excluded returned
+	// ok=false from BuildJournalDay, so the delete landed, nothing rebuilt it,
+	// and the run recorded a clean success.
+	//
+	// The tradeoff is that a digest for a day that no longer qualifies survives
+	// a regenerate rather than being swept. That is the right way round: a stale
+	// row is recoverable, a deleted one is not.
 
 	pv := promptVersion(opts.DigestPrompt)
 
@@ -167,7 +241,7 @@ func Run(ctx context.Context, st *store.Store, client llm.Client, opts Options) 
 		if err := ctx.Err(); err != nil {
 			return sum, err
 		}
-		current, err := digestCurrent(ctx, st, d.Day, model, pv, opts.Regenerate)
+		current, err := digestCurrent(ctx, st, d, model, pv, opts.Regenerate)
 		if err != nil {
 			return sum, err
 		}
@@ -205,7 +279,23 @@ func Run(ctx context.Context, st *store.Store, client llm.Client, opts Options) 
 	}
 
 	log.Info("journal: digesting", "model", model, "eligible", sum.Eligible, "this_run", len(process), "remaining", sum.Remaining)
+	// beat refreshes the run's heartbeat and live counters. It is called on
+	// EVERY processed day, not only successfully digested ones: a run grinding
+	// through days that skip (unparseable response) or have no transcript would
+	// otherwise write no updated_at at all, cross journalRunStaleAfter while
+	// perfectly alive, and get mislabelled Interrupted — which also re-opens the
+	// cross-process guard and lets a second (billable) run start alongside it.
+	beat := func() {
+		if runID == 0 {
+			return
+		}
+		if herr := st.UpdateJournalRunProgress(ctx, runID, sum.Days, sum.Digested, time.Now()); herr != nil {
+			log.Warn("journal: heartbeat failed", "error", herr)
+		}
+	}
+	beat() // the mechanical layer and eligibility scan can themselves be slow
 	for _, d := range process {
+		beat()
 		if err := ctx.Err(); err != nil {
 			return sum, err
 		}
@@ -216,11 +306,13 @@ func Run(ctx context.Context, st *store.Store, client llm.Client, opts Options) 
 		if len(lines) == 0 {
 			continue // no real content after exclusion; nothing to digest
 		}
-		raw, err := digestDay(ctx, client, model, opts, d.Day, lines)
-		if err != nil {
+		raw, derr := digestDay(ctx, client, model, opts, d.Day, lines)
+		if derr != nil {
 			// Transport/LLM error: fatal, resumable. Days already persisted stay;
-			// the next run resumes at this day.
-			return sum, fmt.Errorf("digest %s: %w", d.Day, err)
+			// the next run resumes at this day. The deferred run-finish records
+			// this reason, so the page says what went wrong instead of showing a
+			// run that never ended.
+			return sum, fmt.Errorf("digest %s: %w", d.Day, derr)
 		}
 		pd, perr := parseDigest(raw)
 		if perr != nil {
@@ -230,15 +322,20 @@ func Run(ctx context.Context, st *store.Store, client llm.Client, opts Options) 
 			sum.Skipped++
 			continue
 		}
-		if err := st.PutDayDigest(ctx, store.JournalDigest{
+		if perr := st.PutDayDigest(ctx, store.JournalDigest{
 			Day: d.Day, Model: model, PromptVersion: pv,
 			Body:       pd.Summary,   // plain-text summary: fallback + empty-response guard
 			Structured: pd.Canonical, // canonical JSON of the editorial digest
 			Mood:       pd.Mood,      // denormalized for the calendar tint
-		}); err != nil {
-			return sum, err
+			// The day's count AT DIGEST TIME. This is the whole basis of the
+			// staleness marker: without it the UI cannot tell a current digest
+			// from one written before more messages landed on the day.
+			MessageCount: d.MessageCount,
+		}); perr != nil {
+			return sum, perr
 		}
 		sum.Digested++
+		beat()
 	}
 
 	sum.DurationMS = time.Since(start).Milliseconds()
@@ -247,17 +344,35 @@ func Run(ctx context.Context, st *store.Store, client llm.Client, opts Options) 
 	return sum, nil
 }
 
-// digestCurrent reports whether a day already holds a digest produced by the
+// digestCurrent reports whether a day already holds a CURRENT digest: produced by the
 // current model and prompt_version. Regenerate forces false (re-derive).
-func digestCurrent(ctx context.Context, st *store.Store, day, model, pv string, regenerate bool) (bool, error) {
+func digestCurrent(ctx context.Context, st *store.Store, d store.JournalDay, model, pv string, regenerate bool) (bool, error) {
 	if regenerate {
 		return false, nil
 	}
-	_, m, storedPV, ok, err := st.GetDayDigest(ctx, day)
+	view, ok, err := st.GetJournalDay(ctx, d.Day)
 	if err != nil {
 		return false, err
 	}
-	return ok && m == model && storedPV == pv, nil
+	if !ok || view.DigestBody == "" && view.DigestStructured == "" {
+		return false, nil
+	}
+	if view.DigestModel != model {
+		return false, nil
+	}
+	// A digest written before more messages landed on the day describes an
+	// incomplete day. The UI flags exactly this as "Out of date", so a plain
+	// Build has to pick it up — otherwise the page marks a day stale and the
+	// primary control silently skips it, leaving the per-day Rebuild as the only
+	// way to fix something the app itself reported as wrong.
+	if view.DigestStale() {
+		return false, nil
+	}
+	_, _, storedPV, present, err := st.GetDayDigest(ctx, d.Day)
+	if err != nil {
+		return false, err
+	}
+	return present && storedPV == pv, nil
 }
 
 // digestDay sends one day's transcript to the LLM under a per-call timeout and
