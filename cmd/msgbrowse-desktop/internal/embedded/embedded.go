@@ -1,7 +1,7 @@
 // Package embedded wires the real internal/web server into the desktop
 // shell: it resolves the msgbrowse configuration, opens the store, binds
-// 127.0.0.1 on an ephemeral port, and serves the exact handler stack browser
-// mode serves — zero handler divergence, discovered-port URL for the webview.
+// 127.0.0.1 on a fixed port (8789), and serves the exact handler stack browser
+// mode serves — zero handler divergence, stable URL for the webview and MCP.
 //
 // It also mounts the MCP streamable-HTTP handler at MCPPath on that same
 // listener, giving the desktop app a live MCP endpoint for the menubar's
@@ -73,11 +73,15 @@ func WithExternalOpener(fn func(url string) error) Option {
 // title bar, and browser mode never goes through this package at all.
 func desktopChromeFor(goos string) bool { return goos == "darwin" }
 
-// listenAddr is the only address the embedded server ever binds. SPEC-0010's
-// "Bind surface" security requirement pins the desktop shell to a loopback
-// ephemeral port — the configured listen_addr is deliberately ignored here;
-// it belongs to `msgbrowse serve`.
-const listenAddr = "127.0.0.1:0"
+// listenAddr is the only address the embedded server ever binds. The desktop
+// shell uses a fixed port (8789, distinct from 8787 and 8788) so the MCP
+// endpoint URL stays stable across relaunches — MCP clients like Claude
+// Desktop and Claude Code can reference it without re-configuration.
+const listenAddr = "127.0.0.1:8789"
+
+// FixedPort is the port the desktop shell always binds. Exported so tests can
+// reference it without hardcoding the number.
+const FixedPort = "8789"
 
 // MCPPath is where the MCP streamable-HTTP handler is mounted on the embedded
 // listener. It is a desktop-mode composition choice: `msgbrowse mcp --http`
@@ -130,7 +134,7 @@ func resolveDataDir(dir, userConfigDir string) string {
 }
 
 // Server is a running embedded web server: the real internal/web handler
-// stack plus the MCP streamable-HTTP handler on one loopback ephemeral port,
+// stack plus the MCP streamable-HTTP handler on one loopback fixed port,
 // and the store they share.
 type Server struct {
 	// URL is the base URL the webview should load, e.g. "http://127.0.0.1:49152".

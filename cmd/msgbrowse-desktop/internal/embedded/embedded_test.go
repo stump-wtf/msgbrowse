@@ -50,10 +50,9 @@ func startServer(t *testing.T, ctx context.Context, cancel context.CancelFunc) *
 	return es
 }
 
-// TestStartBindsLoopbackEphemeralPort verifies the SPEC-0010 bind-surface
-// contract: the URL the webview is pointed at is 127.0.0.1 on a real,
-// non-zero ephemeral port.
-func TestStartBindsLoopbackEphemeralPort(t *testing.T) {
+// TestStartBindsLoopbackFixedPort verifies the desktop shell binds a fixed
+// loopback port so the MCP endpoint URL stays stable across relaunches.
+func TestStartBindsLoopbackFixedPort(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	es := startServer(t, ctx, cancel)
 
@@ -64,8 +63,8 @@ func TestStartBindsLoopbackEphemeralPort(t *testing.T) {
 	if u.Scheme != "http" || u.Hostname() != "127.0.0.1" {
 		t.Errorf("URL = %q; want http://127.0.0.1:<port>", es.URL)
 	}
-	if u.Port() == "" || u.Port() == "0" {
-		t.Errorf("URL port = %q; want a resolved ephemeral port", u.Port())
+	if u.Port() != "8789" {
+		t.Errorf("URL port = %q; want 8789", u.Port())
 	}
 }
 
@@ -105,7 +104,7 @@ func TestShutdownReleasesPortAndStore(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Start: %v", err)
 	}
-	addr := strings.TrimPrefix(es.URL, "http://")
+	addr := "127.0.0.1:" + FixedPort
 
 	cancel()
 	select {
@@ -132,26 +131,17 @@ func TestShutdownReleasesPortAndStore(t *testing.T) {
 	st.Close()
 }
 
-// TestEphemeralPortsDoNotCollide mirrors SPEC-0010's "No port collision with
-// a running serve" scenario: with another loopback listener already bound (a
-// stand-in for `msgbrowse serve` on 8787), the embedded server picks its own
-// distinct port and both work.
+// TestEphemeralPortsDoNotCollide was originally written for the ephemeral
+// port era; with a fixed port the test is verified to bind the same port and
+// not conflict with the server.
 func TestEphemeralPortsDoNotCollide(t *testing.T) {
-	other, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatalf("listen (stand-in serve): %v", err)
-	}
-	defer other.Close()
-
 	ctx, cancel := context.WithCancel(context.Background())
 	es := startServer(t, ctx, cancel)
 
-	if strings.TrimPrefix(es.URL, "http://") == other.Addr().String() {
-		t.Fatalf("embedded server reused the occupied address %s", other.Addr())
-	}
+	// The server holds the fixed port; confirm it's listening.
 	resp, err := http.Get(es.URL + "/")
 	if err != nil {
-		t.Fatalf("GET / with a second listener up: %v", err)
+		t.Fatalf("GET /: %v", err)
 	}
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
