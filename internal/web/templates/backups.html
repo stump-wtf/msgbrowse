@@ -4,33 +4,172 @@
      keeps history entries titled; the define owns <main id="main-content"> so
      partial responses carry no shell.
 
-     The Backups tab (issue #2): the encrypted-DB-snapshots inventory, moved out
-     of /status into its own Settings-shell section. Renders ONLY the snapshot
-     story — total footprint, count, and the per-snapshot table — inside the
-     shared Settings shell (h1 + sub-nav), with /backups its canonical URL. */}}
+     The Backups tab (ADR-0026 / SPEC-0026): msgbrowse-owned snapshots —
+     Create, Prune, and Restore from the tab — plus the read-only external
+     .snapshots inventory (ADR-0010 §5: never opened or decrypted). */}}
 {{define "backups_content"}}<title>{{.Title}}</title>
     <main id="main-content" class="flex-1" tabindex="0">
   <div class="px-6 lg:px-8 py-8 max-w-4xl space-y-5">
     <h1 class="screen-h1">Settings</h1>
     {{template "settings_subnav" "backups"}}
 
-    {{/* The snapshots card renders only where a snapshot pipeline exists
-         (issue #164): recorded snapshots, or a .snapshots dir in the signal
-         archive. A desktop-onboarded machine has neither — "0 B across 0
-         snapshots … No snapshots found" read like a failure there, so it gets
-         one neutral line instead of the card. */}}
+    {{/* Fixed-enum banner from a just-completed Create / Prune / Restore
+         POST. The variant is selected server-side from a fixed enum, never
+         from request input. */}}
+    {{if eq .BackupResult "created"}}
+    <div class="notice-card notice-ok" role="status">
+      <p class="link-card-title">Snapshot created</p>
+      <p class="link-card-sub">A consistent copy of the database, embeddings, and config was written to the snapshot directory.</p>
+    </div>
+    {{else if eq .BackupResult "pruned"}}
+    <div class="notice-card notice-ok" role="status">
+      <p class="link-card-title">Prune complete</p>
+      <p class="link-card-sub">Snapshots outside the retention policy were removed.</p>
+    </div>
+    {{else if eq .BackupResult "nothing-to-prune"}}
+    <div class="notice-card notice-info" role="status">
+      <p class="link-card-title">Nothing to prune</p>
+      <p class="link-card-sub">All snapshots are within the retention policy.</p>
+    </div>
+    {{else if eq .BackupResult "restored-needs-restart"}}
+    <div class="notice-card notice-warn" role="status">
+      <p class="link-card-title">Restored — restart required</p>
+      <p class="link-card-sub">The selected snapshot was restored over the live database. A pre-restore snapshot was taken first. Restart the app to use the restored database.</p>
+    </div>
+    {{else if eq .BackupResult "inprogress"}}
+    <div class="notice-card notice-warn" role="status">
+      <p class="link-card-title">A snapshot operation is already in progress</p>
+      <p class="link-card-sub">Wait for it to finish before starting another.</p>
+    </div>
+    {{else if eq .BackupResult "unwritable"}}
+    <div class="notice-card notice-err" role="alert">
+      <p class="link-card-title">Snapshot failed</p>
+      <p class="link-card-sub">The snapshot directory is unwritable or the disk is full. Check the path and permissions, then try again.</p>
+    </div>
+    {{else if eq .BackupResult "notfound"}}
+    <div class="notice-card notice-err" role="alert">
+      <p class="link-card-title">Snapshot not found</p>
+      <p class="link-card-sub">The selected snapshot does not exist. It may have been pruned, or the request was invalid.</p>
+    </div>
+    {{else if eq .BackupResult "rolled-back"}}
+    <div class="notice-card notice-err" role="alert">
+      <p class="link-card-title">Restore failed — rolled back</p>
+      <p class="link-card-sub">The restore failed partway and the pre-restore state was recovered. No data was lost.</p>
+    </div>
+    {{else if eq .BackupResult "invalid"}}
+    <div class="notice-card notice-err" role="alert">
+      <p class="link-card-title">Invalid request</p>
+      <p class="link-card-sub">No snapshot identifier was supplied.</p>
+    </div>
+    {{else if eq .BackupResult "unavailable"}}
+    <div class="notice-card notice-warn" role="status">
+      <p class="link-card-title">Backups unavailable</p>
+      <p class="link-card-sub">Snapshot operations are not available in this mode (no data directory configured).</p>
+    </div>
+    {{end}}
+
+    {{/* msgbrowse-owned snapshots (ADR-0026) */}}
+    {{if .BackupMgrAvailable}}
+    <div class="status-card">
+      <div class="status-card-title">msgbrowse snapshots</div>
+      <p class="status-note mb-4">A snapshot is a plaintext copy of the database, embeddings, and config — restorable without re-running any exporter or re-embedding.
+        Total footprint: <span class="font-mono">{{humanSize .OwnedFootprint}}</span> across <span class="font-mono">{{num (len .OwnedSnapshots)}}</span> snapshots.
+        {{if .BackupDir}}Written to <code class="font-mono">{{.BackupDir}}</code>.{{end}}
+        Snapshot files are mode 0600 — they contain the entire message corpus.</p>
+
+      {{/* Create + Prune controls, following the Status page's POST /status/index
+           precedent: privileged same-origin form POST carrying setup_token,
+           buttons disabled while an operation is in progress. */}}
+      <div class="setup-card-actions mb-4">
+        <form method="post" action="/backups/create">
+          <input type="hidden" name="setup_token" value="{{.SetupToken}}">
+          <button type="submit" class="setup-btn">Create backup</button>
+        </form>
+        {{if and (gt (len .OwnedSnapshots) 0) (gt (len .PrunePreview) 0)}}
+        <form method="post" action="/backups/prune">
+          <input type="hidden" name="setup_token" value="{{.SetupToken}}">
+          <button type="submit" class="setup-btn setup-btn-ghost">Prune ({{num (len .PrunePreview)}})</button>
+        </form>
+        {{end}}
+      </div>
+
+      {{if .OwnedSnapshots}}
+      <div class="overflow-x-auto">
+        <table class="status-table">
+          <thead><tr><th>Snapshot</th><th>Taken</th><th>Size</th><th>Tier</th><th></th></tr></thead>
+          <tbody>
+            {{- range .OwnedSnapshots}}
+            <tr>
+              <td class="mono">{{.ID}}{{if .PreRestore}} <span class="sync-badge sync-badge-info">pre-restore</span>{{end}}</td>
+              <td class="whitespace-nowrap">{{.TakenAt.Format "2006-01-02 15:04"}}</td>
+              <td class="whitespace-nowrap mono">{{humanSize .SizeBytes}}</td>
+              <td><span class="tier-pill tier-{{.Tier}}">{{.Tier}}</span></td>
+              <td>
+                {{/* Two-step restore (SPEC-0026 REQ-0026-003): step 1 re-renders
+                     the row in a confirm state without mutating; step 2 (confirm=1)
+                     takes a pre-restore snapshot and swaps. */}}
+                {{if eq $.ConfirmRestore .ID}}
+                <div class="setup-card-actions">
+                  <form method="post" action="/backups/restore">
+                    <input type="hidden" name="setup_token" value="{{$.SetupToken}}">
+                    <input type="hidden" name="snapshot" value="{{.ID}}">
+                    <input type="hidden" name="confirm" value="1">
+                    <button type="submit" class="setup-btn setup-btn-danger"
+                        aria-label="Confirm restoring {{.ID}}">Confirm restore</button>
+                  </form>
+                  <a class="setup-btn setup-btn-ghost" href="/backups">Cancel</a>
+                </div>
+                {{else}}
+                <form method="post" action="/backups/restore">
+                  <input type="hidden" name="setup_token" value="{{.SetupToken}}">
+                  <input type="hidden" name="snapshot" value="{{.ID}}">
+                  <button type="submit" class="setup-btn setup-btn-ghost"
+                      aria-label="Restore {{.ID}}">Restore</button>
+                </form>
+                {{end}}
+              </td>
+            </tr>
+            {{- end}}
+          </tbody>
+        </table>
+      </div>
+      {{else}}
+      {{/* Empty state (SPEC-0026 REQ-0026-005): explain what a backup
+           contains, where it will be written, and offer to make one. */}}
+      <p class="status-note">No snapshots yet. A snapshot contains the database, embeddings, and config —
+        restorable without re-running any exporter or re-embedding.
+        {{if .BackupDir}}It will be written to <code class="font-mono">{{.BackupDir}}</code>.{{end}}</p>
+      <div class="setup-card-actions">
+        <form method="post" action="/backups/create">
+          <input type="hidden" name="setup_token" value="{{.SetupToken}}">
+          <button type="submit" class="setup-btn">Create your first backup</button>
+        </form>
+      </div>
+      {{end}}
+    </div>
+    {{else}}
+    {{/* Unavailable state (no manager wired). */}}
+    <div class="status-card">
+      <div class="status-card-title">msgbrowse snapshots</div>
+      <p class="status-note">Snapshot operations are not available in this mode (no data directory configured).
+        Run `msgbrowse serve` with a data_dir to create and restore snapshots.</p>
+    </div>
+    {{end}}
+
+    {{/* External .snapshots inventory (ADR-0010 §5: read-only, never opened
+         or decrypted). Preserved as a separate listing per ADR-0026. */}}
     {{if .HasSnapshotPipeline}}
     <div class="status-card">
-      <div class="status-card-title">Encrypted DB snapshots</div>
-      <p class="status-note mb-4">Total footprint: <span class="font-mono">{{humanSize .SnapshotFootprint}}</span> across <span class="font-mono">{{num (len .Snapshots)}}</span> snapshots.
-        These are SQLCipher-encrypted raw database backups for disaster recovery —
+      <div class="status-card-title">External snapshots (read-only)</div>
+      <p class="status-note mb-4">Total footprint: <span class="font-mono">{{humanSize .ExternalFootprint}}</span> across <span class="font-mono">{{num (len .ExternalSnapshots)}}</span> snapshots.
+        These are SQLCipher-encrypted raw database backups produced by an external backup job —
         msgbrowse lists them but never opens or decrypts them.</p>
-      {{if .Snapshots}}
+      {{if .ExternalSnapshots}}
       <div class="overflow-x-auto">
         <table class="status-table">
           <thead><tr><th>Snapshot</th><th>Taken</th><th>Size</th><th>Retention tier</th></tr></thead>
           <tbody>
-            {{- range .Snapshots}}
+            {{- range .ExternalSnapshots}}
             <tr>
               <td class="mono">{{.Filename}}</td>
               <td class="whitespace-nowrap">{{.TakenAt.Format "2006-01-02 15:04"}}</td>
@@ -42,11 +181,9 @@
         </table>
       </div>
       {{else}}
-      <p class="results-empty">No snapshots found under <code class="font-mono">.snapshots/</code>.</p>
+      <p class="results-empty">No external snapshots found under <code class="font-mono">.snapshots/</code>.</p>
       {{end}}
     </div>
-    {{else}}
-    <p class="status-note">No snapshot pipeline on this machine.</p>
     {{end}}
   </div>
     </main>

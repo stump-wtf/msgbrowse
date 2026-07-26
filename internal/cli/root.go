@@ -74,6 +74,7 @@ func NewRootCommand() *cobra.Command {
 		newMCPCommand(),
 		newWatchCommand(),
 		newJournalCommand(),
+		newBackupsCommand(),
 		newVersionCommand(),
 	)
 	return root

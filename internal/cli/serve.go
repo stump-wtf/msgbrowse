@@ -6,9 +6,11 @@ import (
 	"log/slog"
 	"net"
 	"os/signal"
+	"path/filepath"
 	"strconv"
 	"syscall"
 
+	"github.com/joestump/msgbrowse/internal/backup"
 	"github.com/joestump/msgbrowse/internal/config"
 	"github.com/joestump/msgbrowse/internal/embed"
 	"github.com/joestump/msgbrowse/internal/ingest"
@@ -91,6 +93,17 @@ func newServeCommand() *cobra.Command {
 			// one live holder, so a build started after an LLM save digests
 			// against the new endpoint.
 			srv.SetJournalBuilder(journal.NewBuilder(st, llmHolder, cfg.Journal, slog.Default()))
+
+			// The Backups tab (ADR-0026 / SPEC-0026): msgbrowse-owned snapshots
+			// of data_dir (DB + embeddings) + config, created/listed/pruned/
+			// restorable from the tab or `msgbrowse backups` CLI. The manager
+			// is wired unconditionally — serve always has a data_dir.
+			srv.SetBackupManager(backup.NewManager(
+				backup.ResolveDir(*cfg),
+				filepath.Join(cfg.DataDir, store.DBFileName),
+				cfg.SourceFile,
+				cfg.Backups.EffectiveRetention(),
+			))
 
 			// Device sync (ADR-0021) is gated behind the `devicesync` build
 			// tag — it is NOT compiled into release binaries. wireDeviceSync is

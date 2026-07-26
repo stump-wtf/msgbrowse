@@ -69,6 +69,14 @@ type Config struct {
 	// Journal configures journal generation and the LLM digest pass.
 	Journal JournalConfig `mapstructure:"journal"`
 
+	// Backups configures msgbrowse-owned snapshots of data_dir (the SQLite
+	// database + embeddings) and the config file (ADR-0026 / SPEC-0026).
+	// A snapshot is a plaintext copy of the entire message corpus, created
+	// from the Backups tab or `msgbrowse backups create`, listed, pruned by
+	// GFS policy, and restorable. Defaults: dir <data_dir>/backups,
+	// retention 14/12/4/2.
+	Backups BackupsConfig `mapstructure:"backups"`
+
 	// IngestOnStart triggers an ingest pass when `serve` boots.
 	IngestOnStart bool `mapstructure:"ingest_on_start"`
 
@@ -170,6 +178,57 @@ type JournalConfig struct {
 	MaxDaysPerRun int `mapstructure:"max_days_per_run"`
 }
 
+// BackupsConfig configures msgbrowse-owned snapshots (ADR-0026 / SPEC-0026).
+// A snapshot is a plaintext copy of data_dir (the SQLite database + embeddings)
+// and the config file, created from the Backups tab or `msgbrowse backups
+// create`, listed, pruned by GFS policy, and restorable. Snapshot files are
+// mode 0600 / directory 0700 — they contain the entire message corpus
+// (ADR-0013: no SQLCipher in-process).
+type BackupsConfig struct {
+	// Dir is the directory for msgbrowse-owned snapshots. Empty (the default)
+	// means <data_dir>/backups. MUST NOT be inside archive_root (the read-only
+	// archive; ADR-0010 §4) — startup warns and refuses the path if it is.
+	Dir string `mapstructure:"dir"`
+
+	// Retention is the GFS tier policy applied by prune. Zero values fall back
+	// to the defaults (14 daily / 12 monthly / 4 quarterly / 2 yearly).
+	Retention RetentionConfig `mapstructure:"retention"`
+}
+
+// RetentionConfig is the per-tier keep count for GFS pruning. A zero value
+// means "use the default" so an unset block still gets sane policy.
+type RetentionConfig struct {
+	Daily     int `mapstructure:"daily"`
+	Monthly   int `mapstructure:"monthly"`
+	Quarterly int `mapstructure:"quarterly"`
+	Yearly    int `mapstructure:"yearly"`
+}
+
+// DefaultRetention is the GFS keep-count policy used when no retention block
+// is configured. These mirror the tier age boundaries in internal/ingest.
+var DefaultRetention = RetentionConfig{
+	Daily: 14, Monthly: 12, Quarterly: 4, Yearly: 2,
+}
+
+// EffectiveRetention returns the retention config with zero values replaced by
+// the defaults, so callers never have to nil-check individual tiers.
+func (b BackupsConfig) EffectiveRetention() RetentionConfig {
+	r := b.Retention
+	if r.Daily == 0 {
+		r.Daily = DefaultRetention.Daily
+	}
+	if r.Monthly == 0 {
+		r.Monthly = DefaultRetention.Monthly
+	}
+	if r.Quarterly == 0 {
+		r.Quarterly = DefaultRetention.Quarterly
+	}
+	if r.Yearly == 0 {
+		r.Yearly = DefaultRetention.Yearly
+	}
+	return r
+}
+
 // DefaultDigestPrompt is the built-in journal digest instruction. Its text is
 // part of the digest cache key (prompt version), so edits here are intentional
 // and automatically re-derive every cached digest on the next run.
@@ -232,6 +291,14 @@ func SetDefaults(v *viper.Viper) {
 	v.SetDefault("journal.digest_prompt", DefaultDigestPrompt)
 	v.SetDefault("journal.exclude_conversations", []string{})
 	v.SetDefault("journal.max_days_per_run", 0) // 0 = unbounded
+
+	// msgbrowse-owned snapshots (ADR-0026 / SPEC-0026): empty dir means
+	// <data_dir>/backups; retention defaults to 14/12/4/2.
+	v.SetDefault("backups.dir", "")
+	v.SetDefault("backups.retention.daily", DefaultRetention.Daily)
+	v.SetDefault("backups.retention.monthly", DefaultRetention.Monthly)
+	v.SetDefault("backups.retention.quarterly", DefaultRetention.Quarterly)
+	v.SetDefault("backups.retention.yearly", DefaultRetention.Yearly)
 
 	v.SetDefault("ingest_on_start", false)
 	v.SetDefault("watch", false)
@@ -319,6 +386,17 @@ func (c *Config) Validate() error {
 	if c.DataDir == "" {
 		return fmt.Errorf("data_dir must not be empty")
 	}
+	// ADR-0026: backups.dir MUST NOT be inside archive_root (the read-only
+	// archive; ADR-0010 §4). An operator who points it there would surprise
+	// a :ro mount and violate the read-only contract.
+	if c.Backups.Dir != "" && c.ArchiveRoot != "" {
+		absBackups, _ := filepath.Abs(c.Backups.Dir)
+		absArchive, _ := filepath.Abs(c.ArchiveRoot)
+		if isWithin(absBackups, absArchive) {
+			return fmt.Errorf("backups.dir %q is inside archive_root %q — backups must not be written into the read-only archive (ADR-0010 §4)",
+				c.Backups.Dir, c.ArchiveRoot)
+		}
+	}
 	if c.DeviceSync.Enabled {
 		if c.DeviceSync.ListenAddr == "" {
 			return fmt.Errorf("device_sync.listen_addr must not be empty when device_sync.enabled is true")
@@ -356,4 +434,21 @@ func listenPort(addr string) (int, error) {
 		return 0, fmt.Errorf("port %q is not a number in 0-65535", portStr)
 	}
 	return port, nil
+}
+
+// isWithin reports whether child is the same as or a subdirectory of parent.
+// Both paths MUST be absolute and cleaned; the caller is expected to have
+// run filepath.Abs on each. It is lexical — it does not resolve symlinks —
+// which is correct for the backups.dir-in-archive check: the contract is
+// "the configured path must not be under the configured archive root", not
+// "a symlink might escape".
+func isWithin(child, parent string) bool {
+	if parent == "" {
+		return false
+	}
+	rel, err := filepath.Rel(parent, child)
+	if err != nil {
+		return false
+	}
+	return rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
 }
