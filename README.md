@@ -71,14 +71,25 @@ messages. Full documentation lives at
 
 ### Homebrew (preferred)
 
+The **CLI** is a formula; the macOS **desktop app** is a separate cask. Pick
+either or install both — they coexist.
+
 ```sh
 brew tap stump-wtf/tap
-brew install msgbrowse
+
+brew install msgbrowse                  # CLI (msgbrowse serve / import / export)
+brew install --cask msgbrowse-desktop   # macOS .app → /Applications
 ```
+
+`brew install msgbrowse` does **not** give you the desktop app: Homebrew forbids
+a formula from installing an `.app` into `/Applications`, so the two ship under
+different tokens. See [Desktop app](#desktop-app) for what the cask installs.
 
 The formula builds from source, so the binary is compiled on your machine and
 never picks up macOS's `com.apple.quarantine` attribute — no Gatekeeper prompt
-and no `xattr -d` dance.
+and no `xattr -d` dance. The cask downloads a prebuilt `.app` and so *would*
+be quarantined; it strips the attribute for you in a `postflight` step, for the
+reasons in [Desktop app](#desktop-app).
 
 > **macOS:** reading live iMessage data means reading
 > `~/Library/Messages/chat.db`, which requires **Full Disk Access** for your
@@ -201,9 +212,22 @@ product, native window): a
 [Wails v2](https://wails.io) window over the exact same embedded web server —
 same pages, same handlers, zero divergence from `msgbrowse serve`. Webview
 shells can't be cross-compiled, so per-OS artifacts are built by a CI matrix
-([`desktop.yml`](.github/workflows/desktop.yml)) on `v*` tags and downloadable
-from those workflow runs. Browser mode (`msgbrowse serve`) remains the
-universal fallback on every platform.
+([`desktop.yml`](.github/workflows/desktop.yml)) on `v*` tags and attached to
+the [GitHub Release](https://github.com/stump-wtf/msgbrowse/releases) for that
+tag. Browser mode (`msgbrowse serve`) remains the universal fallback on every
+platform.
+
+**macOS — install it with Homebrew:**
+
+```sh
+brew tap stump-wtf/tap
+brew install --cask msgbrowse-desktop
+```
+
+That downloads the universal `.app`, installs it to `/Applications`, and strips
+the quarantine attribute for you (see [signing status](#signing-status) below).
+`brew uninstall --cask msgbrowse-desktop` removes it; add `--zap` to also delete
+`~/Library/Application Support/msgbrowse`.
 
 **Bundled exporter toolchain (macOS).** The macOS `.app` embeds the three
 upstream exporters under `Contents/Resources/tools` — a relocatable Python
@@ -223,26 +247,37 @@ as the [device sync](#device-sync) engine (browser/CLI mode resolves
 `sigexport` / `imessage-exporter` / `wtsexporter` from `$PATH` or your
 `--*-bin` overrides — so advanced users lose nothing; only the `.app` bundles.
 
+<a id="signing-status"></a>
 **Signing status — ad-hoc today, Developer ID notarization pending.** The
 shipped `.app` and every embedded binary are **ad-hoc code-signed**
 (`codesign -s -`) in CI, not yet notarized with an Apple Developer ID (that is
 an owner-gated follow-up — the real Developer ID signing + notarization steps
 are already wired in `desktop.yml` behind CI secrets and activate the moment
-the identity is provisioned). Until then Gatekeeper blocks the first launch and
-you must strip the quarantine attribute so the app **and its bundled
-exporters** run:
+the identity is provisioned). Until then Gatekeeper blocks the first launch
+unless the quarantine attribute is stripped — and that strip is what lets the
+ad-hoc-signed embedded Python and exporter binaries run as subprocesses, not
+just the app itself. Without it Gatekeeper kills them and export/import fails.
 
-**macOS** — download and unzip `msgbrowse-desktop_darwin_universal`, then:
+Because every release is ad-hoc signed, each one is published as a **GitHub
+prerelease** rather than implying notarized bits.
 
-- **Terminal (required until notarization lands):** `xattr -dr com.apple.quarantine msgbrowse.app`, then open it normally. This strip is what lets the ad-hoc-signed embedded Python and exporter binaries run as subprocesses; without it Gatekeeper kills them. Or
+**macOS via Homebrew (recommended)** — nothing to do. The cask's `postflight`
+runs the `xattr` strip for you, so `brew install --cask msgbrowse-desktop`
+yields an app that launches on the first double-click.
+
+**macOS by hand** — download and unzip
+`msgbrowse-desktop_darwin_universal.zip` from the
+[release](https://github.com/stump-wtf/msgbrowse/releases), then:
+
+- **Terminal (required until notarization lands):** `xattr -dr com.apple.quarantine msgbrowse.app`, then open it normally. Or
 - **GUI:** double-click (it gets blocked), then System Settings → **Privacy & Security** → scroll to Security → **Open Anyway** next to the msgbrowse notice → authenticate. (The `xattr` strip is still the reliable path for the *embedded* binaries on macOS 15+.)
 
 Either grant is one-time; afterward it launches with a normal double-click.
 Once a Developer ID is provisioned and the release is notarized, no `xattr`
-strip will be needed.
+strip will be needed and the cask's `postflight` block goes away.
 
-**Linux** — download `msgbrowse-desktop_linux_amd64` and
-`chmod +x msgbrowse` (artifact zips don't preserve the execute bit).
+**Linux** — download `msgbrowse-desktop_linux_amd64.tar.gz` from the release and
+extract it; the tarball preserves the execute bit, so no `chmod +x` is needed.
 The binary links the system webview, so the WebKit2GTK runtime must be
 installed (Ubuntu 24.04+ / Debian 13:
 `sudo apt-get install libgtk-3-0 libwebkit2gtk-4.1-0`; most GNOME desktops

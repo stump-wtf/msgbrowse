@@ -1,7 +1,7 @@
 ---
 title: Installation
 sidebar_position: 2
-description: Install msgbrowse with Homebrew (preferred) or a single go install — pure-Go SQLite, no C toolchain.
+description: Install the msgbrowse CLI (Homebrew formula or go install) and the macOS desktop app (Homebrew cask) — pure-Go SQLite, no C toolchain.
 ---
 
 # Installation
@@ -9,6 +9,14 @@ description: Install msgbrowse with Homebrew (preferred) or a single go install 
 The SQLite driver is pure Go (with FTS5 built in), so `CGO_ENABLED=0` is the
 normal build — there is **no C toolchain, no build tag, and no shared library**
 to set up either way.
+
+:::info CLI and desktop app are separate installs
+The **CLI** ships as a Homebrew *formula*; the macOS **desktop app** ships as a
+Homebrew *cask* under a different token. `brew install msgbrowse` gives you the
+CLI only — it does not install the `.app`. Homebrew forbids a formula from
+placing an application bundle in `/Applications`, which is exactly what casks
+are for. Install either or both.
+:::
 
 ## Install the binary
 
@@ -47,6 +55,41 @@ requires **Full Disk Access** for your terminal (System Settings → Privacy &
 Security → Full Disk Access). That is macOS TCC, a different mechanism from
 Gatekeeper — no install method avoids it.
 :::
+
+## Install the desktop app (macOS)
+
+The native app is a [Wails v2](https://wails.io) window over the same embedded
+web server the CLI serves — same pages, same handlers. On macOS it also bundles
+the three exporters and a Syncthing binary, so a fresh Mac with no Homebrew and
+no Python can export and import offline.
+
+```sh
+brew tap stump-wtf/tap
+brew install --cask msgbrowse-desktop
+```
+
+That installs the universal `.app` to `/Applications`. To remove it:
+
+```sh
+brew uninstall --cask msgbrowse-desktop          # app only
+brew uninstall --zap --cask msgbrowse-desktop    # also deletes your data dir
+```
+
+:::warning The cask strips quarantine on purpose
+The `.app` is **ad-hoc signed** (`codesign -s -`), not yet notarized with an
+Apple Developer ID. Homebrew quarantines cask downloads by default, and
+Gatekeeper then blocks not only the app but the exporter binaries it launches as
+subprocesses — so export and import break, not just the first launch. The cask's
+`postflight` runs `xattr -dr com.apple.quarantine` to prevent that. Installing by
+hand from the [GitHub Release](https://github.com/stump-wtf/msgbrowse/releases)
+means running that command yourself. Both go away once notarization lands.
+:::
+
+On Linux, download `msgbrowse-desktop_linux_amd64.tar.gz` from the release and
+extract it — the tarball preserves the execute bit. The binary links the system
+webview, so you need the WebKit2GTK runtime (`sudo apt-get install libgtk-3-0
+libwebkit2gtk-4.1-0` on Ubuntu 24.04+ / Debian 13). Windows is not built yet;
+use browser mode (`msgbrowse serve`) there.
 
 ## Install the exporters
 
