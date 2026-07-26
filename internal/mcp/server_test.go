@@ -31,7 +31,7 @@ func (embedClient) Embed(_ context.Context, in []string) ([][]float32, error) {
 func (embedClient) Chat(context.Context, llm.ChatRequest) (string, error)          { return "", nil }
 func (embedClient) Transcribe(context.Context, []byte, string) (string, error)     { return "", nil }
 func (embedClient) Vision(context.Context, []byte, string, string) (string, error) { return "", nil }
-func (embedClient) ListModels(context.Context) ([]string, error)          { return nil, nil }
+func (embedClient) ListModels(context.Context) ([]string, error)                   { return nil, nil }
 
 // connect builds a server over a seeded store and returns a connected MCP
 // client session.
