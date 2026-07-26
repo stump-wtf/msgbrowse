@@ -122,8 +122,11 @@
           <span class="link-card-icon">{{template "icon-photo" .}}</span>
           <span class="link-card-title">Media</span>
         </a>
+        {{/* Sparkles, not the book glyph it shipped with (#238): the journal's
+             own editorial eyebrow already uses icon-sparkles, so the quick-link
+             and the surface it opens now read as the same feature. */}}
         <a href="/journal" class="link-card">
-          <span class="link-card-icon">{{template "icon-book" .}}</span>
+          <span class="link-card-icon">{{template "icon-sparkles" .}}</span>
           <span class="link-card-title">Journal</span>
         </a>
         <a href="/status" class="link-card">

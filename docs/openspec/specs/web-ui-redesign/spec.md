@@ -60,23 +60,42 @@ FOUC). Numerals in counts/timestamps/filenames MUST use a mono face and
 home glyph + **msgbrowse** wordmark, right-aligned global counts in dim mono,
 and a 34px circular settings button. The global counts moved to Status
 (Settings → Diagnostics) in #152; #190 promoted the toolbar to a full-width
-header owning the primary navigation.*
+header owning the primary navigation. #238 added Journal as a third tab — the
+surface had shipped with no link anywhere in the shell pointing at it — and,
+because a third tab no longer fits a ~320px header, gave the strip an explicit
+narrow-width behaviour.*
 
 The app MUST render one full-width unified header (~52px) as a direct child of
 `<body>`, spanning the window above both the sidebar and the content column.
 It MUST show: LEFT — the below-md sidebar toggle and a contextual title
 (**msgbrowse** on home/global surfaces, the active conversation name on a
-transcript) that links home; CENTER — a Messages/Media segmented tab pair (the
-primary nav), kept in normal flow and centered within the header's available
-space so it can never overlap the side clusters at any viewport width; RIGHT —
-a search pill (an icon-only `/search` link below sm), the theme toggle, and a
-settings gear (the sole Settings entry). The header MUST NOT show global
-counts.
+transcript) that links home; CENTER — a Messages/Media/Journal segmented tab
+strip (the primary nav), kept in normal flow and centered within the header's
+available space so it can never overlap the side clusters at any viewport
+width; RIGHT — a search pill (an icon-only `/search` link below sm), the theme
+toggle, and a settings gear (the sole Settings entry). The header MUST NOT show
+global counts.
+
+Every primary surface reachable from the shell MUST have a tab or link in this
+header; a route the application renders but never links to is a defect, not a
+hidden feature.
+
+Below the sm breakpoint the header MAY trade away chrome to keep all three tabs
+usable, in this order: the contextual title, then tab padding and type size.
+Whatever it trades, the tabs MUST remain reachable and the side clusters MUST
+NOT be overlapped. Where the strip cannot fit and therefore scrolls, the ACTIVE
+tab MUST be scrolled into view, so the current page is never the tab hidden off
+the edge.
 
 #### Scenario: Header tabs and contextual title
 - **Given** an open conversation
 - **When** the page renders
-- **Then** the header shows the conversation name on the left (linking home), the centered Messages/Media tabs with Messages active, and the search/theme/settings cluster on the right — with no global counts.
+- **Then** the header shows the conversation name on the left (linking home), the centered Messages/Media/Journal tabs with Messages active, and the search/theme/settings cluster on the right — with no global counts.
+
+#### Scenario: Three tabs at a narrow viewport
+- **Given** a 320px viewport with the Journal page open
+- **When** the header renders
+- **Then** the sidebar toggle and the right-hand controls keep their full size and are not overlapped, and the Journal tab is scrolled into view rather than clipped off the edge.
 
 ### REQ-0006-003: App shell — sidebar
 

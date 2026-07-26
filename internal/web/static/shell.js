@@ -10,7 +10,9 @@
 //      - "/" and every /c/* transcript read as Messages;
 //      - /media (the tab's URL) and /gallery* (the canonical media surface it
 //        aliases — gallery tab/filter links stay on /gallery) read as Media;
-//      - every other route (Search, Settings, …) activates neither.
+//      - /journal reads as Journal (#238); its year/month/day navigation is
+//        query-param only, so the pathname match needs no prefix;
+//      - every other route (Search, Settings, …) activates none.
 //    Keep in lockstep with baseData.NavTab (internal/web/handlers.go).
 //
 // 2. Infinite-scroll keep-alive. htmx 2.0.4 re-checks hx-trigger="revealed"
@@ -50,15 +52,27 @@
 
   function syncTabs(name) {
     var tabs = document.querySelectorAll(".header-tabs [data-nav-tab]");
+    var active = null;
     for (var i = 0; i < tabs.length; i++) {
       var tab = tabs[i];
       var on = tab.getAttribute("data-nav-tab") === name;
       tab.classList.toggle("header-tab-active", on);
       if (on) {
         tab.setAttribute("aria-current", "page");
+        active = tab;
       } else {
         tab.removeAttribute("aria-current");
       }
+    }
+    // Below ~360px the three tabs no longer fit and the strip becomes a
+    // hidden-scrollbar scroll container (input.css narrow-width tier 1). Keep
+    // the ACTIVE tab in view so the page you are on is never the tab scrolled
+    // off the edge — otherwise the narrowest viewports would hide Journal, the
+    // tab #238 exists to expose. "nearest" scrolls only the overflowing strip
+    // and only when it actually overflows: it is a no-op at every width where
+    // the tabs fit, and it never scrolls the page or #main-content.
+    if (active && active.scrollIntoView) {
+      active.scrollIntoView({ block: "nearest", inline: "nearest" });
     }
   }
 
@@ -69,6 +83,8 @@
       name = "messages";
     } else if (path === "/media" || path.indexOf("/gallery") === 0) {
       name = "media";
+    } else if (path === "/journal") {
+      name = "journal";
     }
     syncTabs(name);
   }

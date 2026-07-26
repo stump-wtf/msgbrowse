@@ -503,7 +503,15 @@ body {
    title + tab strip + three 34px icon buttons; at a 320px viewport that
    inventory only fits in-flow with tighter paddings and gaps. Un-layered, so
    the padding override also outranks the template's layered px-3 utility.
-   39.9375rem = just under Tailwind's 40rem sm breakpoint. */
+   39.9375rem = just under Tailwind's 40rem sm breakpoint.
+
+   #238 added a third tab (Journal), which grew the strip from 142px to 209px
+   and moved the point where this inventory stops fitting from ~384px up to
+   ~451px. Measured in a browser at 320px BEFORE the trims below: the left
+   track (minmax(0, 1fr), minimum zero) drained to 0, the fixed-width burger
+   overflowed it and painted over "Messages", and the right cluster spilled
+   15px past the toolbar — the exact overlap #197 fixed. So the trims come in
+   two tiers, and the strip carries a structural backstop. */
 @media (max-width: 39.9375rem) {
   .app-toolbar {
     padding-inline: 0.5rem;
@@ -514,6 +522,81 @@ body {
   }
   .header-tab {
     padding: 0 0.55rem;
+  }
+  /* Last-resort backstop for viewports narrower than tier 2 can make fit
+     (< ~360px): the strip scrolls inside its own grid column instead of
+     overflowing it and painting over the side clusters. shell.js scrolls the
+     ACTIVE tab into view after every navigation, so the tab you are on is never
+     the one hidden off the edge — without that this rule would hide the very
+     tab #238 exists to expose.
+
+     The padding step from 2px to 4px is load-bearing, not cosmetic: overflow-x
+     makes this a scroll container in BOTH axes (overflow-y computes from
+     visible to auto), and a scroll container clips at its PADDING box. The tab
+     focus ring is `outline: 2px` at `outline-offset: 2px`, i.e. 4px outside the
+     tab's border box, so at 2px padding the whole ring was clipped away and
+     keyboard focus became invisible below 640px. 4px padding is exactly the
+     ring's reach. */
+  .header-tabs {
+    min-width: 0;
+    /* max-width is what makes the backstop actually engage. Tier 2 sets
+       justify-self: center so the pill hugs its tabs instead of stretching —
+       but a center-aligned grid item is sized to its CONTENT and will happily
+       overflow its track rather than shrink, which put the burger back under
+       the strip at 320px (measured). Clamping to the track turns that overflow
+       into a scroll, which is the whole point of the rule below. */
+    max-width: 100%;
+    padding: 4px;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  .header-tabs::-webkit-scrollbar {
+    display: none;
+  }
+}
+/* Tier 2 (#238), below ~448px — where three tabs + burger + title + three icon
+   buttons genuinely stop fitting (the measured cliff is 451px).
+
+   What has to go is the toolbar TITLE. Its label is nowrap, so the label's
+   min-content contribution is the full 82px word regardless of the min-width:0
+   / ellipsis chain — a grid track sized to the left cluster's content therefore
+   never drops below 148px, and it starves the tab strip to 50px at 320px
+   (measured across four candidate track templates; all four behaved
+   identically). Hiding the label alone is not enough: the remaining home glyph
+   still costs ~25px, which is the difference between the three tabs fitting at
+   360px and not.
+
+   Dropping the whole link here costs nothing a user can reach: the label is
+   already ellipsed to 0px at these widths on main today (measured at 375px with
+   only TWO tabs), and the glyph's target — "/" — is exactly where the Messages
+   tab goes, so home stays one tap away at every width. Above this breakpoint
+   the title renders in full, unchanged.
+
+   justify-self is required because .header-tabs is a grid item: its inline-flex
+   blockifies and justify-self defaults to stretch, so in tier 2's
+   minmax(0, 1fr) middle track the bordered pill would span the whole column
+   with the labels jammed left. Centering keeps the #190 segmented-control look.
+
+   Measured in a browser: all three tabs fully visible with no overlap and no
+   spill at 360px and up. Below 360px the strip scrolls (tier 1's backstop) and
+   shell.js keeps the active tab in view. */
+@media (max-width: 28rem) {
+  .app-toolbar {
+    grid-template-columns: min-content minmax(0, 1fr) auto;
+  }
+  .toolbar-title {
+    display: none;
+  }
+  .header-tabs {
+    justify-self: center;
+  }
+  .header-tab {
+    padding: 0 0.4rem;
+    font-size: 12px;
+  }
+  .app-toolbar .toolbar-icon-btn {
+    width: 30px;
+    height: 30px;
   }
 }
 /* Toolbar search pill: a compact 34px field with a leading glyph, sitting in the

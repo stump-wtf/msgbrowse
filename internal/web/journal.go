@@ -70,6 +70,14 @@ func (s *Server) handleJournal(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	// The header's Journal tab reads active on every /journal render (#238),
+	// set once for both branches exactly as handleGallery does for Media. Only
+	// the full-page branch actually renders the shell that reads it — a boosted
+	// partial emits no header, and an htmx history-restore takes the full-page
+	// branch because isPartialRequest excludes HX-History-Restore-Request. The
+	// single assignment is for consistency, not because the partial needs it;
+	// after a boosted swap shell.js re-derives the active tab from location.
+	base.NavTab = navTabJournal
 
 	latest, err := s.store.LatestJournalDay(ctx)
 	if err != nil {

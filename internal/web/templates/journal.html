@@ -22,10 +22,20 @@
         {{- end}}
       </header>
 
+      {{/* Empty state (#238): the Journal is now a header tab, so this is a
+           destination a user lands on deliberately — it has to say what the
+           surface is and how to fill it, not just name a CLI command they may
+           not be able to run. #240 replaces the CLI line with an in-app Build
+           control; the explanation and the LLM-settings link stay. */}}
       {{- if .Empty}}
       <div class="notice-card">
         <p class="link-card-title">No journal yet.</p>
-        <p class="link-card-sub">Run <code class="font-mono">msgbrowse journal</code> to build the day-by-day journal and its editorial digests.</p>
+        <p class="link-card-sub">Run <code class="font-mono">msgbrowse journal</code> to build it. That reads
+          your archive one day at a time and fills the mood calendar with the days you have messages —
+          mechanical, local, and no LLM call (REQ-0016-001).</p>
+        <p class="link-card-sub">The per-day editorial digests are the part that needs a model: set a
+          facts/chat model on the <a href="/settings/llm" class="link link-hover">LLM settings</a> tab and
+          the same command writes those too. Without one you still get the calendar and its day counts.</p>
       </div>
       {{- else}}
 

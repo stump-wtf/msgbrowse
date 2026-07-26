@@ -30,10 +30,10 @@ type baseData struct {
 	NavTitle string
 	// NavTab marks the active header tab on full-page renders (#190):
 	// navTabMessages on home and every /c/* transcript, navTabMedia on the
-	// gallery/media surface, "" everywhere else (Search, Settings, …) so
-	// neither tab claims an unrelated page. Boosted swaps never re-render the
-	// shell; /static/shell.js re-syncs the same rule from location — keep the
-	// two in lockstep.
+	// gallery/media surface, navTabJournal on /journal (#238), "" everywhere
+	// else (Search, Settings, …) so no tab claims an unrelated page. Boosted
+	// swaps never re-render the shell; /static/shell.js re-syncs the same rule
+	// from location — keep the two in lockstep.
 	NavTab        string
 	Conversations []store.ConversationSummary
 	ActiveID      int64
@@ -112,6 +112,7 @@ const defaultNavTitle = "msgbrowse"
 const (
 	navTabMessages = "messages"
 	navTabMedia    = "media"
+	navTabJournal  = "journal"
 )
 
 // partialBase is the shell-free baseData for HTMX partial renders: title and

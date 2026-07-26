@@ -77,13 +77,17 @@
        AVAILABLE space (the #197 review live-reproduced the old absolutely-
        positioned strip painting over the search pill/icon at narrow widths).
        Active state: "/" and every /c/* transcript read as Messages; /media
-       and the /gallery surface it aliases read as Media; every other route
-       (Search, Settings, …) activates neither — decided in #190, enforced by
-       .NavTab here and by shell.js's location sync after boosted swaps. */}}
+       and the /gallery surface it aliases read as Media; /journal reads as
+       Journal (#238 — the surface shipped with no link pointing at it); every
+       other route (Search, Settings, …) activates none of the three — decided
+       in #190, enforced by .NavTab here and by shell.js's location sync after
+       boosted swaps. Below ~360px the strip scrolls (input.css narrow-width
+       tiers) and shell.js keeps the active tab in view. */}}
   <nav class="header-tabs" aria-label="Primary"
        hx-boost="true" hx-target="#main-content" hx-select="#main-content" hx-swap="outerHTML" hx-push-url="true">
     <a href="/" data-nav-tab="messages" class="header-tab{{if eq .NavTab "messages"}} header-tab-active{{end}}"{{if eq .NavTab "messages"}} aria-current="page"{{end}}>Messages</a>
     <a href="/media" data-nav-tab="media" class="header-tab{{if eq .NavTab "media"}} header-tab-active{{end}}"{{if eq .NavTab "media"}} aria-current="page"{{end}}>Media</a>
+    <a href="/journal" data-nav-tab="journal" class="header-tab{{if eq .NavTab "journal"}} header-tab-active{{end}}"{{if eq .NavTab "journal"}} aria-current="page"{{end}}>Journal</a>
   </nav>
   <div class="toolbar-cluster toolbar-cluster-right">
     {{/* Header search: a small boosted GET form to /search. Enter submits and

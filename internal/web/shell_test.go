@@ -231,12 +231,13 @@ func TestHeaderFullWidthShell(t *testing.T) {
 	}
 }
 
-// TestHeaderTabs is the #190 primary-nav contract: the header centers a
-// Messages ("/") / Media ("/media") tab pair, boosted like all in-app nav,
-// with the server marking the active tab on full loads — Messages on home and
-// every /c/* transcript, Media on the gallery surface (/media aliases
-// /gallery), NEITHER on Search/Settings/… (shell.js re-syncs the same rule
-// after boosted swaps, which never re-render this shell).
+// TestHeaderTabs is the #190 primary-nav contract, extended by #238: the header
+// centers a Messages ("/") / Media ("/media") / Journal ("/journal") tab trio,
+// boosted like all in-app nav, with the server marking the active tab on full
+// loads — Messages on home and every /c/* transcript, Media on the gallery
+// surface (/media aliases /gallery), Journal on /journal, NONE on
+// Search/Settings/… (shell.js re-syncs the same rule after boosted swaps, which
+// never re-render this shell).
 func TestHeaderTabs(t *testing.T) {
 	srv, st, _ := newTestServer(t)
 	conv, err := st.GetConversation(context.Background(), "Harper")
@@ -249,19 +250,23 @@ func TestHeaderTabs(t *testing.T) {
 		messagesIdle   = `href="/" data-nav-tab="messages" class="header-tab"`
 		mediaActive    = `href="/media" data-nav-tab="media" class="header-tab header-tab-active" aria-current="page"`
 		mediaIdle      = `href="/media" data-nav-tab="media" class="header-tab"`
+		journalActive  = `href="/journal" data-nav-tab="journal" class="header-tab header-tab-active" aria-current="page"`
+		journalIdle    = `href="/journal" data-nav-tab="journal" class="header-tab"`
 	)
 	cases := []struct {
 		route         string
 		wantMessages  string
 		wantMedia     string
+		wantJournal   string
 		activeSummary string
 	}{
-		{"/", messagesActive, mediaIdle, "Messages"},
-		{"/c/" + itoa(conv.ID), messagesActive, mediaIdle, "Messages"},
-		{"/gallery", messagesIdle, mediaActive, "Media"},
-		{"/media", messagesIdle, mediaActive, "Media"},
-		{"/search", messagesIdle, mediaIdle, "neither"},
-		{"/settings", messagesIdle, mediaIdle, "neither"},
+		{"/", messagesActive, mediaIdle, journalIdle, "Messages"},
+		{"/c/" + itoa(conv.ID), messagesActive, mediaIdle, journalIdle, "Messages"},
+		{"/gallery", messagesIdle, mediaActive, journalIdle, "Media"},
+		{"/media", messagesIdle, mediaActive, journalIdle, "Media"},
+		{"/journal", messagesIdle, mediaIdle, journalActive, "Journal"},
+		{"/search", messagesIdle, mediaIdle, journalIdle, "none"},
+		{"/settings", messagesIdle, mediaIdle, journalIdle, "none"},
 	}
 	for _, c := range cases {
 		t.Run(c.route, func(t *testing.T) {
@@ -269,19 +274,63 @@ func TestHeaderTabs(t *testing.T) {
 			if !contains(body, `<nav class="header-tabs" aria-label="Primary"`) {
 				t.Fatal("page missing the centered header tab nav")
 			}
-			if !contains(body, c.wantMessages) || !contains(body, c.wantMedia) {
-				t.Errorf("%s should mark %s active (want %q and %q)", c.route, c.activeSummary, c.wantMessages, c.wantMedia)
+			if !contains(body, c.wantMessages) || !contains(body, c.wantMedia) || !contains(body, c.wantJournal) {
+				t.Errorf("%s should mark %s active (want %q, %q and %q)", c.route, c.activeSummary, c.wantMessages, c.wantMedia, c.wantJournal)
 			}
-			// Both tabs are boosted via the nav's hx-boost inheritance.
+			// All three tabs are boosted via the nav's hx-boost inheritance.
 			navStart := strings.Index(body, `<nav class="header-tabs"`)
 			navEnd := strings.Index(body[navStart:], "</nav>")
 			if navStart < 0 || navEnd < 0 {
 				t.Fatal("cannot delimit the header tab nav")
 			}
-			if nav := body[navStart : navStart+navEnd]; !strings.Contains(nav, `hx-boost="true"`) {
+			nav := body[navStart : navStart+navEnd]
+			if !strings.Contains(nav, `hx-boost="true"`) {
 				t.Error("header tabs should be boosted (hx-boost on the nav)")
 			}
+			// Exactly one tab may claim the page: two aria-current="page" links
+			// in one nav is an a11y defect, not a cosmetic one.
+			if got := strings.Count(nav, `aria-current="page"`); got > 1 {
+				t.Errorf("%s marks %d tabs as aria-current=page; at most one may", c.route, got)
+			}
+			// Journal sits after Media (#238), so the strip reads
+			// Messages · Media · Journal in DOM order.
+			m, md, j := strings.Index(nav, `data-nav-tab="messages"`), strings.Index(nav, `data-nav-tab="media"`), strings.Index(nav, `data-nav-tab="journal"`)
+			if !(m < md && md < j) {
+				t.Errorf("tab order should be Messages, Media, Journal (got offsets %d, %d, %d)", m, md, j)
+			}
 		})
+	}
+}
+
+// TestJournalReachableFromEveryPage is the guard whose absence let the journal
+// ship with no link pointing at it (#237/#238): every primary surface must
+// carry a link to /journal in the shared shell, so the feature is never again a
+// URL you have to know. The shell is rendered by page_start, so this covers any
+// future page that uses it.
+func TestJournalReachableFromEveryPage(t *testing.T) {
+	srv, st, _ := newTestServer(t)
+	conv, err := st.GetConversation(context.Background(), "Harper")
+	if err != nil || conv == nil {
+		t.Fatalf("get conversation: %v", err)
+	}
+	for _, route := range []string{"/", "/c/" + itoa(conv.ID), "/media", "/gallery", "/search", "/settings", "/journal", "/status"} {
+		if body := get(t, srv, route).Body.String(); !contains(body, `href="/journal"`) {
+			t.Errorf("%s does not link to /journal — the journal must be reachable from every page", route)
+		}
+	}
+}
+
+// TestJournalEmptyStateIsNotADeadEnd (#238): the journal is now a nav
+// destination, so the pre-build empty state has to explain the surface and
+// offer a way forward rather than only naming a CLI command.
+func TestJournalEmptyStateIsNotADeadEnd(t *testing.T) {
+	srv, _, _ := newTestServer(t)
+	body := get(t, srv, "/journal").Body.String()
+	if !contains(body, "No journal yet.") {
+		t.Fatal("expected the empty-journal notice on a store with no journal days")
+	}
+	if !contains(body, `href="/settings/llm"`) {
+		t.Error("the empty state should link to the LLM settings tab, where the digest model is configured")
 	}
 }
 
@@ -497,6 +546,139 @@ func TestShellScrollRestoreBindings(t *testing.T) {
 	}
 	if !contains(js, `window.addEventListener("popstate", sync)`) {
 		t.Error("shell.js lost the popstate tab-state sync listener")
+	}
+}
+
+// TestShellTabSyncKnowsJournal (#238) keeps shell.js's location sync in lockstep
+// with baseData.NavTab. Boosted swaps never re-render the header, so the server
+// marks the active tab only on full loads — if shell.js does not also map
+// /journal to the journal tab, clicking Journal swaps the page but leaves the
+// previous tab lit.
+func TestShellTabSyncKnowsJournal(t *testing.T) {
+	b, err := os.ReadFile("static/shell.js")
+	if err != nil {
+		t.Fatalf("read shell.js: %v", err)
+	}
+	js := string(b)
+	if !contains(js, `path === "/journal"`) {
+		t.Error("shell.js sync() should map /journal to a tab name")
+	}
+	if !contains(js, `name = "journal"`) {
+		t.Error(`shell.js should resolve /journal to the "journal" tab, matching data-nav-tab and baseData.navTabJournal`)
+	}
+	// Below ~360px the three tabs do not fit and the strip becomes a
+	// hidden-scrollbar scroll container. Without this, the tab you are ON is the
+	// one that can sit off the right edge with no scrollbar to hint at it — i.e.
+	// landing on /journal would show Messages/Media and no active tab, defeating
+	// the point of #238. "nearest" scrolls only the overflowing strip, never the
+	// page or #main-content.
+	if !contains(js, `scrollIntoView({ block: "nearest", inline: "nearest" })`) {
+		t.Error("syncTabs should scroll the active tab into view with block/inline nearest, so a scrolled strip never hides the current page's tab")
+	}
+}
+
+// TestNarrowHeaderFitsThreeTabs (#238) guards the narrow-viewport trims that a
+// third tab forced. Measured in a browser at 320px WITHOUT them, the tab strip
+// grew 142px→209px, drove the minmax(0,1fr) left track to zero, and let the
+// burger paint over "Messages" while the right cluster spilled past the toolbar
+// — the overlap #197 fixed. These rules are what keep all three tabs reachable
+// below sm; they live in input.css and must survive into the built artifact.
+//
+// Each assertion is ANCHORED inside its media-query block rather than searched
+// across the whole file. The first cut of this test asserted
+// strings.Contains(css, "overflow-x:auto"), which the artifact already satisfied
+// three times over (.stats, the .overflow-x-auto utility, .copy-pre) — so it
+// passed without the rule it was meant to guard existing at all. Anchoring by
+// block keeps it honest; matching properties (not whole minified rules) keeps a
+// Tailwind upgrade that reorders declarations from failing it spuriously.
+func TestNarrowHeaderFitsThreeTabs(t *testing.T) {
+	css, err := os.ReadFile("static/app.css")
+	if err != nil {
+		t.Fatalf("read app.css: %v", err)
+	}
+	out := string(css)
+
+	// mediaBlock returns the body of the first @media block with this exact
+	// prelude, brace-matched so a nested block cannot truncate it.
+	mediaBlock := func(prelude string) string {
+		i := strings.Index(out, prelude+"{")
+		if i < 0 {
+			return ""
+		}
+		depth, start := 0, i+len(prelude)
+		for j := start; j < len(out); j++ {
+			switch out[j] {
+			case '{':
+				depth++
+			case '}':
+				if depth--; depth == 0 {
+					return out[start+1 : j]
+				}
+			}
+		}
+		return ""
+	}
+	// rule returns the declarations of `selector{...}` within body.
+	rule := func(body, selector string) string {
+		i := strings.Index(body, selector+"{")
+		if i < 0 {
+			return ""
+		}
+		rest := body[i+len(selector)+1:]
+		end := strings.Index(rest, "}")
+		if end < 0 {
+			return ""
+		}
+		return rest[:end]
+	}
+
+	tier1 := mediaBlock("@media (max-width:39.9375rem)")
+	if tier1 == "" {
+		t.Fatal("built app.css lost the below-sm narrow-width media block (rebuild: make css)")
+	}
+	strip := rule(tier1, ".header-tabs")
+	for _, want := range []string{
+		// Clamp to the grid track. Without it the tier-2 justify-self:center pill
+		// is content-sized and overflows the track instead of scrolling, which put
+		// the burger back underneath the strip at 320px (measured).
+		"max-width:100%",
+		"min-width:0",
+		"overflow-x:auto",
+		// The 4px padding is contract, not cosmetics: overflow-x makes this a
+		// scroll container, a scroll container clips at its PADDING box, and a
+		// tab's focus ring reaches 4px outside the tab (outline 2px at offset
+		// 2px) — at the inherited 2px padding the ring was clipped away and
+		// keyboard focus went invisible on every viewport below 640px.
+		"padding:4px",
+	} {
+		if !strings.Contains(strip, want) {
+			t.Errorf("below-sm .header-tabs missing %q (got %q; rebuild: make css)", want, strip)
+		}
+	}
+
+	tier2 := mediaBlock("@media (max-width:28rem)")
+	if tier2 == "" {
+		t.Fatal("built app.css lost the tier-2 (28rem) block where three tabs stop fitting (rebuild: make css)")
+	}
+	for _, tc := range []struct{ selector, want, why string }{
+		// Content-sized side tracks: the wide layout's minmax(0,1fr) left track
+		// has a zero minimum, which is what let the burger be starved to nothing
+		// and painted over by the strip.
+		{".app-toolbar", "grid-template-columns:min-content minmax(0,1fr) auto",
+			"tier-2 toolbar tracks, so the sidebar toggle cannot be starved to zero"},
+		// .header-tabs is a grid item: its inline-flex blockifies and justify-self
+		// defaults to stretch, so without this the bordered pill spans the whole
+		// middle column with the labels jammed against its left edge.
+		{".header-tabs", "justify-self:center",
+			"tier-2 centering — without it the strip stretches the full column and the tabs jam left"},
+		// Hiding the label alone was not enough: the remaining home glyph costs
+		// ~25px, the difference between three tabs fitting at 360px and not.
+		{".toolbar-title", "display:none",
+			"tier-2 hiding of the WHOLE contextual title, not just its label"},
+	} {
+		if got := rule(tier2, tc.selector); !strings.Contains(got, tc.want) {
+			t.Errorf("tier-2 %s missing %s\n  want: %s\n  got:  %q\n  (rebuild: make css)", tc.selector, tc.why, tc.want, got)
+		}
 	}
 }
 
