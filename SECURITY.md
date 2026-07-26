@@ -10,7 +10,9 @@ archive. This document describes the threat model and the mitigations.
   message content), accidental data exfiltration to a hosted LLM, and network
   attackers if the UI is ever exposed beyond loopback.
 - **Assets:** the plaintext message archive, the derived SQLite database +
-  embeddings, and the encrypted `.snapshots` backups.
+  embeddings, the encrypted `.snapshots` backups, and msgbrowse-owned
+  snapshot archives under `backups.dir` (a **second full plaintext copy of the
+  corpus** — see [msgbrowse-owned snapshots](#msgbrowse-owned-snapshots)).
 - **Out of scope:** the internal security of the upstream exporter codebases
   (msgbrowse now *executes* them — that boundary is covered under
   [Exporter execution](#exporter-execution) — but does not audit their code),
@@ -79,6 +81,31 @@ sends raw media off-device. The default local route keeps it on the machine.
 - The encrypted `.snapshots/*.tar` (SQLCipher raw-DB backups) are **inventoried by
   filename and size only** — msgbrowse never opens, decrypts, or reads their
   contents, and never touches the macOS Keychain.
+
+## msgbrowse-owned snapshots
+
+msgbrowse **creates its own snapshots** of `data_dir` (the SQLite database +
+embeddings) and the config file, so a user with no external backup job can
+back up the expensive artifacts (ingest + LLM spend) from the Backups tab
+(ADR-0026). A snapshot is a **plaintext copy of the entire message corpus**
+(the pure-Go SQLite driver is not SQLCipher-encrypted, ADR-0013), so the
+mitigations are:
+
+- **Restrictive file mode.** Snapshot files are `0600` and the snapshot
+  directory is `0700`. The default location (`<data_dir>/backups`) inherits
+  `data_dir`'s already-restrictive permissions.
+- **Storage outside the read-only archive.** `backups.dir` is configurable and
+  MUST NOT resolve inside `archive_root` (startup warns and refuses). The
+  external `.snapshots` inventory above is unaffected and still listed as
+  read-only.
+- **No encryption at rest (yet).** A snapshot-encryption layer would need a key
+  the operator must not lose ("lost the key = lost every backup") and is
+  deferred to a later ADR. The `0600`/`0700` mode and the default location are
+  the defense that ships today; FileVault / full-disk encryption is assumed but
+  does not protect against other software running as the same user.
+- **Restore is guarded.** Restore replaces the live database; it is a
+  two-step confirm (the unpair pattern) and takes a pre-restore snapshot
+  first, so a misclick or a mid-failure is recoverable.
 
 ## Exporter execution
 

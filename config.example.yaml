@@ -68,6 +68,22 @@ journal:
   # 0 = no cap on days processed per run.
   max_days_per_run: 0
 
+# msgbrowse-owned snapshots (ADR-0026 / SPEC-0026). A snapshot is a plaintext
+# copy of data_dir (the SQLite database + embeddings) and the config file,
+# created from the Backups tab or `msgbrowse backups create`, listed, pruned by
+# GFS policy, and restorable. Snapshot files are mode 0600 / directory 0700 —
+# they contain the entire message corpus (ADR-0013: no SQLCipher in-process).
+backups:
+  # Directory for msgbrowse-owned snapshots. Default: <data_dir>/backups.
+  # MUST NOT be inside archive_root (the read-only archive; ADR-0010 §4) —
+  # startup warns and refuses the path if it is.
+  dir: ""
+  retention:
+    daily: 14      # keep ≤ 14 daily snapshots (≤ 14 days old)
+    monthly: 12    # keep ≤ 12 monthly snapshots (≤ ~13 months old)
+    quarterly: 4   # keep ≤ 4 quarterly snapshots (≤ ~3 years old)
+    yearly: 2      # keep ≤ 2 yearly snapshots (older than quarterly)
+
 # Multi-device archive sync (ADR-0021 / SPEC-0014). NOT COMPILED INTO RELEASE
 # BUILDS: device sync is unfinished and gated behind the `devicesync` build tag
 # (build with `go build -tags devicesync` to include it). Without that tag these
