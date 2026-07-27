@@ -286,6 +286,23 @@ func NewServer(st Store, cfg *config.Config, log *slog.Logger) (*Server, error) 
 		"imgTileState":     s.imgTileState,
 		"convRowCtx":       convRowCtx,
 		"galleryConvURL":   galleryConvURL,
+		// dict returns a map from key/value pairs, for passing multiple
+		// arguments to a {{template}} partial call (#227).
+		"dict": func(values ...any) map[string]any {
+			m := make(map[string]any, len(values)/2)
+			for i := 0; i+1 < len(values); i += 2 {
+				key, ok := values[i].(string)
+				if !ok {
+					continue
+				}
+				m[key] = values[i+1]
+			}
+			return m
+		},
+		// safe marks a string as trusted HTML for template output. It is only
+		// ever called with literal template text (banner bodies that contain
+		// <a>/<code> tags), never with request-derived input (#227).
+		"safe": func(s string) template.HTML { return template.HTML(s) },
 		"has": func(slice []string, s string) bool {
 			for _, v := range slice {
 				if v == s {

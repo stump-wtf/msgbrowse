@@ -401,3 +401,38 @@
 {{- end}}
 {{- end}}
 {{end}}
+
+{{/* status_banner (#227, governing: ADR-0012, ADR-0007, SPEC-0013 §Accessibility):
+     A single partial that owns all four feedback-banner variants. The variant
+     token is selected server-side from a fixed enum (MergeResult, SplitResult,
+     RulesResult, PairResult, UnpairResult, SaveResult, TestResult, IndexResult,
+     BuildResult, BackupResult, ModelsResult) — never from request input.
+
+     Usage: {{template "status_banner" dict "variant" "success" "title" "..." "body" "..."}}
+
+     Variants:
+       success → green family, check icon, role=status
+       error   → red family, x-circle icon, role=alert (assertive)
+       warning → yellow family, triangle icon, role=status
+       info    → blue family, info icon, role=status
+
+     Colour is never the sole signal: each variant carries an icon so the state
+     survives greyscale and colour-vision deficiency. */}}
+{{define "status_banner"}}
+{{- $role := "status"}}
+{{- $class := ""}}
+{{- if eq .variant "success"}}{{ $class = "notice-ok" }}
+{{- else if eq .variant "error"}}{{ $class = "notice-err" }}{{ $role = "alert" }}
+{{- else if eq .variant "warning"}}{{ $class = "notice-warn" }}
+{{- else if eq .variant "info"}}{{ $class = "notice-info" }}
+{{- end}}
+<div class="notice-card {{$class}}{{if .class}} {{.class}}{{end}}" role="{{$role}}">
+  {{- if eq .variant "success"}}<span class="status-banner-icon">{{template "icon-check-circle"}}</span>
+  {{- else if eq .variant "error"}}<span class="status-banner-icon">{{template "icon-x-circle"}}</span>
+  {{- else if eq .variant "warning"}}<span class="status-banner-icon">{{template "icon-exclamation-triangle"}}</span>
+  {{- else if eq .variant "info"}}<span class="status-banner-icon">{{template "icon-info-circle"}}</span>
+  {{- end}}
+  <p class="link-card-title">{{.title}}</p>
+  {{- if .body}}<p class="link-card-sub">{{.body | safe}}</p>{{end}}
+</div>
+{{- end}}

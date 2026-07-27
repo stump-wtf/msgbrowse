@@ -31,50 +31,21 @@
            server-side enum — no request-derived string reaches the banner
            choice or a class attribute. "" falls through and renders nothing. */}}
       {{- if eq .BuildResult "started"}}
-      <div class="notice-card mb-4">
-        <p class="link-card-title">Building the journal.</p>
-        <p class="link-card-sub">Computing the day layer and digesting the days that do not have one yet —
-          this page reports progress while it runs.</p>
-      </div>
+      {{template "status_banner" dict "variant" "info" "class" "mb-4" "title" "Building the journal." "body" "Computing the day layer and digesting the days that do not have one yet — this page reports progress while it runs."}}
       {{- else if eq .BuildResult "rebuilt"}}
-      <div class="notice-card mb-4">
-        <p class="link-card-title">Rebuilding every day.</p>
-        <p class="link-card-sub">Cached digests were cleared and are being re-derived from scratch.</p>
-      </div>
+      {{template "status_banner" dict "variant" "info" "class" "mb-4" "title" "Rebuilding every day." "body" "Cached digests were cleared and are being re-derived from scratch."}}
       {{- else if eq .BuildResult "day"}}
-      <div class="notice-card mb-4">
-        <p class="link-card-title">Rebuilding this day.</p>
-        <p class="link-card-sub">Just this day&rsquo;s digest is being regenerated; every other day is untouched.</p>
-      </div>
+      {{template "status_banner" dict "variant" "info" "class" "mb-4" "title" "Rebuilding this day." "body" "Just this day's digest is being regenerated; every other day is untouched."}}
       {{- else if eq .BuildResult "inprogress"}}
-      <div class="notice-card mb-4">
-        <p class="link-card-title">A run is already in progress.</p>
-        <p class="link-card-sub">Nothing new was started — the running job continues.</p>
-      </div>
+      {{template "status_banner" dict "variant" "info" "class" "mb-4" "title" "A run is already in progress." "body" "Nothing new was started — the running job continues."}}
       {{- else if eq .BuildResult "nomodel"}}
-      <div class="notice-card mb-4">
-        <p class="link-card-title">Building day counts only.</p>
-        <p class="link-card-sub">The mechanical day layer is being built — that part needs no model. For the
-          editorial digests, set a chat model on the
-          <a href="/settings/llm" class="link link-hover">LLM settings</a> tab and build again.</p>
-      </div>
+      {{template "status_banner" dict "variant" "warning" "class" "mb-4" "title" "Building day counts only." "body" "The mechanical day layer is being built — that part needs no model. For the editorial digests, set a chat model on the <a href=\"/settings/llm\" class=\"link link-hover\">LLM settings</a> tab and build again."}}
       {{- else if eq .BuildResult "digestoff"}}
-      <div class="notice-card mb-4">
-        <p class="link-card-title">Building day counts only.</p>
-        <p class="link-card-sub">Digests are turned off in config
-          (<code class="font-mono">journal.digest_enabled</code>), so only the day layer is being built.</p>
-      </div>
+      {{template "status_banner" dict "variant" "info" "class" "mb-4" "title" "Building day counts only." "body" "Digests are turned off in config (<code class=\"font-mono\">journal.digest_enabled</code>), so only the day layer is being built."}}
       {{- else if eq .BuildResult "badday"}}
-      <div class="notice-card mb-4">
-        <p class="link-card-title">That day is not in the journal.</p>
-        <p class="link-card-sub">Nothing was started. Pick a highlighted day on the calendar.</p>
-      </div>
+      {{template "status_banner" dict "variant" "warning" "class" "mb-4" "title" "That day is not in the journal." "body" "Nothing was started. Pick a highlighted day on the calendar."}}
       {{- else if eq .BuildResult "unavailable"}}
-      <div class="notice-card mb-4">
-        <p class="link-card-title">Journal building is not available here.</p>
-        <p class="link-card-sub">This server was started without a journal builder. Run
-          <code class="font-mono">msgbrowse journal</code> from the command line instead.</p>
-      </div>
+      {{template "status_banner" dict "variant" "warning" "class" "mb-4" "title" "Journal building is not available here." "body" "This server was started without a journal builder. Run <code class=\"font-mono\">msgbrowse journal</code> from the command line instead."}}
       {{- end}}
 
       {{template "journal_build_card" .}}
