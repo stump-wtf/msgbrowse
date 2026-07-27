@@ -1,10 +1,11 @@
 # Desktop packaging matrix — SPEC-0010 "Release packaging via CI matrix",
 # ADR-0017. Webview shells cannot be cross-compiled, so each OS builds its own
 # artifact on its own runner. These jobs are release-scoped and MUST NOT gate
-# the core CGO_ENABLED=0 check in ci.yml: they run only on v* tags, manual
-# dispatch, and PRs that touch the desktop shell or this workflow — never on
-# every PR. Tag-build artifacts are uploaded so the SPEC-0012 release pipeline
-# can attach or reference them on GitHub Releases.
+# the core CGO_ENABLED=0 check in ci.yml: they run on v* tags, pushes to main,
+# manual dispatch, and PRs that touch the desktop shell or this workflow — never
+# on every PR. Tag-build artifacts are uploaded so the SPEC-0012 release pipeline
+# can attach or reference them on GitHub Releases. Main-build artifacts are
+# available from the Actions tab for testing without cutting a release.
 #
 # Bundled toolchain (ADR-0020, SPEC-0013): the darwin job assembles the three
 # upstream exporters into the built .app under Contents/Resources/tools — a
@@ -69,6 +70,8 @@ on:
       - ".github/workflows/desktop.yml"
   push:
     tags: ["v*"]
+    # Build on every merge to main so the cask can point at the latest commit.
+    branches: ["main"]
   # Manual dry-run: produce all matrix artifacts from any ref without tagging.
   workflow_dispatch:
 
