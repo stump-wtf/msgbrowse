@@ -17,55 +17,25 @@
          POST. The variant is selected server-side from a fixed enum, never
          from request input. */}}
     {{if eq .BackupResult "created"}}
-    <div class="notice-card notice-ok" role="status">
-      <p class="link-card-title">Snapshot created</p>
-      <p class="link-card-sub">A consistent copy of the database, embeddings, and config was written to the snapshot directory.</p>
-    </div>
+    {{template "status_banner" dict "variant" "success" "title" "Snapshot created" "body" "A consistent copy of the database, embeddings, and config was written to the snapshot directory."}}
     {{else if eq .BackupResult "pruned"}}
-    <div class="notice-card notice-ok" role="status">
-      <p class="link-card-title">Prune complete</p>
-      <p class="link-card-sub">Snapshots outside the retention policy were removed.</p>
-    </div>
+    {{template "status_banner" dict "variant" "success" "title" "Prune complete" "body" "Snapshots outside the retention policy were removed."}}
     {{else if eq .BackupResult "nothing-to-prune"}}
-    <div class="notice-card notice-info" role="status">
-      <p class="link-card-title">Nothing to prune</p>
-      <p class="link-card-sub">All snapshots are within the retention policy.</p>
-    </div>
+    {{template "status_banner" dict "variant" "info" "title" "Nothing to prune" "body" "All snapshots are within the retention policy."}}
     {{else if eq .BackupResult "restored-needs-restart"}}
-    <div class="notice-card notice-warn" role="status">
-      <p class="link-card-title">Restored — restart required</p>
-      <p class="link-card-sub">The selected snapshot was restored over the live database. A pre-restore snapshot was taken first. Restart the app to use the restored database.</p>
-    </div>
+    {{template "status_banner" dict "variant" "warning" "title" "Restored — restart required" "body" "The selected snapshot was restored over the live database. A pre-restore snapshot was taken first. Restart the app to use the restored database."}}
     {{else if eq .BackupResult "inprogress"}}
-    <div class="notice-card notice-warn" role="status">
-      <p class="link-card-title">A snapshot operation is already in progress</p>
-      <p class="link-card-sub">Wait for it to finish before starting another.</p>
-    </div>
+    {{template "status_banner" dict "variant" "warning" "title" "A snapshot operation is already in progress" "body" "Wait for it to finish before starting another."}}
     {{else if eq .BackupResult "unwritable"}}
-    <div class="notice-card notice-err" role="alert">
-      <p class="link-card-title">Snapshot failed</p>
-      <p class="link-card-sub">The snapshot directory is unwritable or the disk is full. Check the path and permissions, then try again.</p>
-    </div>
+    {{template "status_banner" dict "variant" "error" "title" "Snapshot failed" "body" "The snapshot directory is unwritable or the disk is full. Check the path and permissions, then try again."}}
     {{else if eq .BackupResult "notfound"}}
-    <div class="notice-card notice-err" role="alert">
-      <p class="link-card-title">Snapshot not found</p>
-      <p class="link-card-sub">The selected snapshot does not exist. It may have been pruned, or the request was invalid.</p>
-    </div>
+    {{template "status_banner" dict "variant" "error" "title" "Snapshot not found" "body" "The selected snapshot does not exist. It may have been pruned, or the request was invalid."}}
     {{else if eq .BackupResult "rolled-back"}}
-    <div class="notice-card notice-err" role="alert">
-      <p class="link-card-title">Restore failed — rolled back</p>
-      <p class="link-card-sub">The restore failed partway and the pre-restore state was recovered. No data was lost.</p>
-    </div>
+    {{template "status_banner" dict "variant" "error" "title" "Restore failed — rolled back" "body" "The restore failed partway and the pre-restore state was recovered. No data was lost."}}
     {{else if eq .BackupResult "invalid"}}
-    <div class="notice-card notice-err" role="alert">
-      <p class="link-card-title">Invalid request</p>
-      <p class="link-card-sub">No snapshot identifier was supplied.</p>
-    </div>
+    {{template "status_banner" dict "variant" "error" "title" "Invalid request" "body" "No snapshot identifier was supplied."}}
     {{else if eq .BackupResult "unavailable"}}
-    <div class="notice-card notice-warn" role="status">
-      <p class="link-card-title">Backups unavailable</p>
-      <p class="link-card-sub">Snapshot operations are not available in this mode (no data directory configured).</p>
-    </div>
+    {{template "status_banner" dict "variant" "warning" "title" "Backups unavailable" "body" "Snapshot operations are not available in this mode (no data directory configured)."}}
     {{end}}
 
     {{/* msgbrowse-owned snapshots (ADR-0026) */}}

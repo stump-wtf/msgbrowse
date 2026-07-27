@@ -27,64 +27,27 @@
       Saving applies immediately — no restart needed.</p>
 
     {{- if eq .SaveResult "ok"}}
-    <div class="notice-card" role="status">
-      <p class="link-card-title">LLM settings saved.</p>
-      <p class="link-card-sub">The change is live: semantic search and AI features now use this endpoint.</p>
-    </div>
+    {{template "status_banner" dict "variant" "success" "title" "LLM settings saved." "body" "The change is live: semantic search and AI features now use this endpoint."}}
     {{- else if eq .SaveResult "unavailable"}}
-    <div class="notice-card" role="status">
-      <p class="link-card-title">Saving is not available here.</p>
-      <p class="link-card-sub">This server was started without a writable configuration source. Edit the
-        config file directly and restart.</p>
-    </div>
+    {{template "status_banner" dict "variant" "warning" "title" "Saving is not available here." "body" "This server was started without a writable configuration source. Edit the config file directly and restart."}}
     {{- else if eq .SaveResult "error"}}
-    <div class="notice-card" role="status">
-      <p class="link-card-title">Saving failed.</p>
-      <p class="link-card-sub">The settings could not be written to the config file; the running
-        configuration is unchanged. See Logs for details and try again.</p>
-    </div>
+    {{template "status_banner" dict "variant" "error" "title" "Saving failed." "body" "The settings could not be written to the config file; the running configuration is unchanged. See Logs for details and try again."}}
     {{- else if eq .TestResult "ok"}}
-    <div class="notice-card" role="status">
-      <p class="link-card-title">Connection succeeded.</p>
-      <p class="link-card-sub">The endpoint responded and the model is valid. These values were only
-        tested — click Save and apply to keep them.</p>
-    </div>
+    {{template "status_banner" dict "variant" "success" "title" "Connection succeeded." "body" "The endpoint responded and the model is valid. These values were only tested — click Save and apply to keep them."}}
     {{- else if eq .TestResult "unreachable"}}
-    <div class="notice-card" role="status">
-      <p class="link-card-title">Connection failed.</p>
-      <p class="link-card-sub">The endpoint could not be reached, or it rejected the model. Check the base
-        URL, model names, and API key, then try again. See Logs for details.</p>
-    </div>
+    {{template "status_banner" dict "variant" "error" "title" "Connection failed." "body" "The endpoint could not be reached, or it rejected the model. Check the base URL, model names, and API key, then try again. See Logs for details."}}
     {{- else if eq .TestResult "unavailable"}}
-    <div class="notice-card" role="status">
-      <p class="link-card-title">Testing is not available here.</p>
-      <p class="link-card-sub">This server was started without a live LLM client to probe with.</p>
-    </div>
+    {{template "status_banner" dict "variant" "warning" "title" "Testing is not available here." "body" "This server was started without a live LLM client to probe with."}}
     {{- else if eq .ModelsResult "ok"}}
-    <div class="notice-card" role="status">
-      <p class="link-card-title">Models refreshed.</p>
-      <p class="link-card-sub">{{len .Models}} model(s) discovered from the endpoint. Select one from the dropdowns below.</p>
-    </div>
+    {{template "status_banner" dict "variant" "success" "title" "Models refreshed." "body" (printf "%d model(s) discovered from the endpoint. Select one from the dropdowns below." (len .Models))}}
     {{- else if eq .ModelsResult "unsupported"}}
-    <div class="notice-card" role="status">
-      <p class="link-card-title">Model listing not supported.</p>
-      <p class="link-card-sub">This endpoint does not serve a /v1/models listing. You can type a model name manually.</p>
-    </div>
+    {{template "status_banner" dict "variant" "warning" "title" "Model listing not supported." "body" "This endpoint does not serve a /v1/models listing. You can type a model name manually."}}
     {{- else if eq .ModelsResult "unreachable"}}
-    <div class="notice-card" role="status">
-      <p class="link-card-title">Could not reach the endpoint.</p>
-      <p class="link-card-sub">Check the base URL and API key, then try again. See Logs for details.</p>
-    </div>
+    {{template "status_banner" dict "variant" "error" "title" "Could not reach the endpoint." "body" "Check the base URL and API key, then try again. See Logs for details."}}
     {{- else if eq .ModelsResult "unavailable"}}
-    <div class="notice-card" role="status">
-      <p class="link-card-title">Model listing is not available here.</p>
-      <p class="link-card-sub">This server was started without a live LLM client to probe with.</p>
-    </div>
+    {{template "status_banner" dict "variant" "warning" "title" "Model listing is not available here." "body" "This server was started without a live LLM client to probe with."}}
     {{- else if .HasErrors}}
-    <div class="notice-card" role="status">
-      <p class="link-card-title">Nothing was saved.</p>
-      <p class="link-card-sub">Fix the highlighted fields below and save again.</p>
-    </div>
+    {{template "status_banner" dict "variant" "warning" "title" "Nothing was saved." "body" "Fix the highlighted fields below and save again."}}
     {{- end}}
 
     <section class="status-card space-y-4" aria-labelledby="settings-llm-heading">

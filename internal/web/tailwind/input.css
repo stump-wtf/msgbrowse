@@ -1192,6 +1192,44 @@ a.meta-chip:hover {
   border-radius: 0.75rem;
   background: var(--color-base-200);
 }
+/* Status-banner variants (#227, governing: ADR-0012, ADR-0007, SPEC-0013
+   §Accessibility). Four visually distinct variants derived from the
+   sync-badge palette — colour is never the sole signal (each carries an
+   icon via the status_banner partial). Both themes meet WCAG AA contrast. */
+.notice-ok {
+  border-color: color-mix(in oklab, var(--color-success) 45%, var(--color-neutral));
+  background: color-mix(in oklab, var(--color-success) 8%, var(--color-base-200));
+}
+.notice-ok .status-banner-icon {
+  color: var(--color-success);
+}
+.notice-err {
+  border-color: color-mix(in oklab, var(--color-error) 45%, var(--color-neutral));
+  background: color-mix(in oklab, var(--color-error) 8%, var(--color-base-200));
+}
+.notice-err .status-banner-icon {
+  color: var(--color-error);
+}
+.notice-warn {
+  border-color: color-mix(in oklab, var(--color-warning) 45%, var(--color-neutral));
+  background: color-mix(in oklab, var(--color-warning) 8%, var(--color-base-200));
+}
+.notice-warn .status-banner-icon {
+  color: var(--color-warning);
+}
+.notice-info {
+  border-color: color-mix(in oklab, var(--color-primary) 45%, var(--color-neutral));
+  background: color-mix(in oklab, var(--color-primary) 8%, var(--color-base-200));
+}
+.notice-info .status-banner-icon {
+  color: var(--color-primary);
+}
+/* The icon sits inline before the title, vertically aligned. */
+.status-banner-icon {
+  display: inline-flex;
+  vertical-align: middle;
+  margin-right: 0.15rem;
+}
 /* Lightbox close button + caption render over the dark scrim. CSP (style-src
    'self', no 'unsafe-inline') forbids inline style=, so these live as classes. */
 .lightbox-close {

@@ -148,39 +148,17 @@
       <div class="status-card-title">Semantic search index</div>
 
       {{- if eq .IndexResult "started"}}
-      <div class="notice-card mb-4">
-        <p class="link-card-title">Indexing started.</p>
-        <p class="link-card-sub">Embedding the messages that still need a vector — the progress bar below
-          updates live while it runs.</p>
-      </div>
+      {{template "status_banner" dict "variant" "info" "class" "mb-4" "title" "Indexing started." "body" "Embedding the messages that still need a vector — the progress bar below updates live while it runs."}}
       {{- else if eq .IndexResult "reset"}}
-      <div class="notice-card mb-4">
-        <p class="link-card-title">Reset &amp; rebuild started.</p>
-        <p class="link-card-sub">The index was cleared and is rebuilding from scratch — watch the progress
-          bar below.</p>
-      </div>
+      {{template "status_banner" dict "variant" "info" "class" "mb-4" "title" "Reset & rebuild started." "body" "The index was cleared and is rebuilding from scratch — watch the progress bar below."}}
       {{- else if eq .IndexResult "inprogress"}}
-      <div class="notice-card mb-4">
-        <p class="link-card-title">A run is already in progress.</p>
-        <p class="link-card-sub">Nothing new was started — the running job continues.</p>
-      </div>
+      {{template "status_banner" dict "variant" "info" "class" "mb-4" "title" "A run is already in progress." "body" "Nothing new was started — the running job continues."}}
       {{- else if eq .IndexResult "nomodel"}}
-      <div class="notice-card mb-4">
-        <p class="link-card-title">No embedding model configured.</p>
-        <p class="link-card-sub">Set an embed model on the <a href="/settings/llm" class="link link-hover">LLM
-          settings</a> tab, then build the index.</p>
-      </div>
+      {{template "status_banner" dict "variant" "warning" "class" "mb-4" "title" "No embedding model configured." "body" "Set an embed model on the <a href=\"/settings/llm\" class=\"link link-hover\">LLM settings</a> tab, then build the index."}}
       {{- else if eq .IndexResult "unavailable"}}
-      <div class="notice-card mb-4">
-        <p class="link-card-title">Index management is not available here.</p>
-        <p class="link-card-sub">This server was started without an indexer. Run
-          <code class="font-mono">msgbrowse embed</code> from the command line instead.</p>
-      </div>
+      {{template "status_banner" dict "variant" "warning" "class" "mb-4" "title" "Index management is not available here." "body" "This server was started without an indexer. Run <code class=\"font-mono\">msgbrowse embed</code> from the command line instead."}}
       {{- else if eq .IndexResult "error"}}
-      <div class="notice-card mb-4">
-        <p class="link-card-title">The index job could not start.</p>
-        <p class="link-card-sub">See Logs for details and try again.</p>
-      </div>
+      {{template "status_banner" dict "variant" "error" "class" "mb-4" "title" "The index job could not start." "body" "See Logs for details and try again."}}
       {{- end}}
 
       {{if not .IndexAvailable}}

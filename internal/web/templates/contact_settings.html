@@ -26,56 +26,25 @@
       the matching rules, the suggested merges, and manual fixes. Everything stays on this machine.</p>
 
     {{- if eq .RulesResult "ok"}}
-    <div class="notice-card" role="status">
-      <p class="link-card-title">Merge rules saved.</p>
-      <p class="link-card-sub">The suggestions below reflect the new rules. Auto-merge, when on, is applied
-        on the next import.</p>
-    </div>
+    {{template "status_banner" dict "variant" "success" "title" "Merge rules saved." "body" "The suggestions below reflect the new rules. Auto-merge, when on, is applied on the next import."}}
     {{- else if eq .RulesResult "error"}}
-    <div class="notice-card" role="status">
-      <p class="link-card-title">Saving the rules failed.</p>
-      <p class="link-card-sub">The running rules are unchanged. See Logs for details and try again.</p>
-    </div>
+    {{template "status_banner" dict "variant" "error" "title" "Saving the rules failed." "body" "The running rules are unchanged. See Logs for details and try again."}}
     {{- end}}
     {{- if eq .MergeResult "ok"}}
-    <div class="notice-card" role="status">
-      <p class="link-card-title">Contacts merged.</p>
-      <p class="link-card-sub">They are now one person across every source. This is durable — it survives
-        re-importing an archive.</p>
-    </div>
+    {{template "status_banner" dict "variant" "success" "title" "Contacts merged." "body" "They are now one person across every source. This is durable — it survives re-importing an archive."}}
     {{- else if eq .MergeResult "same"}}
-    <div class="notice-card" role="status">
-      <p class="link-card-title">Nothing to merge.</p>
-      <p class="link-card-sub">Those two entries are already the same contact.</p>
-    </div>
+    {{template "status_banner" dict "variant" "info" "title" "Nothing to merge." "body" "Those two entries are already the same contact."}}
     {{- else if eq .MergeResult "invalid"}}
-    <div class="notice-card" role="status">
-      <p class="link-card-title">That merge could not be read.</p>
-      <p class="link-card-sub">Reload the tab and try the Merge control again.</p>
-    </div>
+    {{template "status_banner" dict "variant" "warning" "title" "That merge could not be read." "body" "Reload the tab and try the Merge control again."}}
     {{- else if eq .MergeResult "error"}}
-    <div class="notice-card" role="status">
-      <p class="link-card-title">The merge did not complete.</p>
-      <p class="link-card-sub">Nothing was changed. See Logs for details and try again.</p>
-    </div>
+    {{template "status_banner" dict "variant" "error" "title" "The merge did not complete." "body" "Nothing was changed. See Logs for details and try again."}}
     {{- end}}
     {{- if eq .SplitResult "ok"}}
-    <div class="notice-card" role="status">
-      <p class="link-card-title">Contact split.</p>
-      <p class="link-card-sub">The chosen identifiers are now a separate person, and this split is durable —
-        auto-match and any stored merge will keep them apart across re-imports.</p>
-    </div>
+    {{template "status_banner" dict "variant" "success" "title" "Contact split." "body" "The chosen identifiers are now a separate person, and this split is durable — auto-match and any stored merge will keep them apart across re-imports."}}
     {{- else if eq .SplitResult "invalid"}}
-    <div class="notice-card" role="status">
-      <p class="link-card-title">Nothing was split.</p>
-      <p class="link-card-sub">Select at least one identifier to move — but not every one — and try again.</p>
-    </div>
+    {{template "status_banner" dict "variant" "warning" "title" "Nothing was split." "body" "Select at least one identifier to move — but not every one — and try again."}}
     {{- else if eq .SplitResult "error"}}
-    <div class="notice-card" role="status">
-      <p class="link-card-title">The split did not complete.</p>
-      <p class="link-card-sub">At least one identifier must stay behind. Nothing was changed — see Logs
-        for details.</p>
-    </div>
+    {{template "status_banner" dict "variant" "error" "title" "The split did not complete." "body" "At least one identifier must stay behind. Nothing was changed — see Logs for details."}}
     {{- end}}
 
     {{/* Merge RULES. Toggle chips over checkboxes (the search filters' pattern),

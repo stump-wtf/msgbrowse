@@ -129,52 +129,32 @@
       {{- if .UnpairResult}}
       {{/* Post-redirect banner from the unpair POST (#158): the same
            fixed-enum PRG contract as the pair banner below. */}}
-      <div class="notice-card" role="status">
         {{- if eq .UnpairResult "ok"}}
-        <p class="link-card-title">Device unpaired.</p>
-        <p class="link-card-sub">Its folders are unshared and sync to it has stopped. Archives already
-          synced to this device stay on disk and remain browsable.</p>
+        {{template "status_banner" dict "variant" "success" "title" "Device unpaired." "body" "Its folders are unshared and sync to it has stopped. Archives already synced to this device stay on disk and remain browsable."}}
         {{- else if eq .UnpairResult "invalid"}}
-        <p class="link-card-title">That device ID was not recognized.</p>
-        <p class="link-card-sub">Use the Unpair control beside a paired device below.</p>
+        {{template "status_banner" dict "variant" "warning" "title" "That device ID was not recognized." "body" "Use the Unpair control beside a paired device below."}}
         {{- else if eq .UnpairResult "unknown"}}
-        <p class="link-card-title">That device is not paired.</p>
-        <p class="link-card-sub">It may already have been unpaired; the list below is current.</p>
+        {{template "status_banner" dict "variant" "info" "title" "That device is not paired." "body" "It may already have been unpaired; the list below is current."}}
         {{- else if eq .UnpairResult "unavailable"}}
-        <p class="link-card-title">Device sync is not running.</p>
-        <p class="link-card-sub">Enable device sync and restart, then try again.</p>
+        {{template "status_banner" dict "variant" "error" "title" "Device sync is not running." "body" "Enable device sync and restart, then try again."}}
         {{- else}}
-        <p class="link-card-title">Unpairing did not fully complete.</p>
-        <p class="link-card-sub">The device was removed from this node's registry, but the sync engine
-          did not accept the change — sync to it stops at the next engine start. See Logs for details.</p>
+        {{template "status_banner" dict "variant" "error" "title" "Unpairing did not fully complete." "body" "The device was removed from this node's registry, but the sync engine did not accept the change — sync to it stops at the next engine start. See Logs for details."}}
         {{- end}}
-      </div>
       {{- end}}
       {{- if .PairResult}}
       {{/* Post-redirect banner from the pair POST (fixed enum, PRG). Rendered
            server-side on a fresh page load; role=status for assistive tech. */}}
-      <div class="notice-card" role="status">
         {{- if eq .PairResult "ok"}}
-        <p class="link-card-title">Device paired.</p>
-        <p class="link-card-sub">The archive folders are now shared with it. Pair this node's code on
-          the other device too (both devices must accept each other) — syncing starts once both sides
-          have paired.</p>
+        {{template "status_banner" dict "variant" "success" "title" "Device paired." "body" "The archive folders are now shared with it. Pair this node's code on the other device too (both devices must accept each other) — syncing starts once both sides have paired."}}
         {{- else if eq .PairResult "invalid"}}
-        <p class="link-card-title">That pairing code was not recognized.</p>
-        <p class="link-card-sub">Paste the other device's manual code (MSGB2.…), its device ID, or
-          scan its QR again.</p>
+        {{template "status_banner" dict "variant" "warning" "title" "That pairing code was not recognized." "body" "Paste the other device's manual code (MSGB2.…), its device ID, or scan its QR again."}}
         {{- else if eq .PairResult "self"}}
-        <p class="link-card-title">That is this device's own ID.</p>
-        <p class="link-card-sub">Paste the code shown on the <em>other</em> device instead.</p>
+        {{template "status_banner" dict "variant" "warning" "title" "That is this device's own ID." "body" "Paste the code shown on the <em>other</em> device instead."}}
         {{- else if eq .PairResult "unavailable"}}
-        <p class="link-card-title">Device sync is not running.</p>
-        <p class="link-card-sub">Enable device sync and restart, then pair again.</p>
+        {{template "status_banner" dict "variant" "error" "title" "Device sync is not running." "body" "Enable device sync and restart, then pair again."}}
         {{- else}}
-        <p class="link-card-title">Pairing failed.</p>
-        <p class="link-card-sub">The sync engine did not accept the change — see Logs for details and
-          try again.</p>
+        {{template "status_banner" dict "variant" "error" "title" "Pairing failed." "body" "The sync engine did not accept the change — see Logs for details and try again."}}
         {{- end}}
-      </div>
       {{- end}}
       {{- if .Pairing}}
       {{/* The engine is running: server-rendered QR of the device-ID payload
