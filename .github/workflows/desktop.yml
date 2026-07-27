@@ -154,6 +154,24 @@ jobs:
           go install github.com/wailsapp/wails/v2/cmd/wails@${{ env.WAILS_VERSION }}
           echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
 
+      # Stamp wails.json info.productVersion from the release tag so the
+      # bundle's CFBundleShortVersionString matches the tag. Without this the
+      # checked-in default ships verbatim and every release reports the same
+      # stale version — which makes "did I get the new build?" impossible to
+      # answer from the About panel. On non-tag refs (PR / main builds) the
+      # version becomes "0.0.0-dev+<short-sha>" so a dev build is unmistakable.
+      - name: Stamp productVersion from tag
+        working-directory: cmd/msgbrowse-desktop
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            VERSION="${GITHUB_REF#refs/tags/v}"
+          else
+            VERSION="0.0.0-dev+${GITHUB_SHA:0:7}"
+          fi
+          echo "stamping productVersion=$VERSION"
+          jq --arg v "$VERSION" '.info.productVersion = $v' wails.json > wails.json.stamped
+          mv wails.json.stamped wails.json
+
       - name: Headless module tests (pure Go)
         run: CGO_ENABLED=0 go test ./...
 
@@ -493,6 +511,20 @@ jobs:
           cache-dependency-path: |
             go.sum
             cmd/msgbrowse-desktop/go.sum
+
+      # Same stamping as the darwin job — keep the two builds reporting the
+      # same version string. (See "Stamp productVersion from tag" above.)
+      - name: Stamp productVersion from tag
+        working-directory: cmd/msgbrowse-desktop
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            VERSION="${GITHUB_REF#refs/tags/v}"
+          else
+            VERSION="0.0.0-dev+${GITHUB_SHA:0:7}"
+          fi
+          echo "stamping productVersion=$VERSION"
+          jq --arg v "$VERSION" '.info.productVersion = $v' wails.json > wails.json.stamped
+          mv wails.json.stamped wails.json
 
       - name: Headless module tests (pure Go)
         run: make desktop-test

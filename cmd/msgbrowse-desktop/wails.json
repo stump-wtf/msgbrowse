@@ -12,7 +12,7 @@
   "info": {
     "companyName": "Joe Stump",
     "productName": "msgbrowse",
-    "productVersion": "0.1.0",
+    "productVersion": "0.2.0",
     "copyright": "Copyright © Joe Stump",
     "comments": "Local-only browser over your Signal, iMessage, and WhatsApp archives."
   }
