@@ -27,6 +27,9 @@ type fakeLLMConfigurator struct {
 	// the probe returns (nil = reachable).
 	tested  []llm.Settings
 	testErr error
+	// models, when non-nil, is what ListModels returns; nil falls through to
+	// llm.ErrModelsNotSupported (the pre-#271 default).
+	models []string
 }
 
 func (f *fakeLLMConfigurator) CurrentLLM() llm.Settings { return f.cur }
@@ -47,6 +50,9 @@ func (f *fakeLLMConfigurator) TestLLM(_ context.Context, s llm.Settings) error {
 func (f *fakeLLMConfigurator) ListModels(_ context.Context) ([]string, error) {
 	if f.testErr != nil {
 		return nil, f.testErr
+	}
+	if f.models != nil {
+		return f.models, nil
 	}
 	return nil, llm.ErrModelsNotSupported
 }
@@ -725,5 +731,76 @@ func TestLLMModelsRefreshValidationRejected(t *testing.T) {
 	}
 	if !contains(rec.Body.String(), "A base URL is required") {
 		t.Error("missing the base-URL field error")
+	}
+}
+
+// TestLLMTabAutoLoadsModels (#271): GET /settings/llm populates .Models from
+// the live configurator and the embed/facts fields render as <select>
+// dropdowns on first paint — no button click required.
+func TestLLMTabAutoLoadsModels(t *testing.T) {
+	srv, _, _ := newTestServer(t)
+	fc := &fakeLLMConfigurator{
+		cur:    llm.Settings{BaseURL: "http://llm.test:4000/v1", EmbedModel: "test-embed", ChatModel: "test-chat"},
+		models: []string{"alpha", "beta", "gamma"},
+	}
+	srv.SetLLMConfig(fc)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest("GET", "/settings/llm", nil)
+	srv.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d", rec.Code)
+	}
+	body := rec.Body.String()
+	if !contains(body, `<select id="llm-embed-model"`) {
+		t.Error("embed_model should render as a <select> when models are loaded")
+	}
+	if !contains(body, `<select id="llm-facts-model"`) {
+		t.Error("facts_model should render as a <select> when models are loaded")
+	}
+	// The auto-loaded models must appear as options.
+	for _, m := range []string{"alpha", "beta", "gamma"} {
+		if !contains(body, `<option value="`+m+`"`) {
+			t.Errorf("missing option for model %q", m)
+		}
+	}
+	// No ModelsResult banner on initial load — the dropdowns are the signal.
+	if contains(body, "Models refreshed.") {
+		t.Error("initial GET must not render the 'Models refreshed' banner (that's the explicit refresh path)")
+	}
+}
+
+// TestLLMTabAutoLoadSilentOnError (#271): when the endpoint doesn't serve
+// /v1/models (or the probe fails for any reason), the GET falls back to
+// free-text inputs without a banner — the dropdowns simply aren't there,
+// and the Refresh button remains as the explicit retry.
+func TestLLMTabAutoLoadSilentOnError(t *testing.T) {
+	srv, _, _ := newTestServer(t)
+	fc := &fakeLLMConfigurator{
+		cur: llm.Settings{BaseURL: "http://llm.test:4000/v1", EmbedModel: "test-embed", ChatModel: "test-chat"},
+		// models nil → ListModels returns ErrModelsNotSupported.
+	}
+	srv.SetLLMConfig(fc)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest("GET", "/settings/llm", nil)
+	srv.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d", rec.Code)
+	}
+	body := rec.Body.String()
+	if !contains(body, `<input id="llm-embed-model"`) {
+		t.Error("embed_model should fall back to <input> when the listing probe fails")
+	}
+	if !contains(body, `<input id="llm-facts-model"`) {
+		t.Error("facts_model should fall back to <input> when the listing probe fails")
+	}
+	// No error banner on initial GET — the failure is silent.
+	for _, banner := range []string{"Model listing not supported.", "Could not reach the endpoint.", "Model listing is not available here."} {
+		if contains(body, banner) {
+			t.Errorf("initial GET must not render the %q banner (silent fallback)", banner)
+		}
 	}
 }

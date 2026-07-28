@@ -27,6 +27,7 @@ import (
 	"net/url"
 	"sort"
 	"strings"
+	"time"
 	"unicode"
 
 	"github.com/joestump/msgbrowse/internal/llm"
@@ -135,6 +136,13 @@ func (s *Server) currentLLM() llm.Settings {
 // handleSettingsLLM renders the LLM tab (GET /settings/llm) with the current
 // effective values. Safe GET: no mutation; the minted token arms the save
 // form.
+//
+// When a live configurator is wired, the handler also probes the endpoint's
+// /v1/models listing with a short timeout so the embed/facts fields render
+// as dropdowns on first paint (#271) — the user shouldn't have to know the
+// "Refresh models" button exists. A failed probe is silent (no banner): the
+// fields fall back to free-text inputs, and the button remains as the
+// explicit retry once the URL or key has been adjusted.
 func (s *Server) handleSettingsLLM(w http.ResponseWriter, r *http.Request) {
 	cur := s.currentLLM()
 	data := llmSettingsData{
@@ -144,8 +152,41 @@ func (s *Server) handleSettingsLLM(w http.ResponseWriter, r *http.Request) {
 		HasAPIKey:     cur.APIKey != "",
 		APIKeyFromEnv: cur.APIKeyFromEnv,
 	}
+	if s.llmConfig != nil {
+		ctx, cancel := context.WithTimeout(r.Context(), 3*time.Second)
+		models, err := s.listLLMModels(ctx)
+		cancel()
+		if err == nil {
+			data.Models = models
+		} else {
+			s.log.Debug("LLM auto-load model listing skipped",
+				"base_url", cur.BaseURL, "error", err)
+		}
+	}
 	data.EmbedModelChanged = s.embedModelChanged(r.Context(), cur.EmbedModel)
 	s.renderLLMSettings(w, r, data)
+}
+
+// listLLMModels fetches, filters, and sorts the endpoint's /v1/models listing
+// via the live configurator. Shared between handleSettingsLLM (auto-load) and
+// handleSettingsLLMModels (explicit refresh). The caller is responsible for
+// the timeout and for mapping the error to a user-facing banner when one is
+// wanted — the helper returns the raw error so each caller can decide.
+func (s *Server) listLLMModels(ctx context.Context) ([]string, error) {
+	models, err := s.llmConfig.ListModels(ctx)
+	if err != nil {
+		return nil, err
+	}
+	// Filter: reject models that fail validation (non-printable, too long).
+	filtered := make([]string, 0, len(models))
+	for _, m := range models {
+		if validateLLMModel(m) == "" {
+			filtered = append(filtered, m)
+		}
+	}
+	// Sort for stable display.
+	sort.Strings(filtered)
+	return filtered, nil
 }
 
 // handleSettingsLLMSave is POST /settings/llm — the privileged save. Gate
@@ -418,7 +459,7 @@ func (s *Server) handleSettingsLLMModels(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	models, err := s.llmConfig.ListModels(r.Context())
+	models, err := s.listLLMModels(r.Context())
 	if err != nil {
 		s.log.Warn("LLM model listing failed",
 			"base_url", data.BaseURL, "error", err)
@@ -431,19 +472,9 @@ func (s *Server) handleSettingsLLMModels(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	// Filter: reject models that fail validation (non-printable, too long).
-	filtered := make([]string, 0, len(models))
-	for _, m := range models {
-		if validateLLMModel(m) == "" {
-			filtered = append(filtered, m)
-		}
-	}
-	// Sort for stable display.
-	sort.Strings(filtered)
-
 	s.log.Info("LLM model listing succeeded",
-		"base_url", data.BaseURL, "models", len(filtered))
-	data.Models = filtered
+		"base_url", data.BaseURL, "models", len(models))
+	data.Models = models
 	data.ModelsResult = "ok"
 	s.renderLLMSettings(w, r, data)
 }
