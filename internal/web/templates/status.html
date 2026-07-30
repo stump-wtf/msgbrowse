@@ -186,8 +186,13 @@
           </div></div>
       </div>
       {{if .Embedding.LastError}}
-      <p class="status-note mt-4"><span class="sync-badge sync-badge-err">Failed</span>
-        Last run aborted: <span class="font-mono">{{.Embedding.LastError}}</span></p>
+      <div class="status-note mt-4">
+        <span class="sync-badge sync-badge-err">Failed</span>
+        Last run aborted: {{summarizeError .Embedding.LastError}}
+        <details class="mt-1"><summary class="status-note cursor-pointer">Show raw error</summary>
+          <pre class="font-mono text-xs mt-1 overflow-x-auto">{{.Embedding.LastError}}</pre>
+        </details>
+      </div>
       {{end}}
 
       {{/* Run history: the index's recent track record (newest first). */}}
