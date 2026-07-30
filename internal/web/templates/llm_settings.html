@@ -107,7 +107,7 @@
         </div>
 
         <div class="space-y-1">
-          <label class="eyebrow block" for="llm-facts-model">Facts model</label>
+          <label class="eyebrow block" for="llm-facts-model">Chat model</label>
           {{- if .Models}}
           <select id="llm-facts-model" name="facts_model" class="filter-input w-full font-mono"
                   {{if .ErrFactsModel}}aria-invalid="true" aria-describedby="llm-facts-model-error"{{else}}aria-describedby="llm-facts-model-hint"{{end}}>
@@ -130,8 +130,8 @@
             {{- if eq .ErrFactsModel "toolong"}}That model name is too long.
             {{- else}}That model name contains characters that are not allowed.{{end}}</p>
           {{- end}}
-          <p id="llm-facts-model-hint" class="status-note">The chat model used by the facts feature (and
-            the journal digest later); stored as <code class="font-mono">llm.chat_model</code>.</p>
+          <p id="llm-facts-model-hint" class="status-note">The chat model behind the facts feature and journal digests;
+            stored as <code class="font-mono">llm.chat_model</code>.</p>
         </div>
 
         <div class="space-y-1">

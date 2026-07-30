@@ -23,9 +23,9 @@
          sub-nav, with /logs staying the canonical URL. */}}
     <h1 class="screen-h1">Settings</h1>
     {{template "settings_subnav" "logs"}}
-    <p class="screen-sub">The most recent Enable and Refresh run for each source — the exporter command,
-      its exit status, captured output, and import counts. This is the diagnostic surface for a failed
-      Enable or Refresh; nothing here leaves this machine.</p>
+    <p class="screen-sub">The most recent Enable and Refresh run for each source started from this app session —
+      the exporter command, its exit status, captured output, and import counts. Imports run outside this
+      app (CLI or scheduled) aren't captured here; check the Providers tab for last-synced times.</p>
 
     {{template "logs_entries" .}}
 
@@ -110,7 +110,8 @@
 
     {{- if not .HasJob}}
     <p class="log-empty">
-      {{- if $.EnableAvailable}}No Enable or Refresh has run for {{.Label}} yet. Run one from the Providers page; its log will appear here.
+      {{- if $.EnableAvailable}}No import has run from this app session for {{.Label}}.
+      Run one from the <a href="/providers" class="link link-hover">Providers</a> page; its log will appear here.
       {{- else}}Logs appear here after an Enable or Refresh in the desktop app (with its bundled exporters) or with a configured exporter path.{{end}}
     </p>
     {{- else}}
