@@ -204,29 +204,35 @@ func TestOverviewEmbeddingFailedRun(t *testing.T) {
 	}
 }
 
-// TestOverviewMCPCard (issue #1): the MCP connection block — endpoint URL,
-// client JSON, `claude mcp add` one-liner, each with its copy-button wiring —
-// renders on the Overview, shared verbatim with /settings via the
-// mcp_connect_card define ( /settings keeps it too: it stays canonical).
+// TestOverviewMCPCard (#275): the MCP connection card renders only on the MCP
+// settings tab — not on Home, which now carries a quick-link instead. The card
+// lives at /settings/mcp exclusively.
 func TestOverviewMCPCard(t *testing.T) {
 	srv, _, _ := newTestServer(t)
-	for _, route := range []string{"/", "/settings/mcp"} {
-		body := get(t, srv, route).Body.String()
-		for _, want := range []string{
-			"MCP server",
-			`id="mcp-endpoint"`,
-			`data-copy-target="mcp-endpoint"`,
-			`id="mcp-config-json"`,
-			`data-copy-target="mcp-config-json"`,
-			`id="mcp-add-command"`,
-			`data-copy-target="mcp-add-command"`,
-			"http://example.com/mcp", // httptest requests carry Host example.com
-			"claude mcp add",
-		} {
-			if !contains(body, want) {
-				t.Errorf("%s missing MCP marker %q", route, want)
-			}
+	// The MCP card renders on /settings/mcp only.
+	body := get(t, srv, "/settings/mcp").Body.String()
+	for _, want := range []string{
+		"MCP server",
+		`id="mcp-endpoint"`,
+		`data-copy-target="mcp-endpoint"`,
+		`id="mcp-config-json"`,
+		`data-copy-target="mcp-config-json"`,
+		`id="mcp-add-command"`,
+		`data-copy-target="mcp-add-command"`,
+		"http://example.com/mcp", // httptest requests carry Host example.com
+		"claude mcp add",
+	} {
+		if !contains(body, want) {
+			t.Errorf("/settings/mcp missing MCP marker %q", want)
 		}
+	}
+	// Home has the MCP quick-link, NOT the card body (#275).
+	home := get(t, srv, "/").Body.String()
+	if contains(home, `id="mcp-endpoint"`) {
+		t.Error("Home should not render the MCP connection card (replaced by quick-link #275)")
+	}
+	if !contains(home, `href="/settings/mcp"`) {
+		t.Error("Home missing the MCP quick-link")
 	}
 	// Device pairing stays on Settings only (issue #1 scope).
 	if body := get(t, srv, "/").Body.String(); contains(body, "Pair a device") {
@@ -244,7 +250,7 @@ func TestOverviewPartialCarriesConsolidatedCards(t *testing.T) {
 		t.Fatalf("partial status = %d", rec.Code)
 	}
 	body := rec.Body.String()
-	for _, want := range []string{"By source", "Semantic search index", "MCP server", `id="mcp-endpoint"`} {
+	for _, want := range []string{"By source", "Semantic search index", `href="/settings/mcp"`} {
 		if !contains(body, want) {
 			t.Errorf("overview partial missing %q", want)
 		}

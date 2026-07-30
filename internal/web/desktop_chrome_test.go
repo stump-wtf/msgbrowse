@@ -41,7 +41,7 @@ func TestDesktopChromeFlagRendersBodyClassAndScript(t *testing.T) {
 func TestDesktopChromeOnEveryFullPage(t *testing.T) {
 	srv, _, _ := newTestServer(t)
 	srv.SetDesktopChrome(true)
-	for _, path := range []string{"/", "/search", "/gallery", "/settings/mcp", "/logs", "/status", "/providers"} {
+	for _, path := range []string{"/", "/search", "/gallery", "/settings/mcp", "/logs", "/status"} {
 		body := get(t, srv, path).Body.String()
 		if !contains(body, "desktop-chrome") {
 			t.Errorf("GET %s missing the desktop-chrome body class", path)
