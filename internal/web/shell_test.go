@@ -96,7 +96,7 @@ func TestToolbarIconButtonsLabelled(t *testing.T) {
 	for _, want := range []string{
 		`aria-label="Toggle sidebar"`, // mobile drawer toggle
 		`aria-label="Toggle theme"`,   // theme toggle
-		`aria-label="Settings"`,       // settings gear → /settings
+		`aria-label="Settings"`,       // settings gear → /providers
 	} {
 		if !contains(body, want) {
 			t.Errorf("toolbar icon button missing aria-label %q", want)
@@ -106,9 +106,9 @@ func TestToolbarIconButtonsLabelled(t *testing.T) {
 	if !contains(body, "data-theme-toggle") {
 		t.Error("toolbar missing the data-theme-toggle control")
 	}
-	// The settings gear links to /settings.
-	if !contains(body, `href="/settings"`) {
-		t.Error("toolbar settings gear should link to /settings")
+	// The settings gear links to /providers (#223).
+	if !contains(body, `href="/providers"`) {
+		t.Error("toolbar settings gear should link to /providers")
 	}
 	// The header keeps banner semantics (daisyUI dropped, but role=banner is the
 	// implicit role of <header> not nested in a section/article — which holds here).
@@ -266,7 +266,7 @@ func TestHeaderTabs(t *testing.T) {
 		{"/media", messagesIdle, mediaActive, journalIdle, "Media"},
 		{"/journal", messagesIdle, mediaIdle, journalActive, "Journal"},
 		{"/search", messagesIdle, mediaIdle, journalIdle, "none"},
-		{"/settings", messagesIdle, mediaIdle, journalIdle, "none"},
+		{"/settings/mcp", messagesIdle, mediaIdle, journalIdle, "none"},
 	}
 	for _, c := range cases {
 		t.Run(c.route, func(t *testing.T) {
@@ -313,7 +313,7 @@ func TestJournalReachableFromEveryPage(t *testing.T) {
 	if err != nil || conv == nil {
 		t.Fatalf("get conversation: %v", err)
 	}
-	for _, route := range []string{"/", "/c/" + itoa(conv.ID), "/media", "/gallery", "/search", "/settings", "/journal", "/status"} {
+	for _, route := range []string{"/", "/c/" + itoa(conv.ID), "/media", "/gallery", "/search", "/settings/mcp", "/journal", "/status"} {
 		if body := get(t, srv, route).Body.String(); !contains(body, `href="/journal"`) {
 			t.Errorf("%s does not link to /journal — the journal must be reachable from every page", route)
 		}

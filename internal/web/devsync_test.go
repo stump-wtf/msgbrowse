@@ -204,7 +204,7 @@ func TestUnpairTwoStepConfirm(t *testing.T) {
 		t.Fatalf("step-1 unpair = %d, want 303", rec.Code)
 	}
 	loc := rec.Header().Get("Location")
-	want := "/settings?unpair=confirm&device=" + url.QueryEscape(testPeerDeviceID)
+	want := "/settings/mcp?unpair=confirm&device=" + url.QueryEscape(testPeerDeviceID)
 	if loc != want {
 		t.Fatalf("step-1 redirect = %q, want %q", loc, want)
 	}
@@ -222,7 +222,7 @@ func TestUnpairTwoStepConfirm(t *testing.T) {
 	}
 
 	// A device id NOT in the registry renders no confirmation.
-	other := get(t, srv, "/settings?unpair=confirm&device="+url.QueryEscape(testSelfDeviceID)).Body.String()
+	other := get(t, srv, "/settings/mcp?unpair=confirm&device="+url.QueryEscape(testSelfDeviceID)).Body.String()
 	if contains(other, `name="confirm" value="1"`) {
 		t.Error("confirm affordance rendered for an unpaired device id")
 	}
@@ -230,7 +230,7 @@ func TestUnpairTwoStepConfirm(t *testing.T) {
 	// Step 2: confirm=1 → the source unpairs, PRG to ?unpair=ok.
 	tok = mintToken(t, srv)
 	rec = unpairPOST(t, srv, selfOrigin, tok, url.Values{"device_id": {testPeerDeviceID}, "confirm": {"1"}})
-	if rec.Code != http.StatusSeeOther || rec.Header().Get("Location") != "/settings?unpair=ok" {
+	if rec.Code != http.StatusSeeOther || rec.Header().Get("Location") != "/settings/mcp?unpair=ok" {
 		t.Fatalf("confirmed unpair = %d → %q, want 303 → /settings?unpair=ok", rec.Code, rec.Header().Get("Location"))
 	}
 	if len(src.unpaired) != 1 || src.unpaired[0] != testPeerDeviceID {
@@ -246,7 +246,7 @@ func TestUnpairErrorStates(t *testing.T) {
 		srv := newPairServer(t, src)
 		tok := mintToken(t, srv)
 		rec := unpairPOST(t, srv, selfOrigin, tok, url.Values{"device_id": {"<script>"}, "confirm": {"1"}})
-		if rec.Code != http.StatusSeeOther || rec.Header().Get("Location") != "/settings?unpair=invalid" {
+		if rec.Code != http.StatusSeeOther || rec.Header().Get("Location") != "/settings/mcp?unpair=invalid" {
 			t.Fatalf("malformed-id unpair = %d → %q", rec.Code, rec.Header().Get("Location"))
 		}
 		if len(src.unpaired) != 0 {
@@ -259,7 +259,7 @@ func TestUnpairErrorStates(t *testing.T) {
 		srv := newPairServer(t, src)
 		tok := mintToken(t, srv)
 		rec := unpairPOST(t, srv, selfOrigin, tok, url.Values{"device_id": {testPeerDeviceID}, "confirm": {"1"}})
-		if rec.Header().Get("Location") != "/settings?unpair=unknown" {
+		if rec.Header().Get("Location") != "/settings/mcp?unpair=unknown" {
 			t.Errorf("unknown-peer redirect = %q", rec.Header().Get("Location"))
 		}
 	})
@@ -269,7 +269,7 @@ func TestUnpairErrorStates(t *testing.T) {
 		srv := newPairServer(t, src)
 		tok := mintToken(t, srv)
 		rec := unpairPOST(t, srv, selfOrigin, tok, url.Values{"device_id": {testPeerDeviceID}, "confirm": {"1"}})
-		if rec.Header().Get("Location") != "/settings?unpair=error" {
+		if rec.Header().Get("Location") != "/settings/mcp?unpair=error" {
 			t.Errorf("engine-error redirect = %q", rec.Header().Get("Location"))
 		}
 	})
@@ -277,7 +277,7 @@ func TestUnpairErrorStates(t *testing.T) {
 		srv := newPairServer(t, nil)
 		tok := mintToken(t, srv)
 		rec := unpairPOST(t, srv, selfOrigin, tok, url.Values{"device_id": {testPeerDeviceID}, "confirm": {"1"}})
-		if rec.Header().Get("Location") != "/settings?unpair=unavailable" {
+		if rec.Header().Get("Location") != "/settings/mcp?unpair=unavailable" {
 			t.Errorf("sourceless redirect = %q", rec.Header().Get("Location"))
 		}
 	})
@@ -290,7 +290,7 @@ func TestUnpairErrorStates(t *testing.T) {
 			"error":   "Unpairing did not fully complete.",
 		}
 		for state, wantText := range cases {
-			body := get(t, srv, "/settings?unpair="+state).Body.String()
+			body := get(t, srv, "/settings/mcp?unpair="+state).Body.String()
 			if !contains(body, wantText) {
 				t.Errorf("?unpair=%s missing banner %q", state, wantText)
 			}
@@ -313,7 +313,7 @@ func TestSettingsPeerLiveState(t *testing.T) {
 			Connected:  true,
 		}},
 	}})
-	body := get(t, srv, "/settings").Body.String()
+	body := get(t, srv, "/settings/mcp").Body.String()
 	if !contains(body, ">Connected</span>") {
 		t.Error("connected peer badge missing")
 	}
@@ -326,7 +326,7 @@ func TestSettingsPeerLiveState(t *testing.T) {
 		Running: false,
 		Peers:   []devsync.PeerStatus{{SyncPeer: src.peers[0]}},
 	}})
-	body = get(t, srv, "/settings").Body.String()
+	body = get(t, srv, "/settings/mcp").Body.String()
 	if !contains(body, ">State unknown</span>") {
 		t.Error("engine-down peer state not rendered as unknown")
 	}

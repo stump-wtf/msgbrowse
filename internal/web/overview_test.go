@@ -210,7 +210,7 @@ func TestOverviewEmbeddingFailedRun(t *testing.T) {
 // mcp_connect_card define ( /settings keeps it too: it stays canonical).
 func TestOverviewMCPCard(t *testing.T) {
 	srv, _, _ := newTestServer(t)
-	for _, route := range []string{"/", "/settings"} {
+	for _, route := range []string{"/", "/settings/mcp"} {
 		body := get(t, srv, route).Body.String()
 		for _, want := range []string{
 			"MCP server",

@@ -505,8 +505,12 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("POST /setup/recheck", s.handleSetupRecheck)
 	mux.HandleFunc("POST /setup/disable", s.handleSetupDisable)
 	mux.HandleFunc("GET /setup/status/{source}", s.handleSetupStatus)
-	mux.HandleFunc("GET /settings", s.handleSettings)
-	// The Settings → LLM tab (#191): a safe GET render plus the privileged
+	// The MCP connection page (#223): the former "Settings" tab is now "MCP",
+	// served from /settings/mcp. The old /settings URL redirects to /providers
+	// (the new landing tab), following the /setup → /providers precedent.
+	mux.HandleFunc("GET /settings/mcp", s.handleSettings)
+	mux.HandleFunc("GET /settings", redirectTo("/providers"))
+	// The MCP → LLM tab (#191): a safe GET render plus the privileged
 	// save POST, gated inside its handler by the same checkSetupPOST contract
 	// as every other privileged POST.
 	mux.HandleFunc("GET /settings/llm", s.handleSettingsLLM)

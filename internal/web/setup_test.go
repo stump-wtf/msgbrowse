@@ -244,13 +244,13 @@ func TestHeaderNavOmitsSettingsSurfaces(t *testing.T) {
 			t.Errorf("header nav missing %s", href)
 		}
 	}
-	for _, href := range []string{`href="/providers"`, `href="/settings"`, `href="/logs"`, `href="/status"`, `href="/search"`} {
+	for _, href := range []string{`href="/providers"`, `href="/settings/mcp"`, `href="/logs"`, `href="/status"`, `href="/search"`} {
 		if strings.Contains(nav, href) {
 			t.Errorf("header nav must not carry %s — it lives under Settings or the search affordances (#175/#190)", href)
 		}
 	}
 	// The header gear stays the one Settings entry.
-	if !contains(body, `href="/settings" class="toolbar-icon-btn" aria-label="Settings"`) {
+	if !contains(body, `href="/providers" class="toolbar-icon-btn" aria-label="Settings"`) {
 		t.Error("header missing the settings gear (the sole Settings entry)")
 	}
 }
@@ -297,7 +297,7 @@ func TestReturningLaunchShowsTranscript(t *testing.T) {
 		t.Error("configured store did not render the transcript home")
 	}
 	// Providers is reachable from the Settings shell (#175: it left the sidebar).
-	if !contains(get(t, srv, "/settings").Body.String(), `href="/providers"`) {
+	if !contains(get(t, srv, "/providers").Body.String(), `href="/providers"`) {
 		t.Error("Settings shell missing the Providers tab")
 	}
 }

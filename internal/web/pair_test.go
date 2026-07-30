@@ -105,7 +105,7 @@ func TestPairSuccessRedirects(t *testing.T) {
 	if rec.Code != http.StatusSeeOther {
 		t.Fatalf("pair = %d, want 303", rec.Code)
 	}
-	if loc := rec.Header().Get("Location"); loc != "/settings?pair=ok" {
+	if loc := rec.Header().Get("Location"); loc != "/settings/mcp?pair=ok" {
 		t.Errorf("redirect = %q, want /settings?pair=ok", loc)
 	}
 	if src.paired != 1 || src.lastCode != testPeerDeviceID {
@@ -122,9 +122,9 @@ func TestPairErrorStates(t *testing.T) {
 		err  error
 		want string
 	}{
-		{"invalid payload", devices.ErrInvalidSyncPayload, "/settings?pair=invalid"},
-		{"self pair", devices.ErrSelfPair, "/settings?pair=self"},
-		{"engine error", io.ErrUnexpectedEOF, "/settings?pair=error"},
+		{"invalid payload", devices.ErrInvalidSyncPayload, "/settings/mcp?pair=invalid"},
+		{"self pair", devices.ErrSelfPair, "/settings/mcp?pair=self"},
+		{"engine error", io.ErrUnexpectedEOF, "/settings/mcp?pair=error"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -150,7 +150,7 @@ func TestPairEmptyCodeInvalid(t *testing.T) {
 	tok := mintToken(t, srv)
 
 	rec := pairPOST(t, srv, selfOrigin, tok, "")
-	if rec.Code != http.StatusSeeOther || rec.Header().Get("Location") != "/settings?pair=invalid" {
+	if rec.Code != http.StatusSeeOther || rec.Header().Get("Location") != "/settings/mcp?pair=invalid" {
 		t.Fatalf("empty-code pair = %d → %q, want 303 → /settings?pair=invalid", rec.Code, rec.Header().Get("Location"))
 	}
 	if src.paired != 0 {
@@ -166,7 +166,7 @@ func TestPairUnavailableWithoutSource(t *testing.T) {
 	tok := mintToken(t, srv)
 
 	rec := pairPOST(t, srv, selfOrigin, tok, testPeerDeviceID)
-	if rec.Code != http.StatusSeeOther || rec.Header().Get("Location") != "/settings?pair=unavailable" {
+	if rec.Code != http.StatusSeeOther || rec.Header().Get("Location") != "/settings/mcp?pair=unavailable" {
 		t.Fatalf("sourceless pair = %d → %q, want 303 → /settings?pair=unavailable", rec.Code, rec.Header().Get("Location"))
 	}
 }
@@ -183,12 +183,12 @@ func TestPairResultBanner(t *testing.T) {
 		"error":   "Pairing failed.",
 	}
 	for state, want := range cases {
-		body := get(t, srv, "/settings?pair="+state).Body.String()
+		body := get(t, srv, "/settings/mcp?pair="+state).Body.String()
 		if !contains(body, want) {
 			t.Errorf("?pair=%s missing banner text %q", state, want)
 		}
 	}
-	body := get(t, srv, "/settings?pair=<script>alert(1)</script>").Body.String()
+	body := get(t, srv, "/settings/mcp?pair=<script>alert(1)</script>").Body.String()
 	if contains(body, `role="status"`) {
 		t.Error("out-of-enum pair state rendered a banner")
 	}

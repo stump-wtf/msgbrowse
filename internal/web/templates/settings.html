@@ -1,30 +1,27 @@
 {{define "settings"}}{{template "page_start" .}}{{template "settings_content" .}}{{template "page_end" .}}{{end}}
 
-{{/* settings_subnav is the Settings shell's sub-navigation (issue #163):
-     Settings · Providers · Logs · Status · Backups · LLM · Contacts, rendered
-     at the top of each section's page so they read as one surface instead of
-     link-card jumps to standalone destinations. Providers joined the shell in
-     #175 (it left the sidebar — a configuration surface, not a primary
-     destination); LLM joined in #191 (the AI endpoint tab); Backups split off
-     Status in #2 (the encrypted-DB-snapshot inventory graduated to its own tab,
-     so Status is once again just ingest health); Contacts joined in #12 (the
-     cross-provider merge-rules + manual override surface). The dot is the active
-     tab's token ("settings" / "providers" / "logs" / "status" / "backups" /
-     "llm" / "contacts"); the
-     active tab carries aria-current so the state is conveyed as more than
-     color (SPEC-0013 §Accessibility spirit). Boosted like every in-app nav
-     (SPEC-0008 REQ-0008-006), so switching tabs swaps only #main-content; the
-     old routes stay the canonical URLs — nothing redirects. */}}
+{{/* settings_subnav is the Settings shell's sub-navigation (issue #163,
+     reordered in #223): Providers · MCP · LLM · Contacts · Status · Backups ·
+     Logs — user-facing surfaces first, diagnostics last. The gear button lands
+     on Providers (#223). The tab previously called "Settings" is now "MCP"
+     and lives at /settings/mcp; /settings redirects to /providers following the
+     /setup → /providers precedent. The dot is the active tab's token
+     ("providers" / "mcp" / "llm" / "contacts" / "status" / "backups" /
+     "logs"); the active tab carries aria-current so the state is conveyed as
+     more than color (SPEC-0013 §Accessibility spirit). Boosted like every
+     in-app nav (SPEC-0008 REQ-0008-006), so switching tabs swaps only
+     #main-content; the old routes stay the canonical URLs — nothing
+     redirects. */}}
 {{define "settings_subnav"}}
     <nav class="settings-subnav" aria-label="Settings sections"
          hx-boost="true" hx-target="#main-content" hx-select="#main-content" hx-swap="outerHTML" hx-push-url="true">
-      <a href="/settings" class="settings-tab{{if eq . "settings"}} settings-tab-active{{end}}"{{if eq . "settings"}} aria-current="page"{{end}}>Settings</a>
       <a href="/providers" class="settings-tab{{if eq . "providers"}} settings-tab-active{{end}}"{{if eq . "providers"}} aria-current="page"{{end}}>Providers</a>
-      <a href="/logs" class="settings-tab{{if eq . "logs"}} settings-tab-active{{end}}"{{if eq . "logs"}} aria-current="page"{{end}}>Logs</a>
-      <a href="/status" class="settings-tab{{if eq . "status"}} settings-tab-active{{end}}"{{if eq . "status"}} aria-current="page"{{end}}>Status</a>
-      <a href="/backups" class="settings-tab{{if eq . "backups"}} settings-tab-active{{end}}"{{if eq . "backups"}} aria-current="page"{{end}}>Backups</a>
+      <a href="/settings/mcp" class="settings-tab{{if eq . "mcp"}} settings-tab-active{{end}}"{{if eq . "mcp"}} aria-current="page"{{end}}>MCP</a>
       <a href="/settings/llm" class="settings-tab{{if eq . "llm"}} settings-tab-active{{end}}"{{if eq . "llm"}} aria-current="page"{{end}}>LLM</a>
       <a href="/settings/contacts" class="settings-tab{{if eq . "contacts"}} settings-tab-active{{end}}"{{if eq . "contacts"}} aria-current="page"{{end}}>Contacts</a>
+      <a href="/status" class="settings-tab{{if eq . "status"}} settings-tab-active{{end}}"{{if eq . "status"}} aria-current="page"{{end}}>Status</a>
+      <a href="/backups" class="settings-tab{{if eq . "backups"}} settings-tab-active{{end}}"{{if eq . "backups"}} aria-current="page"{{end}}>Backups</a>
+      <a href="/logs" class="settings-tab{{if eq . "logs"}} settings-tab-active{{end}}"{{if eq . "logs"}} aria-current="page"{{end}}>Logs</a>
     </nav>
 {{end}}
 
@@ -106,8 +103,8 @@
          the history opt-out stays. */}}
     <main id="main-content" class="flex-1" tabindex="0" hx-history="false">
   <div class="px-6 lg:px-8 py-8 max-w-4xl space-y-5">
-    <h1 class="screen-h1">Settings</h1>
-    {{template "settings_subnav" "settings"}}
+    <h1 class="screen-h1">MCP</h1>
+    {{template "settings_subnav" "mcp"}}
     <p class="screen-sub">Connect an MCP client to this archive, or pair another device.</p>
 
     {{/* Copy confirmations announce into the shared #copy-announce live region
@@ -264,7 +261,7 @@
                 <button type="submit" class="setup-btn setup-btn-danger"
                         aria-label="Confirm unpairing {{.Name}}">Unpair {{.Name}}</button>
               </form>
-              <a class="setup-btn setup-btn-ghost" href="/settings">Cancel</a>
+              <a class="setup-btn setup-btn-ghost" href="/settings/mcp">Cancel</a>
             </div>
             {{- else}}
             <div class="setup-card-actions">

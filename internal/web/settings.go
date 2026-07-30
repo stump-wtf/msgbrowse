@@ -189,7 +189,7 @@ var unpairResultStates = map[string]bool{
 	"ok": true, "invalid": true, "unknown": true, "unavailable": true, "error": true,
 }
 
-// handleSettings renders the Connect/Settings page. GET-only (the route
+// handleSettings renders the MCP connection page. GET-only (the route
 // pattern enforces it); the only query parameter consulted is the fixed-enum
 // ?pair= banner state from the pair POST's redirect.
 func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
@@ -197,10 +197,10 @@ func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 	if isPartialRequest(r) {
 		// Boosted navigations skip the sidebar listing entirely (SPEC-0008
 		// REQ-0008-006); this page needs no store work at all for the swap.
-		base = partialBase("Settings · msgbrowse", 0)
+		base = partialBase("MCP · msgbrowse", 0)
 	} else {
 		var err error
-		base, err = s.baseData(r.Context(), "Settings · msgbrowse", 0)
+		base, err = s.baseData(r.Context(), "MCP · msgbrowse", 0)
 		if err != nil {
 			s.serverError(w, err)
 			return
@@ -423,7 +423,7 @@ func (s *Server) handleDevicePair(w http.ResponseWriter, r *http.Request) {
 // settings page carrying the fixed-enum banner state (PRG: a refresh never
 // replays the POST).
 func (s *Server) redirectPairResult(w http.ResponseWriter, r *http.Request, state string) {
-	http.Redirect(w, r, "/settings?pair="+state, http.StatusSeeOther)
+	http.Redirect(w, r, "/settings/mcp?pair="+state, http.StatusSeeOther)
 }
 
 // handleDeviceUnpair is POST /settings/devices/unpair — the privileged action
@@ -460,7 +460,7 @@ func (s *Server) handleDeviceUnpair(w http.ResponseWriter, r *http.Request) {
 		// Step 1: no mutation. Redirect back with the peer's row marked for
 		// the inline confirmation (rendered only if the ID matches a registry
 		// row). The echoed ID is canonical — validated format, no free text.
-		http.Redirect(w, r, "/settings?unpair=confirm&device="+url.QueryEscape(deviceID), http.StatusSeeOther)
+		http.Redirect(w, r, "/settings/mcp?unpair=confirm&device="+url.QueryEscape(deviceID), http.StatusSeeOther)
 		return
 	}
 
@@ -483,5 +483,5 @@ func (s *Server) handleDeviceUnpair(w http.ResponseWriter, r *http.Request) {
 // settings page carrying the fixed-enum banner state (PRG: a refresh never
 // replays the POST).
 func (s *Server) redirectUnpairResult(w http.ResponseWriter, r *http.Request, state string) {
-	http.Redirect(w, r, "/settings?unpair="+state, http.StatusSeeOther)
+	http.Redirect(w, r, "/settings/mcp?unpair="+state, http.StatusSeeOther)
 }

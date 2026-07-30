@@ -55,7 +55,7 @@ func TestLogsViewerSurfacesCapturedStderr(t *testing.T) {
 // moved Status & backups link is there too.
 func TestLogsViewerLinkedFromSettings(t *testing.T) {
 	srv := newEmptyStoreServer(t)
-	body := get(t, srv, "/settings").Body.String()
+	body := get(t, srv, "/settings/mcp").Body.String()
 	if !strings.Contains(body, `href="/logs"`) {
 		t.Error("Settings page missing the Logs link")
 	}

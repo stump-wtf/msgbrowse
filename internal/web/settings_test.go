@@ -94,7 +94,7 @@ func testPayload(t *testing.T) *devices.SyncPayload {
 // to internal/mcp's builders, the single source the desktop menubar also uses.
 func TestSettingsMCPBlocks(t *testing.T) {
 	srv, _, _ := newTestServer(t)
-	rec := get(t, srv, "/settings")
+	rec := get(t, srv, "/settings/mcp")
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200", rec.Code)
 	}
@@ -121,12 +121,12 @@ func TestSettingsMCPBlocks(t *testing.T) {
 // demands identical data in every render mode.
 func TestSettingsPartialCarriesBothBlocks(t *testing.T) {
 	srv, _, _ := newTestServer(t)
-	rec := getPartial(t, srv, "/settings")
+	rec := getPartial(t, srv, "/settings/mcp")
 	if rec.Code != http.StatusOK {
 		t.Fatalf("partial status = %d, want 200", rec.Code)
 	}
 	body := rec.Body.String()
-	if !contains(body, "<title>Settings · msgbrowse</title>") {
+	if !contains(body, "<title>MCP · msgbrowse</title>") {
 		t.Error("partial missing the page title for htmx history")
 	}
 	const endpoint = "http://example.com/mcp"
@@ -151,7 +151,7 @@ func TestSettingsPartialCarriesBothBlocks(t *testing.T) {
 // carve-outs) — and the route is GET-only.
 func TestSettingsSecurityHeaders(t *testing.T) {
 	srv, _, _ := newTestServer(t)
-	settings := get(t, srv, "/settings")
+	settings := get(t, srv, "/settings/mcp")
 	home := get(t, srv, "/")
 
 	csp := settings.Header().Get("Content-Security-Policy")
@@ -172,7 +172,7 @@ func TestSettingsSecurityHeaders(t *testing.T) {
 	}
 
 	// GET-only: the mux route pattern rejects every other method.
-	if rec := post(t, srv, "/settings"); rec.Code != http.StatusMethodNotAllowed {
+	if rec := post(t, srv, "/settings/mcp"); rec.Code != http.StatusMethodNotAllowed {
 		t.Errorf("POST /settings = %d, want 405", rec.Code)
 	}
 }
@@ -182,7 +182,7 @@ func TestSettingsSecurityHeaders(t *testing.T) {
 // the page is complete with no QR and no pairing payload.
 func TestSettingsDeviceSyncDisabledState(t *testing.T) {
 	srv, _, _ := newTestServer(t)
-	body := get(t, srv, "/settings").Body.String()
+	body := get(t, srv, "/settings/mcp").Body.String()
 	if !contains(body, "Device sync is not enabled.") {
 		t.Error("disabled state missing its explanatory text")
 	}
@@ -205,7 +205,7 @@ func TestSettingsDeviceSyncFeatureGated(t *testing.T) {
 		t.Fatalf("new server: %v", err)
 	}
 	// Feature flag left false (its zero value) — the release-build default.
-	body := get(t, srv, "/settings").Body.String()
+	body := get(t, srv, "/settings/mcp").Body.String()
 	if contains(body, "Device sync") {
 		t.Error("Device sync section rendered while the feature is gated off")
 	}
@@ -241,7 +241,7 @@ func TestSettingsEnabledNoEngineState(t *testing.T) {
 		t.Fatalf("new server: %v", err)
 	}
 	srv.SetDeviceSyncFeature(true)
-	body := get(t, srv, "/settings").Body.String()
+	body := get(t, srv, "/settings/mcp").Body.String()
 	if !contains(body, "The sync engine is not running.") {
 		t.Error("enabled-without-engine state missing its explanatory text")
 	}
@@ -270,7 +270,7 @@ func TestSettingsQRRendersDeviceID(t *testing.T) {
 	payload := testPayload(t)
 	srv.SetPairingSource(&staticPairing{p: payload})
 
-	rec := get(t, srv, "/settings")
+	rec := get(t, srv, "/settings/mcp")
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200", rec.Code)
 	}
@@ -345,7 +345,7 @@ func TestSettingsPairedDevicesList(t *testing.T) {
 	src := &staticPairing{p: testPayload(t)}
 	srv.SetPairingSource(src)
 
-	body := get(t, srv, "/settings").Body.String()
+	body := get(t, srv, "/settings/mcp").Body.String()
 	if !contains(body, "No devices paired yet.") {
 		t.Error("empty registry missing its labeled state")
 	}
@@ -356,7 +356,7 @@ func TestSettingsPairedDevicesList(t *testing.T) {
 		Folders:  []string{"msgbrowse-signal", "msgbrowse-imessage"},
 		PairedAt: time.Date(2026, 7, 4, 10, 0, 0, 0, time.UTC),
 	}}
-	body = get(t, srv, "/settings").Body.String()
+	body = get(t, srv, "/settings/mcp").Body.String()
 	if !contains(body, "kitchen-mac") {
 		t.Error("registry missing the peer name")
 	}
@@ -377,7 +377,7 @@ func TestSettingsPairedDevicesList(t *testing.T) {
 // polite live region that announces copy confirmations.
 func TestSettingsAccessibilityContract(t *testing.T) {
 	srv, _, _ := newTestServer(t)
-	body := get(t, srv, "/settings").Body.String()
+	body := get(t, srv, "/settings/mcp").Body.String()
 
 	// Landmarks: the shell provides <main id="main-content"> and the sidebar
 	// <nav>; the page holds a single h1.
@@ -432,7 +432,7 @@ func TestSettingsAccessibilityContract(t *testing.T) {
 func TestSettingsToolbarEntry(t *testing.T) {
 	srv, _, _ := newTestServer(t)
 	body := get(t, srv, "/").Body.String()
-	if !contains(body, `href="/settings" class="toolbar-icon-btn" aria-label="Settings"`) {
+	if !contains(body, `href="/providers" class="toolbar-icon-btn" aria-label="Settings"`) {
 		t.Error("toolbar missing the settings gear")
 	}
 	if contains(body, "<span>Settings</span>") {
