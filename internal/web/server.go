@@ -282,6 +282,7 @@ func NewServer(st Store, cfg *config.Config, log *slog.Logger) (*Server, error) 
 		"dateLabel":        dateLabel,
 		"sourceSlug":       sourceSlug,
 		"humanSource":      source.Label,
+		"summarizeError":   SummarizeEmbedError,
 		"imgRenderable":    s.imgRenderable,
 		"imgTileState":     s.imgTileState,
 		"convRowCtx":       convRowCtx,
