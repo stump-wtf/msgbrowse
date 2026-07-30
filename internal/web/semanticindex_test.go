@@ -349,17 +349,19 @@ func TestStatusCardUnavailable(t *testing.T) {
 	}
 }
 
-// TestOverviewLinksToStatusIndex: the Overview's semantic-search card points at
-// the Status page rather than duplicating the controls.
-func TestOverviewLinksToStatusIndex(t *testing.T) {
+// TestOverviewSharesIndexCard: the Overview renders the shared
+// semantic_index_card define (#224) — the same card Status uses, including
+// the Build form when an indexer is wired.
+func TestOverviewSharesIndexCard(t *testing.T) {
 	srv, _ := newStatusServer(t, "test-embed", true)
 	body := get(t, srv, "/").Body.String()
-	if !contains(body, "Manage index") || !contains(body, `href="/status"`) {
-		t.Error("Overview semantic card missing the Manage index link to /status")
+	// The shared card renders (not the old inline copy).
+	if !contains(body, "semantic-index-card") {
+		t.Error("Overview missing the shared semantic_index_card")
 	}
-	// The buttons live only on Status, not duplicated on the Overview.
-	if contains(body, `action="/status/index"`) {
-		t.Error("Overview should not duplicate the Build form")
+	// With an indexer wired, Home shows the Build form too (#224).
+	if !contains(body, `action="/status/index"`) {
+		t.Error("Overview should render the Build form via the shared card")
 	}
 }
 

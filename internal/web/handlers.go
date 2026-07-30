@@ -170,6 +170,15 @@ type indexData struct {
 	MCPEndpointURL string
 	MCPConfigJSON  string
 	MCPAddCommand  string
+	// IndexAvailable / IndexRunning / IndexResult / History / SetupToken drive
+	// the shared semantic_index_card define (#224). Home sets IndexAvailable so
+	// the card body renders; the rest stay zero so the Build/Reset controls and
+	// run history are absent on Home (they live on Status).
+	IndexAvailable bool
+	IndexRunning   bool
+	IndexResult    string
+	History        []embedRunView
+	SetupToken     string
 }
 
 type conversationData struct {
@@ -328,6 +337,7 @@ func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 		MCPEndpointURL:    endpoint,
 		MCPConfigJSON:     mcp.ClientConfigJSON(endpoint),
 		MCPAddCommand:     mcp.ClaudeMCPAddCommand(endpoint),
+		IndexAvailable:    true,
 	})
 }
 
