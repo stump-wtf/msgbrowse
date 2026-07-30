@@ -26,20 +26,7 @@
       {{/* 3-cell stat strip: one bordered bar split by hairline dividers. The
            counts come from dedicated fields (not len .Conversations) so partial
            renders can skip the sidebar listing (REQ-0008-006). */}}
-      <div class="stat-strip mb-4">
-        <div class="stat-cell">
-          <div class="stat-cell-label">Conversations</div>
-          <div class="stat-cell-value">{{num .ConversationCount}}</div>
-        </div>
-        <div class="stat-cell">
-          <div class="stat-cell-label">Messages</div>
-          <div class="stat-cell-value">{{num .TotalMessages}}</div>
-        </div>
-        <div class="stat-cell">
-          <div class="stat-cell-label">Newest message</div>
-          <div class="stat-cell-value stat-cell-value-sm">{{if .NewestTS}}{{.NewestTS}}{{else}}—{{end}}</div>
-        </div>
-      </div>
+      {{template "stat_strip" .}}
 
       {{/* Reading-room cards (#239, design brief §Home): "On this day" beside
            "Jump back in", between the stat strip and the quick links. This is
@@ -158,43 +145,7 @@
            live (fresh embed_runs heartbeat), stalled (heartbeat went cold
            before the terminal write), or finished. Unconfigured renders a
            pointer, never fake zeros. */}}
-      <div class="status-card mb-4">
-        <div class="status-card-title">Semantic search index</div>
-        {{if not .Embedding.Configured}}
-        <p class="status-note">Semantic search is not configured. Set an embedding model on the
-          <a href="/settings/llm" class="link link-hover">LLM settings</a> tab, then run
-          <code class="font-mono">msgbrowse embed</code> to index your messages.</p>
-        {{else}}
-        {{if .Embedding.InProgress}}
-        <p class="status-note mb-4" role="status"><span class="sync-badge sync-badge-info">Indexing…</span>
-          {{num .Embedding.RunEmbedded}} messages embedded so far in the current run.</p>
-        {{else if .Embedding.Stalled}}
-        <p class="status-note mb-4"><span class="sync-badge sync-badge-warn">Interrupted</span>
-          The last index run stopped before finishing — run <code class="font-mono">msgbrowse embed</code>
-          again to resume where it left off.</p>
-        {{end}}
-        <div class="status-grid">
-          <div><div class="status-metric-label">Coverage</div>
-            <div class="status-metric-value">{{num .Embedding.Embedded}} of {{num .Embedding.Embeddable}} messages ({{.Embedding.Percent}}%)</div></div>
-          <div><div class="status-metric-label">Embedding model</div>
-            <div class="status-metric-value">{{.Embedding.Model}}</div></div>
-          <div><div class="status-metric-label">Last index run</div>
-            <div class="status-metric-value">
-              {{- if .Embedding.HasLastRun}}{{.Embedding.LastFinished}} · {{num .Embedding.LastEmbedded}} embedded in {{num .Embedding.LastDurationMS}} ms
-                {{- if and .Embedding.LastModel (ne .Embedding.LastModel .Embedding.Model)}} <span class="opacity-60">(model {{.Embedding.LastModel}})</span>{{end}}
-              {{- else if .Embedding.InProgress}}running now
-              {{- else}}never{{end -}}
-            </div></div>
-        </div>
-        {{if .Embedding.LastError}}
-        <p class="status-note mt-4"><span class="sync-badge sync-badge-err">Failed</span>
-          Last run aborted: <span class="font-mono">{{.Embedding.LastError}}</span></p>
-        {{end}}
-        {{end}}
-        {{/* The controls live on the Status page (#191): the Overview points at
-             them rather than duplicating the Build / Reset buttons here. */}}
-        <p class="status-note mt-4"><a href="/status" class="link link-hover">Manage index →</a></p>
-      </div>
+      {{template "semantic_index_card" .}}
       </div>{{/* end diagnostics block */}}
       {{else}}
       <div class="notice-card">

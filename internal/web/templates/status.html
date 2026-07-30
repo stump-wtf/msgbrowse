@@ -23,20 +23,7 @@
 
     <div class="status-card">
       <div class="status-card-title">Archive freshness</div>
-      <div class="stat-strip">
-        <div class="stat-cell">
-          <div class="stat-cell-label">Conversations</div>
-          <div class="stat-cell-value">{{num .ConversationCount}}</div>
-        </div>
-        <div class="stat-cell">
-          <div class="stat-cell-label">Messages</div>
-          <div class="stat-cell-value">{{num .TotalMessages}}</div>
-        </div>
-        <div class="stat-cell">
-          <div class="stat-cell-label">Newest message</div>
-          <div class="stat-cell-value stat-cell-value-sm">{{if .NewestTS}}{{.NewestTS}}{{else}}—{{end}}</div>
-        </div>
-      </div>
+      {{template "stat_strip" .}}
     </div>
 
     <div class="status-card">
