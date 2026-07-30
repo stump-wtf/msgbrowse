@@ -111,6 +111,11 @@
           <span class="link-card-title">Status</span>
           <span class="link-card-sub">Archive &amp; backups</span>
         </a>
+        <a href="/settings/mcp" class="link-card">
+          <span class="link-card-icon">{{template "icon-settings" .}}</span>
+          <span class="link-card-title">MCP</span>
+          <span class="link-card-sub">Connect Claude</span>
+        </a>
       </div>
 
       {{/* Diagnostics, subordinate to the reading room above (#239). Per-provider freshness
@@ -154,14 +159,6 @@
       </div>
       {{end}}
 
-      {{/* MCP connection (issue #1): the same card Settings shows — endpoint
-           URL, client JSON, `claude mcp add` — shared via mcp_connect_card so
-           the two can never drift. Sits outside the HasArchive gate so a fresh
-           user can wire up their client before importing anything. Device
-           pairing stays on Settings. */}}
-      <div class="mt-8">
-        {{template "mcp_connect_card" .}}
-      </div>
     </div>
   </div>
     </main>
