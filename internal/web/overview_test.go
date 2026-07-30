@@ -54,7 +54,7 @@ func TestOverviewProviderBreakdown(t *testing.T) {
 
 	body := get(t, srv, "/").Body.String()
 	for _, want := range []string{
-		"By provider",
+		"By source",
 		">Signal<",
 		"Last synced",
 		">" + itoa(int64(sc.Conversations)) + "<",
@@ -244,7 +244,7 @@ func TestOverviewPartialCarriesConsolidatedCards(t *testing.T) {
 		t.Fatalf("partial status = %d", rec.Code)
 	}
 	body := rec.Body.String()
-	for _, want := range []string{"By provider", "Semantic search index", "MCP server", `id="mcp-endpoint"`} {
+	for _, want := range []string{"By source", "Semantic search index", "MCP server", `id="mcp-endpoint"`} {
 		if !contains(body, want) {
 			t.Errorf("overview partial missing %q", want)
 		}
