@@ -427,12 +427,7 @@
 {{- else if eq .variant "info"}}{{ $class = "notice-info" }}
 {{- end}}
 <div class="notice-card {{$class}}{{if .class}} {{.class}}{{end}}" role="{{$role}}">
-  {{- if eq .variant "success"}}<span class="status-banner-icon">{{template "icon-check-circle"}}</span>
-  {{- else if eq .variant "error"}}<span class="status-banner-icon">{{template "icon-x-circle"}}</span>
-  {{- else if eq .variant "warning"}}<span class="status-banner-icon">{{template "icon-exclamation-triangle"}}</span>
-  {{- else if eq .variant "info"}}<span class="status-banner-icon">{{template "icon-info-circle"}}</span>
-  {{- end}}
-  <p class="link-card-title">{{.title}}</p>
+  {{- if eq .variant "success"}}<span class="status-banner-icon">{{template "icon-check-circle"}}</span>{{- else if eq .variant "error"}}<span class="status-banner-icon">{{template "icon-x-circle"}}</span>{{- else if eq .variant "warning"}}<span class="status-banner-icon">{{template "icon-exclamation-triangle"}}</span>{{- else if eq .variant "info"}}<span class="status-banner-icon">{{template "icon-info-circle"}}</span>{{- end}}<p class="link-card-title">{{.title}}</p>
   {{- if .body}}<p class="link-card-sub">{{.body | safe}}</p>{{end}}
 </div>
 {{- end}}

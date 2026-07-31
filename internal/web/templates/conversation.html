@@ -25,9 +25,9 @@
         {{/* The name links to the person's Contact + AI Facts profile when the
              conversation is linked to a contact (groups/unlinked have none). */}}
         <h1 class="conv-title">
-          {{- if gt .Active.ContactID 0}}<a href="/contact/{{.Active.ContactID}}" class="link link-hover"
+          {{- if gt .Active.ContactID 0}}<a href="/contact/{{.Active.ContactID}}" class="link link-hover inline-flex items-center gap-1 group"
              hx-boost="true" hx-target="#main-content" hx-select="#main-content" hx-swap="outerHTML" hx-push-url="true"
-             title="View {{humanName .Active.Name}}'s profile">{{humanName .Active.Name}}</a>
+             title="View {{humanName .Active.Name}}'s profile">{{humanName .Active.Name}}<span class="opacity-0 group-hover:opacity-100 transition-opacity text-xs">→</span></a>
           {{- else}}{{humanName .Active.Name}}{{end}}
         </h1>
         {{- if .Active.Identifiers}}

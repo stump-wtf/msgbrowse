@@ -303,6 +303,7 @@ func parseReactionEntries(inner string) []Reaction {
 // ExtractLinks returns the deduplicated bare http(s) URLs in text (with trailing
 // sentence punctuation trimmed), in first-seen order. It is the plain-text URL
 // extractor shared with the iMessage parser, whose bodies carry no Markdown.
+// Junk URLs (protocol only, no domain) are filtered out.
 func ExtractLinks(text string) []Link {
 	if text == "" {
 		return nil
@@ -311,13 +312,31 @@ func ExtractLinks(text string) []Link {
 	seen := map[string]bool{}
 	for _, u := range urlRe.FindAllString(text, -1) {
 		u = strings.TrimRight(u, trailingURLPunct)
-		if u == "" || seen[u] {
+		if u == "" || seen[u] || !isValidURL(u) {
 			continue
 		}
 		seen[u] = true
 		links = append(links, Link{URL: u})
 	}
 	return links
+}
+
+// isValidURL reports whether u is a valid http(s) URL with a non-empty domain.
+// Filters out junk like "https://" or "http://" with no actual domain.
+func isValidURL(u string) bool {
+	if !isURL(u) {
+		return false
+	}
+	// Strip protocol to check for domain
+	rest := strings.TrimPrefix(u, "http://")
+	rest = strings.TrimPrefix(rest, "https://")
+	// Must have at least one character that's not a slash or whitespace
+	rest = strings.TrimSpace(rest)
+	if rest == "" || rest == "/" {
+		return false
+	}
+	// Domain must contain at least one dot or be localhost
+	return strings.Contains(rest, ".") || strings.HasPrefix(rest, "localhost")
 }
 
 // isURL reports whether target is an http(s) URL.

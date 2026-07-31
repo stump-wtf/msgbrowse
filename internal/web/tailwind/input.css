@@ -1234,6 +1234,20 @@ a.meta-chip:hover {
    'self', no 'unsafe-inline') forbids inline style=, so these live as classes. */
 .lightbox-close {
   color: #fff;
+  background: rgba(0, 0, 0, 0.6);
+  border-radius: 9999px;
+  width: 2.5rem;
+  height: 2.5rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.25rem;
+  font-weight: 600;
+  transition: background 0.15s ease, transform 0.15s ease;
+}
+.lightbox-close:hover {
+  background: rgba(0, 0, 0, 0.85);
+  transform: scale(1.05);
 }
 .lightbox-caption {
   color: rgba(255, 255, 255, 0.8);
@@ -2212,6 +2226,31 @@ a.cal-day:hover {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+/* Video tile: play button overlay + cursor. */
+.video-tile {
+  cursor: pointer;
+}
+.video-tile-thumb {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  background: var(--color-base-300);
+  color: color-mix(in oklab, var(--color-base-content) 35%, transparent);
+  position: relative;
+}
+.video-tile-play {
+  position: absolute;
+  font-size: 2rem;
+  color: rgba(255, 255, 255, 0.9);
+  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+.video-tile:hover .video-tile-play {
+  opacity: 1;
 }
 /* Placeholder tile for non-web images (no preview) — striped block. */
 .media-tile-placeholder {

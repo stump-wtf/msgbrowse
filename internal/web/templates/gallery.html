@@ -71,12 +71,20 @@
 
     <div role="tablist" class="media-tabs mb-5">
       <a role="tab" class="media-tab {{if eq .Filter.Tab "images"}}media-tab-active{{end}}" href="{{.Filter.GalleryQuery "images"}}">Images <span class="media-tab-badge">{{num .Counts.Images}}</span></a>
+      <a role="tab" class="media-tab {{if eq .Filter.Tab "videos"}}media-tab-active{{end}}" href="{{.Filter.GalleryQuery "videos"}}">Movies <span class="media-tab-badge">{{num .Counts.Videos}}</span></a>
       <a role="tab" class="media-tab {{if eq .Filter.Tab "files"}}media-tab-active{{end}}" href="{{.Filter.GalleryQuery "files"}}">Files <span class="media-tab-badge">{{num .Counts.Files}}</span></a>
       <a role="tab" class="media-tab {{if eq .Filter.Tab "links"}}media-tab-active{{end}}" href="{{.Filter.GalleryQuery "links"}}">Links <span class="media-tab-badge">{{num .Counts.Links}}</span></a>
     </div>
 
     <section>
-      {{- if eq .Filter.Tab "files"}}
+      {{- if eq .Filter.Tab "videos"}}
+        {{- if .VideosPage.Videos}}
+        <div class="video-grid media-grid">
+          {{- template "gallery_videos_page" .VideosPage}}
+        </div>
+        {{- else}}<p class="results-empty">No movies match.</p>{{end}}
+
+      {{- else if eq .Filter.Tab "files"}}
         {{- if .FilesPage.Files}}
         <ul class="media-list">
           {{- template "gallery_files_page" .FilesPage}}
@@ -162,9 +170,25 @@
   {{- end}}
 {{end}}
 
-{{/* gallery_files_page renders one keyset page of file cards as <li> items,
-     ending with a load-more <li> sentinel inside the same <ul> while more
-     pages exist. */}}
+{{/* gallery_videos_page renders one keyset page of video tiles with in-app
+     playback. Videos render as clickable tiles that open a modal player. */}}
+{{define "gallery_videos_page"}}
+  {{- range .Videos}}
+  <div class="media-tile video-tile" data-video-src="{{mediaURL .ConversationID .RelPath}}" data-video-name="{{if .OriginalName}}{{.OriginalName}}{{else}}{{.RelPath}}{{end}}">
+    <div class="video-tile-thumb">
+      {{template "icon-video" $}}
+      <span class="video-tile-play">▶</span>
+    </div>
+    <span class="media-tile-scrim"><span class="media-tile-name">{{if .OriginalName}}{{.OriginalName}}{{else}}{{.RelPath}}{{end}}</span></span>
+  </div>
+  {{- end}}
+  {{- if .NextURL}}
+  <div class="load-more flex justify-center py-4" hx-get="{{.NextURL}}"
+       hx-trigger="revealed" hx-swap="outerHTML">
+    <span class="loading loading-dots loading-md opacity-60"></span>
+  </div>
+  {{- end}}
+{{end}}
 {{define "gallery_files_page"}}
   {{- range .Files}}
   <li class="media-list-card">
