@@ -1,5 +1,14 @@
 # SPEC-0015 Design: Telegram source
 
+> **⚠️ Premise refuted — revision pending (#296).** The `tdl` selection this
+> design elaborates was superseded by
+> [ADR-0027](../../../adr/0027-telegram-tg-export-exporter.md): `tdl`'s
+> export JSON carries no sender field, so extraction moves to the
+> purpose-built `tg-export` exporter. The delegation idiom and the
+> ingest-side shape below survive; everything `tdl`-specific (invocation,
+> JSON schema, Go-binary bundling) will be revised to the `tg-export` v1
+> contract under #296.
+
 - **Capability:** telegram-source
 - **Related ADRs:** [ADR-0022](../../../adr/0022-telegram-source-delegated-exporter.md), [ADR-0020](../../../adr/0020-bundled-exporters-guided-setup.md), [ADR-0016](../../../adr/0016-whatsapp-source-exporter.md), [ADR-0003](../../../adr/0003-dual-source-archive.md), [ADR-0010](../../../adr/0010-security-privacy-posture.md)
 
