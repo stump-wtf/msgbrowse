@@ -385,8 +385,13 @@ func mapMessage(convName string, isGroup bool, mediaBase, root string, loc *time
 		// template concatenates them via <base href>); store it root-relative.
 		rel := relativizeMedia(mediaBase, data, root)
 		kind := signal.KindFile
-		if m.Mime != nil && strings.HasPrefix(*m.Mime, "image/") {
-			kind = signal.KindImage
+		if m.Mime != nil {
+			mime := *m.Mime
+			if strings.HasPrefix(mime, "image/") {
+				kind = signal.KindImage
+			} else if strings.HasPrefix(mime, "video/") {
+				kind = signal.KindVideo
+			}
 		}
 		out.Attachments = []signal.Attachment{{
 			Kind: kind, RelPath: rel, OriginalName: filepath.Base(rel),

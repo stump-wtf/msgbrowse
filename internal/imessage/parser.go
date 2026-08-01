@@ -80,6 +80,12 @@ var imageExts = map[string]bool{
 	".heic": true, ".heif": true, ".webp": true, ".bmp": true, ".tif": true, ".tiff": true,
 }
 
+// videoExts are extensions classified as videos (others become file attachments).
+var videoExts = map[string]bool{
+	".mp4": true, ".mov": true, ".avi": true, ".webm": true,
+	".mkv": true, ".m4v": true, ".mpg": true, ".mpeg": true, ".3gp": true,
+}
+
 // noticeLines are status lines emitted by imessage-exporter that are not message
 // content and are skipped. "Tapbacks:" is intentionally NOT here: it opens a
 // reaction block (see tapbackHeader / parseTapback) whose details are captured.
@@ -231,8 +237,11 @@ func classifyContent(line string, bodyLines *[]string, atts *[]signal.Attachment
 		// Status notice — not content.
 	case isAttachmentPath(trimmed):
 		kind := signal.KindFile
-		if imageExts[strings.ToLower(filepath.Ext(trimmed))] {
+		ext := strings.ToLower(filepath.Ext(trimmed))
+		if imageExts[ext] {
 			kind = signal.KindImage
+		} else if videoExts[ext] {
+			kind = signal.KindVideo
 		}
 		*atts = append(*atts, signal.Attachment{
 			Kind: kind, RelPath: trimmed, OriginalName: filepath.Base(trimmed),

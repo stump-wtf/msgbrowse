@@ -117,6 +117,12 @@ func TestSaveLLMPreservesUnrelatedKeys(t *testing.T) {
 // config loader with the saved values effective — including the empty embed
 // model overriding the built-in default (semantic search off).
 func TestSaveLLMRoundTripsThroughLoad(t *testing.T) {
+	// Neutralize env vars that would override the saved file's values.
+	t.Setenv("MSGBROWSE_LLM_BASE_URL", "")
+	t.Setenv("MSGBROWSE_LLM_CHAT_MODEL", "")
+	t.Setenv("MSGBROWSE_LLM_EMBED_MODEL", "")
+	t.Setenv("MSGBROWSE_LLM_API_KEY", "")
+
 	path := filepath.Join(t.TempDir(), "config.yaml")
 	if err := SaveLLM(path, "http://127.0.0.1:8080/v1", "", "my-chat", ""); err != nil {
 		t.Fatalf("SaveLLM: %v", err)

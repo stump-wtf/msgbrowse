@@ -26,8 +26,24 @@ func loadHermetic(t *testing.T) *viper.Viper {
 	return v
 }
 
+// loadHermeticClean is loadHermetic plus a scrub of every MSGBROWSE_* env var
+// the developer shell may export — used by tests that assert built-in defaults.
+func loadHermeticClean(t *testing.T) *viper.Viper {
+	t.Helper()
+	for _, key := range []string{
+		"MSGBROWSE_LLM_BASE_URL",
+		"MSGBROWSE_LLM_CHAT_MODEL",
+		"MSGBROWSE_LLM_EMBED_MODEL",
+		"MSGBROWSE_LLM_API_KEY",
+		"MSGBROWSE_ARCHIVE_HOST",
+	} {
+		t.Setenv(key, "")
+	}
+	return loadHermetic(t)
+}
+
 func TestLoadDefaults(t *testing.T) {
-	v := loadHermetic(t)
+	v := loadHermeticClean(t)
 	cfg, err := Unmarshal(v)
 	if err != nil {
 		t.Fatal(err)

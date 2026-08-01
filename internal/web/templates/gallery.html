@@ -170,11 +170,11 @@
   {{- end}}
 {{end}}
 
-{{/* gallery_videos_page renders one keyset page of video tiles with in-app
-     playback. Videos render as clickable tiles that open a modal player. */}}
+{{/* gallery_videos_page renders one keyset page of video tiles. Clicking a tile
+     opens the video in a modal player (delegated to video.js via data attrs). */}}
 {{define "gallery_videos_page"}}
   {{- range .Videos}}
-  <div class="media-tile video-tile" data-video-src="{{mediaURL .ConversationID .RelPath}}" data-video-name="{{if .OriginalName}}{{.OriginalName}}{{else}}{{.RelPath}}{{end}}">
+  <div class="media-tile video-tile" data-video-src="{{mediaURL .ConversationID .RelPath}}" data-video-name="{{if .OriginalName}}{{.OriginalName}}{{else}}{{.RelPath}}{{end}}" role="button" tabindex="0" aria-label="Play {{if .OriginalName}}{{.OriginalName}}{{else}}{{.RelPath}}{{end}}">
     <div class="video-tile-thumb">
       {{template "icon-video" $}}
       <span class="video-tile-play">▶</span>

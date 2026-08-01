@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/url"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"time"
@@ -29,6 +31,11 @@ var (
 	linkRe = regexp.MustCompile(`\[([^\]]*)\]\((` + mdTarget + `)\)`)
 	// urlRe matches a bare http(s) URL up to the first whitespace or delimiter.
 	urlRe = regexp.MustCompile(`https?://[^\s<>()\[\]"'` + "`" + `]+`)
+	// videoExts classifies video file extensions (mp4, mov, etc.) for attachment typing.
+	videoExts = map[string]bool{
+		".mp4": true, ".mov": true, ".avi": true, ".webm": true,
+		".mkv": true, ".m4v": true, ".mpg": true, ".mpeg": true, ".3gp": true,
+	}
 	// reactionLineRe matches signal-export's reactions trailer at the end of a
 	// message, e.g. "(- Alice: 👍, Bob: ❤️ -)". signal-export orders a message as
 	// {text}{reactions}{attachments} (sigexport/models.py, Message.to_md / from_md:
@@ -222,8 +229,12 @@ func extract(body string) ([]Attachment, []Link) {
 			addLink(target)
 			continue
 		}
+		kind := KindFile
+		if videoExts[strings.ToLower(filepath.Ext(target))] {
+			kind = KindVideo
+		}
 		atts = append(atts, Attachment{
-			Kind:         KindFile,
+			Kind:         kind,
 			OriginalName: strings.TrimSpace(m[1]),
 			RelPath:      target,
 		})
@@ -324,19 +335,20 @@ func ExtractLinks(text string) []Link {
 // isValidURL reports whether u is a valid http(s) URL with a non-empty domain.
 // Filters out junk like "https://" or "http://" with no actual domain.
 func isValidURL(u string) bool {
-	if !isURL(u) {
+	parsed, err := url.Parse(u)
+	if err != nil {
 		return false
 	}
-	// Strip protocol to check for domain
-	rest := strings.TrimPrefix(u, "http://")
-	rest = strings.TrimPrefix(rest, "https://")
-	// Must have at least one character that's not a slash or whitespace
-	rest = strings.TrimSpace(rest)
-	if rest == "" || rest == "/" {
+	// Must be http or https scheme
+	if parsed.Scheme != "http" && parsed.Scheme != "https" {
 		return false
 	}
-	// Domain must contain at least one dot or be localhost
-	return strings.Contains(rest, ".") || strings.HasPrefix(rest, "localhost")
+	// Must have a host
+	if parsed.Host == "" {
+		return false
+	}
+	// Host must contain at least one dot or be localhost
+	return strings.Contains(parsed.Host, ".") || parsed.Host == "localhost"
 }
 
 // isURL reports whether target is an http(s) URL.
