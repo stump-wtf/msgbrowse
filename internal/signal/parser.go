@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"mime"
 	"net/url"
 	"path/filepath"
 	"regexp"
@@ -31,11 +32,6 @@ var (
 	linkRe = regexp.MustCompile(`\[([^\]]*)\]\((` + mdTarget + `)\)`)
 	// urlRe matches a bare http(s) URL up to the first whitespace or delimiter.
 	urlRe = regexp.MustCompile(`https?://[^\s<>()\[\]"'` + "`" + `]+`)
-	// videoExts classifies video file extensions (mp4, mov, etc.) for attachment typing.
-	videoExts = map[string]bool{
-		".mp4": true, ".mov": true, ".avi": true, ".webm": true,
-		".mkv": true, ".m4v": true, ".mpg": true, ".mpeg": true, ".3gp": true,
-	}
 	// reactionLineRe matches signal-export's reactions trailer at the end of a
 	// message, e.g. "(- Alice: 👍, Bob: ❤️ -)". signal-export orders a message as
 	// {text}{reactions}{attachments} (sigexport/models.py, Message.to_md / from_md:
@@ -230,7 +226,7 @@ func extract(body string) ([]Attachment, []Link) {
 			continue
 		}
 		kind := KindFile
-		if videoExts[strings.ToLower(filepath.Ext(target))] {
+		if ct := mime.TypeByExtension(strings.ToLower(filepath.Ext(target))); strings.HasPrefix(ct, "video/") {
 			kind = KindVideo
 		}
 		atts = append(atts, Attachment{

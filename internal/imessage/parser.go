@@ -31,6 +31,7 @@ package imessage
 import (
 	"bufio"
 	"io"
+	"mime"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -78,12 +79,6 @@ func isAttachmentPath(trimmed string) bool {
 var imageExts = map[string]bool{
 	".jpg": true, ".jpeg": true, ".png": true, ".gif": true,
 	".heic": true, ".heif": true, ".webp": true, ".bmp": true, ".tif": true, ".tiff": true,
-}
-
-// videoExts are extensions classified as videos (others become file attachments).
-var videoExts = map[string]bool{
-	".mp4": true, ".mov": true, ".avi": true, ".webm": true,
-	".mkv": true, ".m4v": true, ".mpg": true, ".mpeg": true, ".3gp": true,
 }
 
 // noticeLines are status lines emitted by imessage-exporter that are not message
@@ -240,7 +235,7 @@ func classifyContent(line string, bodyLines *[]string, atts *[]signal.Attachment
 		ext := strings.ToLower(filepath.Ext(trimmed))
 		if imageExts[ext] {
 			kind = signal.KindImage
-		} else if videoExts[ext] {
+		} else if ct := mime.TypeByExtension(ext); strings.HasPrefix(ct, "video/") {
 			kind = signal.KindVideo
 		}
 		*atts = append(*atts, signal.Attachment{
