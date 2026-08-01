@@ -1,6 +1,14 @@
 # ADR-0022: Telegram as a fourth source via a delegated exporter (tdl)
 
-- **Status:** Accepted
+- **Status:** Superseded by [ADR-0027](0027-telegram-tg-export-exporter.md) —
+  the load-bearing claim (tdl's export JSON carries a sender) was refuted
+  against tdl's own source: `app/chat/export.go`'s export shape is
+  `{id, type, file, date?, text?, raw?}` with no sender field outside the
+  raw-MTProto `--raw` mode, and the tool itself warns its export is "minimal
+  JSON for tdl download, not for backup". The delegation idiom this ADR
+  reinstated stands; the tool selection does not. Extraction is now
+  delegated to the purpose-built `tg-export` exporter (ADR-0027; execution
+  tracked in #296).
 - **Date:** 2026-07-06
 - **Deciders:** Joe Stump
 - **Related:** [ADR-0003 (dual-source archive)](0003-dual-source-archive.md), [ADR-0016 (WhatsApp source)](0016-whatsapp-source-exporter.md), [ADR-0020 (bundled exporters + guided setup)](0020-bundled-exporters-guided-setup.md), [ADR-0015 (onboarding: doctor/export/sync)](0015-onboarding-doctor-export-sync.md), [ADR-0010 (security & privacy posture)](0010-security-privacy-posture.md)

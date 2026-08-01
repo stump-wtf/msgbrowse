@@ -56,7 +56,7 @@ DESKTOP_BIN  := msgbrowse
 DESKTOP_OUT  := build/bin/$(DESKTOP_BIN)
 DESKTOP_TAGS ?= desktop,production,webkit2_41
 
-.PHONY: all build install run test cover check check-migrations fmt fmt-check vet tidy clean clean-tools css up up-bundled down logs signal-import embed journal desktop-linux desktop-test
+.PHONY: all build install run test cover lint check check-migrations fmt fmt-check vet tidy clean clean-tools css up up-bundled down logs signal-import embed journal desktop-linux desktop-test
 
 # Base ref the migration immutability guard diffs against (#217). Override for
 # a branch that targets something other than main.
@@ -91,6 +91,8 @@ vet: ## Run go vet
 
 tidy: ## Tidy go.mod/go.sum
 	$(GO) mod tidy
+
+lint: fmt-check vet ## Static checks only (the standard `make test` / `make lint` entry points)
 
 check: fmt-check vet check-migrations test ## CI gate: format check, vet, migration guard, tests
 

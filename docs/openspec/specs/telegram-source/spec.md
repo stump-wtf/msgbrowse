@@ -1,6 +1,16 @@
 # SPEC-0015: Telegram source
 
-- **Status:** Accepted
+> **⚠️ Premise refuted — revision pending (#296).** This spec binds
+> extraction to `tdl`, whose export JSON was verified to carry **no sender
+> field** — see [ADR-0027](../../../adr/0027-telegram-tg-export-exporter.md),
+> which supersedes ADR-0022 and delegates extraction to the purpose-built
+> `tg-export` exporter instead. Do not implement the `tdl`-specific
+> requirements below (invocation, JSON parsing, Go-binary bundling); the
+> source-registration, security, and onboarding-shape requirements carry
+> over in spirit. The revision to the `tg-export` v1 contract is tracked in
+> #296.
+
+- **Status:** Accepted (premise refuted; revision pending per #296)
 - **Date:** 2026-07-06
 - **Capability:** telegram-source
 - **Source packages:** `internal/telegram` (new — parser of exporter output), `internal/toolchain` (bundled `tdl`), `internal/source`, `internal/store` (allowed-source migration), `internal/archivepath`, `internal/ingest`, `internal/setup` (detection + authorization + guidance), `internal/onboard`/`internal/onboardsvc` (export/adopt/refresh), `internal/cli` (`export.go`, `import.go`, `doctor.go`, `sync.go`), `internal/config`, `internal/web` (Providers card, source styling), `internal/devsync` (folder provisioning), `.github/workflows/desktop.yml` (bundle + pin), `docs-site`
