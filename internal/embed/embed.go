@@ -18,6 +18,13 @@ import (
 	"github.com/joestump/msgbrowse/internal/store"
 )
 
+// maxInputChars caps the text sent to the embedding model. Messages longer
+// than this are truncated (with a warning logged) rather than skipped, so a
+// long message still gets a useful embedding from its opening content. 6500
+// chars ≈ 1600 tokens, well under the 8192-token context window of typical
+// embedding models (bge-m3, text-embedding-3-large).
+const maxInputChars = 6500
+
 // Options configures an embedding run.
 type Options struct {
 	// EmbedModel names the embedding model; recorded with each vector so a model
@@ -150,7 +157,13 @@ func run(ctx context.Context, st *store.Store, client llm.Client, opts Options, 
 
 		inputs := make([]string, len(targets))
 		for i, t := range targets {
-			inputs[i] = t.Text
+			if len(t.Text) > maxInputChars {
+				log.Warn("truncating long message for embedding",
+					"hash", t.Hash, "chars", len(t.Text), "limit", maxInputChars)
+				inputs[i] = t.Text[:maxInputChars]
+			} else {
+				inputs[i] = t.Text
+			}
 		}
 		vecs, err := client.Embed(ctx, inputs)
 		if err != nil {
