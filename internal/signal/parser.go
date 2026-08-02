@@ -53,6 +53,33 @@ var (
 // that commonly abuts a link but is not part of it).
 const trailingURLPunct = ".,;:!?)]}>\"'"
 
+// videoExts is the explicit, host-independent set of video file extensions —
+// the same list the schema v16 backfill promises (internal/store/schema.go),
+// so old rows and new imports classify identically. It exists because
+// mime.TypeByExtension alone is platform-dependent: Go's builtin table covers
+// only .mp4/.ogv as video (and maps .webm to audio/webm), and the deploy
+// image (distroless) ships no /etc/mime.types to fill the gaps.
+var videoExts = map[string]bool{
+	".mp4": true, ".mov": true, ".avi": true, ".webm": true,
+	".mkv": true, ".m4v": true, ".mpg": true, ".mpeg": true, ".3gp": true,
+}
+
+// IsVideoPath reports whether path names a video attachment by extension
+// (case-insensitive). The explicit videoExts set decides first —
+// deterministically across hosts — and mime.TypeByExtension is consulted only
+// as a secondary for extensions outside the set (e.g. .ogv via Go's builtin
+// table). Shared with the iMessage parser, like ExtractLinks.
+func IsVideoPath(path string) bool {
+	ext := strings.ToLower(filepath.Ext(path))
+	if ext == "" {
+		return false
+	}
+	if videoExts[ext] {
+		return true
+	}
+	return strings.HasPrefix(mime.TypeByExtension(ext), "video/")
+}
+
 // ParseError describes a malformed line that the parser skipped. Ingestion logs
 // these and continues; the parser never panics on bad input.
 type ParseError struct {
@@ -226,7 +253,7 @@ func extract(body string) ([]Attachment, []Link) {
 			continue
 		}
 		kind := KindFile
-		if ct := mime.TypeByExtension(strings.ToLower(filepath.Ext(target))); strings.HasPrefix(ct, "video/") {
+		if IsVideoPath(target) {
 			kind = KindVideo
 		}
 		atts = append(atts, Attachment{

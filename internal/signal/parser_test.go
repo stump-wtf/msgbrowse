@@ -468,21 +468,65 @@ func TestExtractLinksFiltersJunkURLs(t *testing.T) {
 	}
 }
 
+// TestIsVideoPath pins the classification to the explicit extension set —
+// the exact list the schema v16 backfill uses — so it cannot drift with the
+// host's /etc/mime.types (Go's builtin mime table knows only .mp4/.ogv as
+// video and calls .webm audio; the distroless deploy image has no system
+// table at all).
+func TestIsVideoPath(t *testing.T) {
+	tests := []struct {
+		path string
+		want bool
+	}{
+		// Every extension schemaV16 backfills must classify as video,
+		// deterministically, on every host.
+		{"media/clip.mp4", true},
+		{"media/clip.mov", true},
+		{"media/clip.avi", true},
+		{"media/clip.webm", true},
+		{"media/clip.mkv", true},
+		{"media/clip.m4v", true},
+		{"media/clip.mpg", true},
+		{"media/clip.mpeg", true},
+		{"media/clip.3gp", true},
+		// Case-insensitive.
+		{"media/CLIP.MOV", true},
+		// Outside the set, Go's builtin mime table is the secondary.
+		{"media/clip.ogv", true},
+		// Non-videos.
+		{"media/doc.pdf", false},
+		{"media/photo.jpg", false},
+		{"media/noext", false},
+		{"", false},
+	}
+	for _, tt := range tests {
+		if got := IsVideoPath(tt.path); got != tt.want {
+			t.Errorf("IsVideoPath(%q) = %v, want %v", tt.path, got, tt.want)
+		}
+	}
+}
+
 func TestParseVideoAttachment(t *testing.T) {
-	// A markdown [name](media/file.mp4) with a video extension must be classified
-	// as KindVideo, not KindFile (issue #4).
-	in := "[2022-09-01 10:00:00] Harper: [clip.mp4](media/clip.mp4)\n"
-	msgs, _, err := ParseAll("Harper", strings.NewReader(in))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(msgs) != 1 {
-		t.Fatalf("got %d messages, want 1", len(msgs))
-	}
-	if len(msgs[0].Attachments) != 1 {
-		t.Fatalf("got %d attachments, want 1: %+v", len(msgs[0].Attachments), msgs[0].Attachments)
-	}
-	if msgs[0].Attachments[0].Kind != KindVideo {
-		t.Errorf("attachment kind = %q, want %q", msgs[0].Attachments[0].Kind, KindVideo)
+	// A markdown [name](media/file.<ext>) with a video extension must be
+	// classified as KindVideo, not KindFile (issue #4) — including extensions
+	// Go's builtin mime table does not know as video (.mov, .webm), which
+	// regressed to KindFile on hosts without /etc/mime.types.
+	for _, ext := range []string{"mp4", "mov", "webm", "mkv"} {
+		t.Run(ext, func(t *testing.T) {
+			in := "[2022-09-01 10:00:00] Harper: [clip." + ext + "](media/clip." + ext + ")\n"
+			msgs, _, err := ParseAll("Harper", strings.NewReader(in))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(msgs) != 1 {
+				t.Fatalf("got %d messages, want 1", len(msgs))
+			}
+			if len(msgs[0].Attachments) != 1 {
+				t.Fatalf("got %d attachments, want 1: %+v", len(msgs[0].Attachments), msgs[0].Attachments)
+			}
+			if msgs[0].Attachments[0].Kind != KindVideo {
+				t.Errorf("attachment kind = %q, want %q", msgs[0].Attachments[0].Kind, KindVideo)
+			}
+		})
 	}
 }
