@@ -250,7 +250,8 @@ func (s *Server) renderContactSettings(w http.ResponseWriter, r *http.Request, d
 	}
 
 	resolver := s.contactResolver()
-	data.AddressBookState = resolver.Availability(r.Context()).String()
+	avail := resolver.Availability(r.Context())
+	data.AddressBookState = avail.String()
 
 	rules, err := s.store.GetMergeRules(r.Context())
 	if err != nil {
@@ -277,6 +278,7 @@ func (s *Server) renderContactSettings(w http.ResponseWriter, r *http.Request, d
 		s.serverError(w, err)
 		return
 	}
+	names := addressBookNames(r.Context(), resolver, avail)
 	for _, mc := range merged {
 		row := contactMergedRow{ID: mc.ID, Name: mc.DisplayName}
 		for _, ci := range mc.Identifiers {
@@ -284,7 +286,7 @@ func (s *Server) renderContactSettings(w http.ResponseWriter, r *http.Request, d
 				Source:       ci.Source,
 				Identifier:   ci.Identifier,
 				Token:        ci.Source + ":" + ci.Identifier,
-				ResolvedName: s.resolveIdentifierName(r.Context(), resolver, ci.Identifier),
+				ResolvedName: names.Name(contacts.Normalize(ci.Identifier)),
 			})
 		}
 		data.Merged = append(data.Merged, row)
@@ -300,16 +302,22 @@ func (s *Server) renderContactSettings(w http.ResponseWriter, r *http.Request, d
 	s.render(w, r, "contactsettings", data)
 }
 
-// resolveIdentifierName looks up an identifier (phone/email) in the address
-// book and returns the contact's display name, or "" if not found or the
-// resolver is unavailable.
-func (s *Server) resolveIdentifierName(ctx context.Context, resolver contacts.Resolver, identifier string) string {
-	if resolver == nil || resolver.Availability(ctx) != contacts.Available {
-		return ""
+// addressBookNames builds the identifier→display-name index for one render:
+// a single People() enumeration, looked up per identifier through
+// contacts.NameIndex. Two contracts of the Resolver seam meet here — a lookup
+// must use a CANONICAL identifier (contacts.Normalize; a zero-Kind raw value
+// matches nothing), and multi-identifier callers must enumerate once rather
+// than call Resolve per identifier, because providers like macoscontacts
+// re-enumerate the whole address book on every Resolve. When no address book
+// is readable (or it errors / is empty) the index is nil, and NameIndex.Name
+// answers "" — the template simply omits the annotation.
+func addressBookNames(ctx context.Context, resolver contacts.Resolver, avail contacts.Availability) *contacts.NameIndex {
+	if resolver == nil || avail != contacts.Available {
+		return nil
 	}
-	people, err := resolver.Resolve(ctx, contacts.Identifier{Value: identifier})
+	people, err := resolver.People(ctx)
 	if err != nil || len(people) == 0 {
-		return ""
+		return nil
 	}
-	return people[0].DisplayName
+	return contacts.BuildNameIndex(people)
 }

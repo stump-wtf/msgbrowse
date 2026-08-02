@@ -25,6 +25,39 @@ func (f fakeResolver) Resolve(context.Context, contacts.Identifier) ([]contacts.
 }
 func (f fakeResolver) People(context.Context) ([]contacts.Person, error) { return nil, nil }
 
+// peopleResolver is a contacts.Resolver test double that carries an address
+// book and counts calls, so a test can assert both WHAT the settings render
+// resolves (names next to identifiers) and HOW (one People() enumeration, no
+// per-identifier Resolve loop — the seam doc's contract for bulk callers).
+type peopleResolver struct {
+	people       []contacts.Person
+	peopleCalls  int
+	resolveCalls int
+}
+
+func (f *peopleResolver) Availability(context.Context) contacts.Availability {
+	return contacts.Available
+}
+
+func (f *peopleResolver) Resolve(_ context.Context, id contacts.Identifier) ([]contacts.Person, error) {
+	f.resolveCalls++
+	var out []contacts.Person
+	for _, p := range f.people {
+		for _, pid := range p.Identifiers {
+			if pid == id {
+				out = append(out, p)
+				break
+			}
+		}
+	}
+	return out, nil
+}
+
+func (f *peopleResolver) People(context.Context) ([]contacts.Person, error) {
+	f.peopleCalls++
+	return f.people, nil
+}
+
 // contactPOST builds a same-origin (or given-origin) form POST to a
 // /settings/contacts/* route with the given token and fields, mirroring
 // llmPOST. Repeatable fields (the split "move" checkboxes) are passed via
@@ -336,6 +369,74 @@ func TestContactsAddressBookAvailableEnabled(t *testing.T) {
 	}
 	if contains(body, "grant Contacts access") || contains(body, "No address book is available on this machine") {
 		t.Error("available address book must render no absent/permission note")
+	}
+}
+
+// TestContactsResolvedNames: with an Available resolver whose address book
+// knows an identifier of a merged contact, the merged row annotates that
+// identifier with the address-book display name ("(<source> · <Name>)") — and
+// the render enumerates the book instead of looping Resolve per identifier.
+// This is the regression test for the zero-Kind Resolve lookup that could
+// never match (the resolver matches canonical (Kind, Value) pairs only).
+func TestContactsResolvedNames(t *testing.T) {
+	srv, st, _ := newTestServer(t)
+	res := &peopleResolver{people: []contacts.Person{{
+		Key: "p1", DisplayName: "Jane Doe",
+		Identifiers: []contacts.Identifier{{Kind: contacts.KindPhone, Value: "+15557770004"}},
+	}}}
+	srv.SetContactResolver(res)
+	ctx := context.Background()
+
+	sig, err := st.UpsertConversation(ctx, source.Signal, "MJ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	im, err := st.UpsertConversation(ctx, source.IMessage, "+15557770004")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.MergeContacts(ctx, contactIDForConv(t, st, sig), contactIDForConv(t, st, im)); err != nil {
+		t.Fatal(err)
+	}
+
+	body := get(t, srv, "/settings/contacts").Body.String()
+	if !contains(body, "(iMessage · Jane Doe)") {
+		t.Error("merged identifier missing its resolved address-book name annotation")
+	}
+	// The un-matched identifier (the Signal display name "MJ") must not grow a
+	// name annotation.
+	if contains(body, "(Signal ·") {
+		t.Error("unmatched identifier must not carry a resolved name")
+	}
+	// The bulk-caller contract: enumerate + index, never Resolve per identifier
+	// (each Resolve re-enumerates the whole address book). People() may run at
+	// most twice per render (candidates pass + name index), independent of how
+	// many identifiers the merged contacts carry.
+	if res.resolveCalls != 0 {
+		t.Errorf("Resolve called %d times during render, want 0 (index the People() enumeration instead)", res.resolveCalls)
+	}
+	if res.peopleCalls == 0 || res.peopleCalls > 2 {
+		t.Errorf("People called %d times during render, want 1-2", res.peopleCalls)
+	}
+}
+
+// TestContactsResolvedNamesAbsentResolver: with no resolver wired the merged
+// rows still render, just without name annotations.
+func TestContactsResolvedNamesAbsentResolver(t *testing.T) {
+	srv, st, _ := newTestServer(t) // no resolver → contacts.Unavailable
+	ctx := context.Background()
+	sig, _ := st.UpsertConversation(ctx, source.Signal, "MJ")
+	im, _ := st.UpsertConversation(ctx, source.IMessage, "+15557770004")
+	if _, err := st.MergeContacts(ctx, contactIDForConv(t, st, sig), contactIDForConv(t, st, im)); err != nil {
+		t.Fatal(err)
+	}
+
+	body := get(t, srv, "/settings/contacts").Body.String()
+	if !contains(body, "15557770004") { // "+" renders escaped (&#43;)
+		t.Fatal("merged identifier missing from the render")
+	}
+	if !contains(body, "(iMessage)") || contains(body, "(iMessage ·") || contains(body, "(Signal ·") {
+		t.Error("absent resolver must render bare source annotations without names")
 	}
 }
 
