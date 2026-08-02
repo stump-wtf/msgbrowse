@@ -439,3 +439,50 @@ func TestMessageIDStableAndSeqDistinct(t *testing.T) {
 		t.Errorf("identical lines produced identical IDs: %s", a[0].ID())
 	}
 }
+
+func TestExtractLinksFiltersJunkURLs(t *testing.T) {
+	tests := []struct {
+		name string
+		text string
+		want []string
+	}{
+		{"valid url kept", "check https://example.com/page", []string{"https://example.com/page"}},
+		{"protocol-only filtered", "bare https:// here", nil},
+		{"http protocol-only filtered", "bare http:// here", nil},
+		{"localhost kept", "see http://localhost:3000/app", []string{"http://localhost:3000/app"}},
+		{"mixed junk and valid", "https:// and https://real.com/x", []string{"https://real.com/x"}},
+		{"real url with path and query", "go https://site.com/a?b=c&d=e", []string{"https://site.com/a?b=c&d=e"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			links := ExtractLinks(tt.text)
+			if len(links) != len(tt.want) {
+				t.Fatalf("got %d links %+v, want %d", len(links), links, len(tt.want))
+			}
+			for i, w := range tt.want {
+				if links[i].URL != w {
+					t.Errorf("link[%d] = %q, want %q", i, links[i].URL, w)
+				}
+			}
+		})
+	}
+}
+
+func TestParseVideoAttachment(t *testing.T) {
+	// A markdown [name](media/file.mp4) with a video extension must be classified
+	// as KindVideo, not KindFile (issue #4).
+	in := "[2022-09-01 10:00:00] Harper: [clip.mp4](media/clip.mp4)\n"
+	msgs, _, err := ParseAll("Harper", strings.NewReader(in))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(msgs) != 1 {
+		t.Fatalf("got %d messages, want 1", len(msgs))
+	}
+	if len(msgs[0].Attachments) != 1 {
+		t.Fatalf("got %d attachments, want 1: %+v", len(msgs[0].Attachments), msgs[0].Attachments)
+	}
+	if msgs[0].Attachments[0].Kind != KindVideo {
+		t.Errorf("attachment kind = %q, want %q", msgs[0].Attachments[0].Kind, KindVideo)
+	}
+}

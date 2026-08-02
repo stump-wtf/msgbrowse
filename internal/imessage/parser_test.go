@@ -296,3 +296,29 @@ ping
 		t.Errorf("byte-identical messages share storage hash")
 	}
 }
+
+// TestParseVideoAttachment verifies that a .mp4 attachment path is classified
+// as KindVideo (issue #4), not KindFile.
+func TestParseVideoAttachment(t *testing.T) {
+	const in = `May 20, 2020  9:00:00 AM
+MJ
+check this out
+attachments/AB/CD/clip.mp4
+`
+	msgs, err := ParseAll("MJ", strings.NewReader(in))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(msgs) != 1 {
+		t.Fatalf("got %d messages, want 1", len(msgs))
+	}
+	if len(msgs[0].Attachments) != 1 {
+		t.Fatalf("got %d attachments, want 1: %+v", len(msgs[0].Attachments), msgs[0].Attachments)
+	}
+	if msgs[0].Attachments[0].Kind != signal.KindVideo {
+		t.Errorf("attachment kind = %q, want %q", msgs[0].Attachments[0].Kind, signal.KindVideo)
+	}
+	if msgs[0].Attachments[0].RelPath != "attachments/AB/CD/clip.mp4" {
+		t.Errorf("attachment path = %q", msgs[0].Attachments[0].RelPath)
+	}
+}

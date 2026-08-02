@@ -344,7 +344,8 @@ func isValidURL(u string) bool {
 		return false
 	}
 	// Host must contain at least one dot or be localhost
-	return strings.Contains(parsed.Host, ".") || parsed.Host == "localhost"
+	host := parsed.Hostname()
+	return strings.Contains(host, ".") || host == "localhost"
 }
 
 // isURL reports whether target is an http(s) URL.
