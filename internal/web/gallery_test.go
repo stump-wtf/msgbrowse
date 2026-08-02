@@ -675,6 +675,7 @@ func TestGalleryCountsMatchStore(t *testing.T) {
 		body := rec.Body.String()
 		for _, want := range []string{
 			"Images <span class=\"media-tab-badge\">" + strconv.Itoa(counts.Images) + "</span>",
+			"Movies <span class=\"media-tab-badge\">" + strconv.Itoa(counts.Videos) + "</span>",
 			"Files <span class=\"media-tab-badge\">" + strconv.Itoa(counts.Files) + "</span>",
 			"Links <span class=\"media-tab-badge\">" + strconv.Itoa(counts.Links) + "</span>",
 		} {
@@ -682,5 +683,43 @@ func TestGalleryCountsMatchStore(t *testing.T) {
 				t.Errorf("%s: badge %q not found", tc.path, want)
 			}
 		}
+	}
+}
+
+// TestGalleryVideosTab verifies the Movies tab renders and shows video tiles
+// when video attachments exist (issue #4).
+func TestGalleryVideosTab(t *testing.T) {
+	srv, st, _ := newTestServer(t)
+	ctx := context.Background()
+
+	// Seed a video attachment into the fixture corpus.
+	harper, err := st.GetConversation(ctx, "Harper")
+	if err != nil {
+		t.Fatal(err)
+	}
+	videoMsgs := []signal.Message{
+		{
+			Conversation: "Harper", Timestamp: time.Now(),
+			TimestampRaw: "2022-03-01 10:00:00", Sender: "Harper", Body: "watch this",
+			Attachments: []signal.Attachment{{Kind: signal.KindVideo, RelPath: "media/clip.mp4", OriginalName: "clip.mp4"}},
+		},
+	}
+	if _, err := st.ReplaceConversationMessages(ctx, harper.ID, source.Signal, videoMsgs); err != nil {
+		t.Fatal(err)
+	}
+
+	rec := get(t, srv, "/gallery?tab=videos")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("GET /gallery?tab=videos = %d", rec.Code)
+	}
+	body := rec.Body.String()
+	if !contains(body, "Movies") {
+		t.Error("videos tab missing Movies label")
+	}
+	if !contains(body, "video-tile") {
+		t.Error("videos tab should render video-tile elements")
+	}
+	if !contains(body, "data-video-src") {
+		t.Error("video tiles missing data-video-src attribute for player")
 	}
 }

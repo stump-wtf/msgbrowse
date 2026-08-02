@@ -144,7 +144,7 @@
             <input type="hidden" name="contact_id" value="{{.ID}}">
             <div class="flex flex-wrap gap-2">
               {{- range .Identifiers}}
-              <label class="toggle-chip"><input type="checkbox" name="move" value="{{.Token}}"> <span class="font-mono">{{.Identifier}}</span> <span class="status-note">({{humanSource .Source}})</span></label>
+              <label class="toggle-chip"><input type="checkbox" name="move" value="{{.Token}}"> <span class="font-mono">{{.Identifier}}</span> <span class="status-note">({{humanSource .Source}}{{if .ResolvedName}} · {{.ResolvedName}}{{end}})</span></label>
               {{- end}}
             </div>
             <button type="submit" class="setup-btn setup-btn-ghost"

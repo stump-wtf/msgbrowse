@@ -31,6 +31,7 @@ package imessage
 import (
 	"bufio"
 	"io"
+	"mime"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -231,8 +232,11 @@ func classifyContent(line string, bodyLines *[]string, atts *[]signal.Attachment
 		// Status notice — not content.
 	case isAttachmentPath(trimmed):
 		kind := signal.KindFile
-		if imageExts[strings.ToLower(filepath.Ext(trimmed))] {
+		ext := strings.ToLower(filepath.Ext(trimmed))
+		if imageExts[ext] {
 			kind = signal.KindImage
+		} else if ct := mime.TypeByExtension(ext); strings.HasPrefix(ct, "video/") {
+			kind = signal.KindVideo
 		}
 		*atts = append(*atts, signal.Attachment{
 			Kind: kind, RelPath: trimmed, OriginalName: filepath.Base(trimmed),

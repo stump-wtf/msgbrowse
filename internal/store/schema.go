@@ -6,7 +6,7 @@ import "context"
 // `user_version` pragma. On Open, the migrations runner brings any older
 // database forward to this version. Bump it and append a migration whenever the
 // schema changes.
-const schemaVersion = 15
+const schemaVersion = 16
 
 // SchemaVersion returns the schema revision this binary expects (and migrates a
 // database forward to on Open). Read-only callers — notably `msgbrowse doctor` —
@@ -54,6 +54,7 @@ var migrations = []string{
 	13: schemaV13,
 	14: schemaV14,
 	15: schemaV15,
+	16: schemaV16,
 }
 
 // schemaV1 is the initial Signal-only schema. It is preserved verbatim so a
@@ -705,4 +706,25 @@ CREATE TABLE IF NOT EXISTS journal_runs (
     skipped     INTEGER NOT NULL DEFAULT 0,
     error       TEXT    NOT NULL DEFAULT ''
 );
+`
+
+// schemaV16 backfills the 'video' attachment kind for existing rows whose file
+// extension is a known video format. Before this, all non-image attachments were
+// stamped 'file'; the Movies gallery tab (issue #4) needs them reclassified so
+// they appear under Videos instead of Files.
+const schemaV16 = `
+UPDATE attachments
+   SET kind = 'video'
+ WHERE kind = 'file'
+   AND (
+       lower(rel_path) LIKE '%.mp4'
+    OR lower(rel_path) LIKE '%.mov'
+    OR lower(rel_path) LIKE '%.avi'
+    OR lower(rel_path) LIKE '%.webm'
+    OR lower(rel_path) LIKE '%.mkv'
+    OR lower(rel_path) LIKE '%.m4v'
+    OR lower(rel_path) LIKE '%.mpg'
+    OR lower(rel_path) LIKE '%.mpeg'
+    OR lower(rel_path) LIKE '%.3gp'
+   );
 `

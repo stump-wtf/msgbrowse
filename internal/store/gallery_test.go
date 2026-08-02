@@ -30,6 +30,9 @@ func seedGalleryCorpus(t *testing.T) (*Store, int64, int64) {
 	file := func(name string) []signal.Attachment {
 		return []signal.Attachment{{Kind: signal.KindFile, RelPath: "media/" + name, OriginalName: name}}
 	}
+	video := func(name string) []signal.Attachment {
+		return []signal.Attachment{{Kind: signal.KindVideo, RelPath: "media/" + name, OriginalName: name}}
+	}
 	link := func(u string) []signal.Link { return []signal.Link{{URL: u}} }
 
 	harperMsgs := []signal.Message{
@@ -38,6 +41,7 @@ func seedGalleryCorpus(t *testing.T) (*Store, int64, int64) {
 		msg("Harper", "2022-03-01 09:02:00", "Me", "map", nil, link("https://maps.example.com/a")),
 		msg("Harper", "2022-03-02 09:03:00", "Me", "map again", nil, link("https://maps.example.com/a")),
 		msg("Harper", "2022-03-02 09:04:00", "Me", "food", nil, link("https://www.yelp.com/biz/foo")),
+		msg("Harper", "2022-03-02 09:05:00", "Harper", "video!", video("dance.mp4"), nil),
 	}
 	if _, err := st.ReplaceConversationMessages(ctx, harper, source.Signal, harperMsgs); err != nil {
 		t.Fatal(err)
@@ -404,16 +408,16 @@ func TestCountMedia(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if all.Images != 2 || all.Files != 1 || all.Links != 2 {
-		t.Errorf("counts = %+v, want {Images:2 Files:1 Links:2}", all)
+	if all.Images != 2 || all.Files != 1 || all.Videos != 1 || all.Links != 2 {
+		t.Errorf("counts = %+v, want {Images:2 Videos:1 Files:1 Links:2}", all)
 	}
 
 	h, err := st.CountMedia(ctx, GalleryFilter{ConversationIDs: []int64{harper}})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if h.Images != 1 || h.Files != 1 || h.Links != 2 {
-		t.Errorf("harper counts = %+v, want {Images:1 Files:1 Links:2}", h)
+	if h.Images != 1 || h.Files != 1 || h.Videos != 1 || h.Links != 2 {
+		t.Errorf("harper counts = %+v, want {Images:1 Videos:1 Files:1 Links:2}", h)
 	}
 
 	// Source filter: everything is Signal, so the counts equal the unfiltered
@@ -438,8 +442,8 @@ func TestCountMedia(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if march.Images != 1 || march.Files != 1 || march.Links != 2 {
-		t.Errorf("march counts = %+v, want {Images:1 Files:1 Links:2}", march)
+	if march.Images != 1 || march.Files != 1 || march.Videos != 1 || march.Links != 2 {
+		t.Errorf("march counts = %+v, want {Images:1 Videos:1 Files:1 Links:2}", march)
 	}
 }
 
@@ -545,5 +549,49 @@ func TestGalleryQueryPlans(t *testing.T) {
 	plan = strings.Join(explainPlan(t, st, q, args...), "\n")
 	if strings.Contains(plan, "TEMP B-TREE") {
 		t.Errorf("unfiltered attachment listing sorts instead of walking the index:\n%s", plan)
+	}
+}
+
+// TestSchemaV16BackfillsVideoKind verifies that the v16 migration reclassifies
+// existing 'file' attachments with video extensions to kind='video' (issue #4).
+func TestSchemaV16BackfillsVideoKind(t *testing.T) {
+	st := newTestStore(t)
+	ctx := context.Background()
+
+	harper, err := st.UpsertConversation(ctx, source.Signal, "Harper")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Seed messages with attachments stamped KindFile but bearing video
+	// extensions (simulating a pre-v16 database).
+	oldMsgs := []signal.Message{
+		msg("Harper", "2022-03-01 09:00:00", "Harper", "vid",
+			[]signal.Attachment{{Kind: signal.KindFile, RelPath: "media/clip.mp4", OriginalName: "clip.mp4"}}, nil),
+		msg("Harper", "2022-03-01 09:01:00", "Harper", "mov",
+			[]signal.Attachment{{Kind: signal.KindFile, RelPath: "media/scene.mov", OriginalName: "scene.mov"}}, nil),
+		msg("Harper", "2022-03-01 09:02:00", "Harper", "pdf stays file",
+			[]signal.Attachment{{Kind: signal.KindFile, RelPath: "media/doc.pdf", OriginalName: "doc.pdf"}}, nil),
+	}
+	if _, err := st.ReplaceConversationMessages(ctx, harper, source.Signal, oldMsgs); err != nil {
+		t.Fatal(err)
+	}
+
+	// Manually run the v16 backfill (newTestStore already ran all migrations
+	// up to schemaVersion, so the rows were inserted as 'file' post-migration;
+	// we run the UPDATE directly to verify its logic).
+	if _, err := st.db.Exec(schemaV16); err != nil {
+		t.Fatalf("schemaV16: %v", err)
+	}
+
+	// Video extensions should now be kind='video'.
+	counts, err := st.CountMedia(ctx, GalleryFilter{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if counts.Videos != 2 {
+		t.Errorf("after v16 backfill, Videos = %d, want 2", counts.Videos)
+	}
+	if counts.Files != 1 {
+		t.Errorf("after v16 backfill, Files = %d, want 1 (pdf)", counts.Files)
 	}
 }

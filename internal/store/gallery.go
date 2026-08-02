@@ -415,6 +415,7 @@ func (s *Store) ListLinks(ctx context.Context, f GalleryFilter, cur LinkCursor) 
 // obvious and the active filter's effect is visible).
 type MediaCounts struct {
 	Images int
+	Videos int
 	Files  int
 	Links  int // distinct URLs
 }
@@ -455,6 +456,8 @@ func (s *Store) CountMedia(ctx context.Context, f GalleryFilter) (MediaCounts, e
 		switch kind {
 		case "image":
 			c.Images = n
+		case "video":
+			c.Videos = n
 		case "file":
 			c.Files = n
 		}

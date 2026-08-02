@@ -5,6 +5,9 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"mime"
+	"net/url"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"time"
@@ -222,8 +225,12 @@ func extract(body string) ([]Attachment, []Link) {
 			addLink(target)
 			continue
 		}
+		kind := KindFile
+		if ct := mime.TypeByExtension(strings.ToLower(filepath.Ext(target))); strings.HasPrefix(ct, "video/") {
+			kind = KindVideo
+		}
 		atts = append(atts, Attachment{
-			Kind:         KindFile,
+			Kind:         kind,
 			OriginalName: strings.TrimSpace(m[1]),
 			RelPath:      target,
 		})
@@ -303,6 +310,7 @@ func parseReactionEntries(inner string) []Reaction {
 // ExtractLinks returns the deduplicated bare http(s) URLs in text (with trailing
 // sentence punctuation trimmed), in first-seen order. It is the plain-text URL
 // extractor shared with the iMessage parser, whose bodies carry no Markdown.
+// Junk URLs (protocol only, no domain) are filtered out.
 func ExtractLinks(text string) []Link {
 	if text == "" {
 		return nil
@@ -311,13 +319,33 @@ func ExtractLinks(text string) []Link {
 	seen := map[string]bool{}
 	for _, u := range urlRe.FindAllString(text, -1) {
 		u = strings.TrimRight(u, trailingURLPunct)
-		if u == "" || seen[u] {
+		if u == "" || seen[u] || !isValidURL(u) {
 			continue
 		}
 		seen[u] = true
 		links = append(links, Link{URL: u})
 	}
 	return links
+}
+
+// isValidURL reports whether u is a valid http(s) URL with a non-empty domain.
+// Filters out junk like "https://" or "http://" with no actual domain.
+func isValidURL(u string) bool {
+	parsed, err := url.Parse(u)
+	if err != nil {
+		return false
+	}
+	// Must be http or https scheme
+	if parsed.Scheme != "http" && parsed.Scheme != "https" {
+		return false
+	}
+	// Must have a host
+	if parsed.Host == "" {
+		return false
+	}
+	// Host must contain at least one dot or be localhost
+	host := parsed.Hostname()
+	return strings.Contains(host, ".") || host == "localhost"
 }
 
 // isURL reports whether target is an http(s) URL.

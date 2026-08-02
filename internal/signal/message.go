@@ -38,6 +38,8 @@ type AttachmentKind string
 const (
 	// KindImage is an inline image, written as ![alt](media/<file>).
 	KindImage AttachmentKind = "image"
+	// KindVideo is a video file (mp4, mov, etc.), written as [name](media/<file>).
+	KindVideo AttachmentKind = "video"
 	// KindFile is any other attachment, written as [name](media/<file>).
 	KindFile AttachmentKind = "file"
 )

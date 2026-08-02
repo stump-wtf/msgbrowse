@@ -31,6 +31,7 @@
 package web
 
 import (
+	"context"
 	"net/http"
 	"strconv"
 	"strings"
@@ -95,10 +96,13 @@ type contactMergedRow struct {
 // the form value the split checkbox submits — "source:identifier", parsed back
 // with splitIdentifierToken (source is a fixed enum and carries no colon, so a
 // split on the first colon is unambiguous even for a handle that contains one).
+// ResolvedName is the address-book's display name for this identifier, when
+// available ("" otherwise).
 type contactIdentifierRow struct {
-	Source     string
-	Identifier string
-	Token      string
+	Source       string
+	Identifier   string
+	Token        string
+	ResolvedName string
 }
 
 // handleSettingsContacts renders the Contacts tab (GET /settings/contacts):
@@ -277,9 +281,10 @@ func (s *Server) renderContactSettings(w http.ResponseWriter, r *http.Request, d
 		row := contactMergedRow{ID: mc.ID, Name: mc.DisplayName}
 		for _, ci := range mc.Identifiers {
 			row.Identifiers = append(row.Identifiers, contactIdentifierRow{
-				Source:     ci.Source,
-				Identifier: ci.Identifier,
-				Token:      ci.Source + ":" + ci.Identifier,
+				Source:       ci.Source,
+				Identifier:   ci.Identifier,
+				Token:        ci.Source + ":" + ci.Identifier,
+				ResolvedName: s.resolveIdentifierName(r.Context(), resolver, ci.Identifier),
 			})
 		}
 		data.Merged = append(data.Merged, row)
@@ -293,4 +298,18 @@ func (s *Server) renderContactSettings(w http.ResponseWriter, r *http.Request, d
 	data.SetupToken = tok
 
 	s.render(w, r, "contactsettings", data)
+}
+
+// resolveIdentifierName looks up an identifier (phone/email) in the address
+// book and returns the contact's display name, or "" if not found or the
+// resolver is unavailable.
+func (s *Server) resolveIdentifierName(ctx context.Context, resolver contacts.Resolver, identifier string) string {
+	if resolver == nil || resolver.Availability(ctx) != contacts.Available {
+		return ""
+	}
+	people, err := resolver.Resolve(ctx, contacts.Identifier{Value: identifier})
+	if err != nil || len(people) == 0 {
+		return ""
+	}
+	return people[0].DisplayName
 }

@@ -53,7 +53,7 @@ type linkGroup struct {
 	Links  []store.LinkItem
 }
 
-// galleryImagesData / galleryFilesData / galleryLinksData are the per-tab
+// galleryImagesData / galleryVideosData / galleryFilesData / galleryLinksData are the per-tab
 // page payloads shared by the full gallery render and the /gallery/items
 // infinite-scroll fragments (SPEC-0008 REQ-0008-009). NextURL, when non-empty,
 // is the /gallery/items URL of the next page; the templates render it as an
@@ -61,6 +61,11 @@ type linkGroup struct {
 // uses.
 type galleryImagesData struct {
 	Images  []store.MediaItem
+	NextURL string
+}
+
+type galleryVideosData struct {
+	Videos  []store.MediaItem
 	NextURL string
 }
 
@@ -87,12 +92,13 @@ type galleryData struct {
 	Sources                 []string
 	Counts                  store.MediaCounts
 	ImagesPage              galleryImagesData
+	VideosPage              galleryVideosData
 	FilesPage               galleryFilesData
 	LinksPage               galleryLinksData
 }
 
-// validTabs are the gallery's three views.
-var validTabs = map[string]bool{"images": true, "files": true, "links": true}
+// validTabs are the gallery's four views.
+var validTabs = map[string]bool{"images": true, "videos": true, "files": true, "links": true}
 
 // maxConversationFilterIDs caps how many distinct ?conversation= ids a request
 // may carry. The UI can never produce more than one per conversation, so the
@@ -140,6 +146,13 @@ func (s *Server) handleGallery(w http.ResponseWriter, r *http.Request) {
 	}
 
 	switch form.Tab {
+	case "videos":
+		page, err := s.store.ListAttachments(ctx, "video", filter, 0, 0)
+		if err != nil {
+			s.serverError(w, err)
+			return
+		}
+		data.VideosPage = galleryVideosData{Videos: page.Items, NextURL: form.attachmentsNextURL(page)}
 	case "files":
 		page, err := s.store.ListAttachments(ctx, "file", filter, 0, 0)
 		if err != nil {
@@ -191,6 +204,13 @@ func (s *Server) handleGalleryItems(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		s.render(w, r, "gallery_links_page", galleryLinksData{Groups: groupLinksByDomain(page.Links), NextURL: form.linksNextURL(page)})
+	case "videos":
+		page, err := s.store.ListAttachments(ctx, "video", filter, parseInt64(q.Get("after_ts")), parseInt64(q.Get("after_id")))
+		if err != nil {
+			s.serverError(w, err)
+			return
+		}
+		s.render(w, r, "gallery_videos_page", galleryVideosData{Videos: page.Items, NextURL: form.attachmentsNextURL(page)})
 	case "files":
 		page, err := s.store.ListAttachments(ctx, "file", filter, parseInt64(q.Get("after_ts")), parseInt64(q.Get("after_id")))
 		if err != nil {

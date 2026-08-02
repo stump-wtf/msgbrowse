@@ -532,3 +532,26 @@ func TestChronologicalOrder(t *testing.T) {
 		t.Errorf("tie-break order wrong: %q then %q", ada.Messages[1].Body, ada.Messages[2].Body)
 	}
 }
+
+// TestMapMessageVideoMime verifies that a video/* MIME type maps to KindVideo
+// (issue #4), not KindFile.
+func TestMapMessageVideoMime(t *testing.T) {
+	ts := 1600000000.0
+	fromMe := true
+	mime := "video/mp4"
+	data := "Message/Media/x/video-clip.mp4"
+	m := &message{
+		FromMe:    &fromMe,
+		Timestamp: &ts,
+		Media:     true,
+		Mime:      &mime,
+		Data:      &data,
+	}
+	out := mapMessage("Test", false, "", "", time.UTC, m)
+	if len(out.Attachments) != 1 {
+		t.Fatalf("attachments = %+v, want 1", out.Attachments)
+	}
+	if out.Attachments[0].Kind != signal.KindVideo {
+		t.Errorf("kind = %q, want %q", out.Attachments[0].Kind, signal.KindVideo)
+	}
+}
