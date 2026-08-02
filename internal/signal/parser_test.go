@@ -468,6 +468,39 @@ func TestExtractLinksFiltersJunkURLs(t *testing.T) {
 	}
 }
 
+// TestExtractFiltersJunkURLs: the Signal markdown path (extract) enforces the
+// same junk filter as the plain-text path (ExtractLinks) — both feed the one
+// links table, so a dotless-host URL must be dropped whether it appears as a
+// bare URL or as a Markdown link target in a Signal body.
+func TestExtractFiltersJunkURLs(t *testing.T) {
+	tests := []struct {
+		name string
+		body string
+		want []string
+	}{
+		{"bare junk filtered", "look https://x here", nil},
+		{"protocol-only filtered", "bare https:// here", nil},
+		{"markdown junk target filtered", "[weird](https://x)", nil},
+		{"markdown protocol-only filtered", "[weird](http://)", nil},
+		{"markdown valid target kept", "[site](https://example.com/page)", []string{"https://example.com/page"}},
+		{"mixed junk and valid", "https://x then https://real.com/y and [j](http://foo)", []string{"https://real.com/y"}},
+		{"localhost kept", "see http://localhost:3000/app", []string{"http://localhost:3000/app"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, links := extract(tt.body)
+			if len(links) != len(tt.want) {
+				t.Fatalf("got %d links %+v, want %d", len(links), links, len(tt.want))
+			}
+			for i, w := range tt.want {
+				if links[i].URL != w {
+					t.Errorf("link[%d] = %q, want %q", i, links[i].URL, w)
+				}
+			}
+		})
+	}
+}
+
 // TestIsVideoPath pins the classification to the explicit extension set —
 // the exact list the schema v16 backfill uses — so it cannot drift with the
 // host's /etc/mime.types (Go's builtin mime table knows only .mp4/.ogv as

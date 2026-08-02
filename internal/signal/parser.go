@@ -228,7 +228,10 @@ func extract(body string) ([]Attachment, []Link) {
 
 	addLink := func(u string) {
 		u = strings.TrimRight(u, trailingURLPunct)
-		if u == "" || seen[u] {
+		// The same junk filter ExtractLinks applies: both paths feed the one
+		// links table, so a dotless-host URL ("https://x") must be dropped
+		// here too, whether it arrived bare or as a Markdown link target.
+		if u == "" || seen[u] || !isValidURL(u) {
 			return
 		}
 		seen[u] = true
