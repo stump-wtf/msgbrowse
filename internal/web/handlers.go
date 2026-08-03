@@ -573,7 +573,12 @@ func (s *Server) handleStatusIndex(w http.ResponseWriter, r *http.Request) {
 	if !s.checkSetupPOST(w, r) {
 		return // 403 already written; no job started
 	}
-	s.renderStatus(w, r, s.startReindex(r.Context(), false))
+	result := s.startReindex(r.Context(), false)
+	if isPartialRequest(r) {
+		s.renderStatusCard(w, r, result)
+		return
+	}
+	s.renderStatus(w, r, result)
 }
 
 // handleStatusIndexReset is POST /status/index/reset — the privileged "Reset &
@@ -586,7 +591,49 @@ func (s *Server) handleStatusIndexReset(w http.ResponseWriter, r *http.Request) 
 	if !s.checkSetupPOST(w, r) {
 		return // 403 already written; nothing cleared, no job started
 	}
-	s.renderStatus(w, r, s.startReindex(r.Context(), true))
+	result := s.startReindex(r.Context(), true)
+	if isPartialRequest(r) {
+		s.renderStatusCard(w, r, result)
+		return
+	}
+	s.renderStatus(w, r, result)
+}
+
+// renderStatusCard renders just the semantic-index card fragment with the
+// result banner from a just-completed Build / Reset POST. Used by the HTMX
+// handlers so the card swaps itself without a full-page refresh — the card's
+// hx-get polling then takes over for live progress updates.
+func (s *Server) renderStatusCard(w http.ResponseWriter, r *http.Request, indexResult string) {
+	ctx := r.Context()
+	embedding, err := s.overviewEmbedding(ctx)
+	if err != nil {
+		s.serverError(w, err)
+		return
+	}
+	history, err := s.embedRunHistory(ctx, embedRunHistoryLimit)
+	if err != nil {
+		s.serverError(w, err)
+		return
+	}
+	data := statusData{
+		Embedding:      embedding,
+		History:        history,
+		IndexAvailable: s.indexer != nil,
+		IndexRunning:   s.indexJobRunning(),
+		IndexResult:    indexResult,
+	}
+	// Mint a token for the next Build/Reset only when no run is in flight —
+	// same logic as handleStatusIndexProgress (a running job disables the
+	// buttons, so a minted token would go unused and evict a live one).
+	if s.indexer != nil && !data.Embedding.InProgress && !data.IndexRunning {
+		tok, err := s.setupTokens.mint()
+		if err != nil {
+			s.serverError(w, err)
+			return
+		}
+		data.SetupToken = tok
+	}
+	s.renderFragment(w, "semantic_index_card", data)
 }
 
 // renderStatus assembles the Status page and renders it (full document or

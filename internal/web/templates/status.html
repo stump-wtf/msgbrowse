@@ -233,12 +233,12 @@
            click cannot race the guard. */}}
       <div class="flex flex-wrap gap-3 mt-5">
         <form method="post" action="/status/index"
-              hx-boost="true" hx-target="#main-content" hx-select="#main-content" hx-swap="outerHTML">
+              hx-boost="true" hx-target="#semantic-index-card" hx-select="#semantic-index-card" hx-swap="outerHTML">
           <input type="hidden" name="setup_token" value="{{.SetupToken}}">
           <button type="submit" class="setup-btn"{{if or .Embedding.InProgress .IndexRunning}} disabled{{end}}>Build index</button>
         </form>
         <form method="post" action="/status/index/reset"
-              hx-boost="true" hx-target="#main-content" hx-select="#main-content" hx-swap="outerHTML">
+              hx-boost="true" hx-target="#semantic-index-card" hx-select="#semantic-index-card" hx-swap="outerHTML">
           <input type="hidden" name="setup_token" value="{{.SetupToken}}">
           <button type="submit" class="setup-btn setup-btn-ghost"{{if or .Embedding.InProgress .IndexRunning}} disabled{{end}}>Reset &amp; rebuild</button>
         </form>
