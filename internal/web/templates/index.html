@@ -18,8 +18,7 @@
     <div class="screen-col">
       <header class="mb-8">
         <h1 class="home-hero-title">msgbrowse</h1>
-        <p class="home-hero-tagline">A calm, private reading room for everything you've ever said.<br>
-          Local-only — nothing leaves this machine.</p>
+        <p class="home-hero-tagline">A calm, private reading room for everything you've ever said. Local-only — nothing leaves this machine.</p>
       </header>
 
       {{if .HasArchive}}
@@ -82,41 +81,8 @@
       </div>
       {{end}}
 
-      {{/* Quick-links: compact square icon tiles (accent icon + label + a dim
-           subtitle, per the design brief's 4-up grid) that fit four across
-           inside the 780px reading column. Boosted (same scoped #main-content
-           swap as the sidebar nav) for instant loads. */}}
-      <div class="grid grid-cols-2 sm:grid-cols-4 gap-3"
-           hx-boost="true" hx-target="#main-content" hx-select="#main-content" hx-swap="outerHTML" hx-push-url="true">
-        <a href="/search" class="link-card">
-          <span class="link-card-icon">{{template "icon-search" .}}</span>
-          <span class="link-card-title">Search</span>
-          <span class="link-card-sub">Full-text, filtered</span>
-        </a>
-        <a href="/gallery" class="link-card">
-          <span class="link-card-icon">{{template "icon-photo" .}}</span>
-          <span class="link-card-title">Media</span>
-          <span class="link-card-sub">Images, files, links</span>
-        </a>
-        {{/* Sparkles, not the book glyph it shipped with (#238): the journal's
-             own editorial eyebrow already uses icon-sparkles, so the quick-link
-             and the surface it opens now read as the same feature. */}}
-        <a href="/journal" class="link-card">
-          <span class="link-card-icon">{{template "icon-sparkles" .}}</span>
-          <span class="link-card-title">Journal</span>
-          <span class="link-card-sub">Editorialized days</span>
-        </a>
-        <a href="/status" class="link-card">
-          <span class="link-card-icon">{{template "icon-server" .}}</span>
-          <span class="link-card-title">Status</span>
-          <span class="link-card-sub">Archive &amp; backups</span>
-        </a>
-        <a href="/settings/mcp" class="link-card">
-          <span class="link-card-icon">{{template "icon-settings" .}}</span>
-          <span class="link-card-title">MCP</span>
-          <span class="link-card-sub">Connect Claude</span>
-        </a>
-      </div>
+      {{/* Quick-links removed (redundant with the header tabs — issue: the
+           tiles duplicated navigation the header already provides). */}}
 
       {{/* Diagnostics, subordinate to the reading room above (#239). Per-provider freshness
            (issue #1): one row per source with imported data or a recorded
