@@ -130,7 +130,7 @@
          history table, both button labels — every two seconds for the length of
          a run. The live region is scoped to the one line that actually changes
          (the "Indexing…" progress note) instead. */}}
-    <div id="semantic-index-card" class="status-card"
+    <div id="semantic-index-card" class="status-card mb-4"
          {{- if or .Embedding.InProgress .IndexRunning}} hx-get="/status/index/progress" hx-trigger="every 2s" hx-target="#semantic-index-card" hx-swap="outerHTML"{{end}}>
       <div class="status-card-title">Semantic search index</div>
 
