@@ -226,13 +226,13 @@ func TestOverviewMCPCard(t *testing.T) {
 			t.Errorf("/settings/mcp missing MCP marker %q", want)
 		}
 	}
-	// Home has the MCP quick-link, NOT the card body (#275).
+	// Home has no MCP quick-link (tiles removed — redundant with header tabs).
 	home := get(t, srv, "/").Body.String()
 	if contains(home, `id="mcp-endpoint"`) {
-		t.Error("Home should not render the MCP connection card (replaced by quick-link #275)")
+		t.Error("Home should not render the MCP connection card")
 	}
-	if !contains(home, `href="/settings/mcp"`) {
-		t.Error("Home missing the MCP quick-link")
+	if contains(home, `href="/settings/mcp"`) {
+		t.Error("Home should not render the MCP quick-link (tiles removed)")
 	}
 	// Device pairing stays on Settings only (issue #1 scope).
 	if body := get(t, srv, "/").Body.String(); contains(body, "Pair a device") {
@@ -250,7 +250,7 @@ func TestOverviewPartialCarriesConsolidatedCards(t *testing.T) {
 		t.Fatalf("partial status = %d", rec.Code)
 	}
 	body := rec.Body.String()
-	for _, want := range []string{"By source", "Semantic search index", `href="/settings/mcp"`} {
+	for _, want := range []string{"By source", "Semantic search index"} {
 		if !contains(body, want) {
 			t.Errorf("overview partial missing %q", want)
 		}

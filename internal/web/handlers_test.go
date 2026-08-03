@@ -94,21 +94,25 @@ func TestIndexListsConversations(t *testing.T) {
 }
 
 // TestHomeStatStrip checks the slate Home redesign (REQ-0006-007): the hero
-// wordmark, the 3-cell stat strip with mono tabular values, and the bordered
-// quick-link cards all render.
+// wordmark, the 3-cell stat strip with mono tabular values, and the tagline.
+// Quick-link tiles were removed (redundant with the header tabs).
 func TestHomeStatStrip(t *testing.T) {
 	srv, _, _ := newTestServer(t)
 	body := get(t, srv, "/").Body.String()
 	for _, want := range []string{
-		"home-hero-title", // hero wordmark
-		"stat-strip",      // 3-cell stat strip container
-		"stat-cell-value", // mono tabular stat value
-		"Newest message",  // the third stat cell label
-		"link-card",       // bordered quick-link card
+		"home-hero-title",   // hero wordmark
+		"stat-strip",        // 3-cell stat strip container
+		"stat-cell-value",   // mono tabular stat value
+		"Newest message",    // the third stat cell label
+		"home-hero-tagline", // tagline present
 	} {
 		if !contains(body, want) {
 			t.Errorf("home missing slate marker %q", want)
 		}
+	}
+	// Quick-link tiles removed — they duplicated the header tabs.
+	if contains(body, "link-card") {
+		t.Error("home still renders removed quick-link tiles")
 	}
 }
 
