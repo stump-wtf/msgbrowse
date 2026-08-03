@@ -178,8 +178,19 @@ jobs:
       # -s: no JS frontend to build (the shell serves a Go trampoline, then
       #     loopback HTTP to internal/web); -skipbindings: no bound structs;
       # -m/-nosyncgomod: never rewrite the module files in CI.
+      # -ldflags: inject the tag's version + commit SHA into main.Version /
+      # main.Commit so the macOS About panel reports the real build (#302).
       - name: wails build (darwin/universal)
-        run: wails build -platform darwin/universal -m -nosyncgomod -skipbindings -s -clean
+        working-directory: cmd/msgbrowse-desktop
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            VERSION="${GITHUB_REF#refs/tags/}"
+          else
+            VERSION="dev"
+          fi
+          COMMIT="${GITHUB_SHA:0:7}"
+          wails build -platform darwin/universal -m -nosyncgomod -skipbindings -s -clean \
+            -ldflags "-s -w -X main.Version=$VERSION -X main.Commit=$COMMIT"
 
       # --- Assemble the bundled exporter toolchain (ADR-0020 / SPEC-0013) ------
       # Everything lands under Contents/Resources/tools, the exact layout the Go

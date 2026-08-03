@@ -49,6 +49,13 @@ import (
 	"github.com/wailsapp/wails/v2/pkg/options/mac"
 )
 
+// Version and Commit are injected at build time via -ldflags (desktop.yml).
+// Defaults distinguish a dev build from a tagged release.
+var (
+	Version = "dev"
+	Commit  = "none"
+)
+
 func main() {
 	if err := run(); err != nil {
 		fmt.Fprintln(os.Stderr, "msgbrowse:", err)
@@ -209,6 +216,10 @@ func run() error {
 			// desktop, so window translucency/vibrancy is deliberately off.
 			WebviewIsTransparent: true,
 			WindowIsTranslucent:  false,
+			About: &mac.AboutInfo{
+				Title:   "msgbrowse",
+				Message: fmt.Sprintf("Version %s\nBuild %s", Version, Commit),
+			},
 		},
 		Linux: &linux.Options{
 			ProgramName: "msgbrowse",

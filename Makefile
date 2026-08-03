@@ -100,7 +100,9 @@ check-migrations: ## Fail if a migration that already shipped was edited or dele
 	./scripts/check-migrations.sh $(MIGRATION_BASE_REF)
 
 desktop-linux: ## Build the Linux desktop app to cmd/msgbrowse-desktop/build/bin/msgbrowse (cgo; needs GTK3/WebKit2GTK dev packages)
-	cd $(DESKTOP_DIR) && CGO_ENABLED=1 $(GO) build -tags $(DESKTOP_TAGS) -o $(DESKTOP_OUT) .
+	cd $(DESKTOP_DIR) && CGO_ENABLED=1 $(GO) build -tags $(DESKTOP_TAGS) \
+	  -ldflags "-s -w -X main.Version=$(VERSION) -X main.Commit=$(COMMIT)" \
+	  -o $(DESKTOP_OUT) .
 
 desktop-test: ## Run the desktop module's headless tests (pure Go; no webview toolchain needed)
 	cd $(DESKTOP_DIR) && $(GO) test ./...
