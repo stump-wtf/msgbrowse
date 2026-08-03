@@ -325,7 +325,7 @@ func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 	endpoint := mcpEndpointURL(r)
 	// Home is the Messages surface: the header's Messages tab reads active.
 	base.NavTab = navTabMessages
-	s.render(w, r, "index", indexData{
+	data := indexData{
 		baseData:          base,
 		ConversationCount: convCount,
 		NewestTS:          newest,
@@ -338,7 +338,18 @@ func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 		MCPConfigJSON:     mcp.ClientConfigJSON(endpoint),
 		MCPAddCommand:     mcp.ClaudeMCPAddCommand(endpoint),
 		IndexAvailable:    true,
-	})
+	}
+	// The Build / Reset forms inside semantic_index_card are privileged POSTs:
+	// arm them with a live token, same as the Status page (#224).
+	if s.indexer != nil {
+		tok, err := s.setupTokens.mint()
+		if err != nil {
+			s.serverError(w, err)
+			return
+		}
+		data.SetupToken = tok
+	}
+	s.render(w, r, "index", data)
 }
 
 func (s *Server) handleConversation(w http.ResponseWriter, r *http.Request) {
