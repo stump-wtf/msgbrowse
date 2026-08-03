@@ -1225,10 +1225,19 @@ a.meta-chip:hover {
   color: var(--color-primary);
 }
 /* The icon sits inline before the title, vertically aligned. */
+.status-banner-head {
+  display: flex;
+  align-items: baseline;
+  gap: 0.4rem;
+}
+.status-banner-head .link-card-title {
+  margin: 0;
+}
 .status-banner-icon {
   display: inline-flex;
   vertical-align: middle;
   margin-right: 0.15rem;
+  flex-shrink: 0;
 }
 /* Lightbox close button + caption render over the dark scrim. CSP (style-src
    'self', no 'unsafe-inline') forbids inline style=, so these live as classes. */
