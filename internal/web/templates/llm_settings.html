@@ -33,9 +33,19 @@
     {{- else if eq .SaveResult "error"}}
     {{template "status_banner" dict "variant" "error" "title" "Saving failed." "body" "The settings could not be written to the config file; the running configuration is unchanged. See Logs for details and try again."}}
     {{- else if eq .TestResult "ok"}}
-    {{template "status_banner" dict "variant" "success" "title" "Connection succeeded." "body" "The endpoint responded and the model is valid. These values were only tested — click Save and apply to keep them."}}
+    {{template "status_banner" dict "variant" "success" "title" "Connection succeeded." "body" "The endpoint responded and both models are valid. These values were only tested — click Save and apply to keep them."}}
+    {{- else if eq .TestResult "unauthorized"}}
+    {{template "status_banner" dict "variant" "error" "title" "Authentication failed." "body" "The endpoint rejected the API key (HTTP 401/403). Check the key and try again."}}
+    {{- else if eq .TestResult "model-not-found"}}
+    {{template "status_banner" dict "variant" "error" "title" "Model not found." "body" "The endpoint does not offer one of the configured model names. Check the embed and chat model fields, or click Refresh models to see what is available."}}
+    {{- else if eq .TestResult "timeout"}}
+    {{template "status_banner" dict "variant" "warning" "title" "Connection timed out." "body" "The endpoint did not respond in time. It may be loading a model or under heavy load. Check the base URL and try again."}}
+    {{- else if eq .TestResult "bad-response"}}
+    {{template "status_banner" dict "variant" "error" "title" "Unexpected response." "body" "The endpoint responded but with an unexpected format. It may not be fully OpenAI-compatible. See Logs for details."}}
     {{- else if eq .TestResult "unreachable"}}
-    {{template "status_banner" dict "variant" "error" "title" "Connection failed." "body" "The endpoint could not be reached, or it rejected the model. Check the base URL, model names, and API key, then try again. See Logs for details."}}
+    {{template "status_banner" dict "variant" "error" "title" "Connection failed." "body" "The endpoint could not be reached. Check the base URL and try again. See Logs for details."}}
+    {{- else if eq .TestResult "no-model"}}
+    {{template "status_banner" dict "variant" "warning" "title" "Nothing to test." "body" "Neither an embed model nor a chat model is configured. Enter a model name and try again."}}
     {{- else if eq .TestResult "unavailable"}}
     {{template "status_banner" dict "variant" "warning" "title" "Testing is not available here." "body" "This server was started without a live LLM client to probe with."}}
     {{- else if eq .ModelsResult "ok"}}
@@ -76,22 +86,17 @@
 
         <div class="space-y-1">
           <label class="eyebrow block" for="llm-embed-model">Embed model</label>
-          {{- if .Models}}
-          <select id="llm-embed-model" name="embed_model" class="filter-input w-full font-mono"
-                  {{if .ErrEmbedModel}}aria-invalid="true" aria-describedby="llm-embed-model-error"{{else}}aria-describedby="llm-embed-model-hint"{{end}}>
-            <option value="">— none (semantic search off) —</option>
-            {{- range .Models}}
-            <option value="{{.}}"{{if eq $.EmbedModel .}} selected{{end}}>{{.}}</option>
-            {{- end}}
-            {{- if and .EmbedModel (not (has .Models .EmbedModel))}}
-            <option value="{{.EmbedModel}}" selected>⚠ {{.EmbedModel}} (not offered by this endpoint)</option>
-            {{- end}}
-          </select>
-          {{- else}}
-          <input id="llm-embed-model" name="embed_model" type="text" class="filter-input w-full font-mono"
+          <input id="llm-embed-model" name="embed_model" type="text" list="llm-model-options"
+                 class="filter-input w-full font-mono"
                  value="{{.EmbedModel}}" autocomplete="off" spellcheck="false"
-                 placeholder="local-embed"
+                 placeholder="{{if .Models}}select or type a model name{{else}}local-embed{{end}}"
                  {{if .ErrEmbedModel}}aria-invalid="true" aria-describedby="llm-embed-model-error"{{else}}aria-describedby="llm-embed-model-hint"{{end}}>
+          {{- if .Models}}
+          <datalist id="llm-model-options">
+            {{- range .Models}}
+            <option value="{{.}}">
+            {{- end}}
+          </datalist>
           {{- end}}
           {{- if .ErrEmbedModel}}
           <p id="llm-embed-model-error" class="setup-note setup-note-warn">
@@ -108,23 +113,11 @@
 
         <div class="space-y-1">
           <label class="eyebrow block" for="llm-facts-model">Chat model</label>
-          {{- if .Models}}
-          <select id="llm-facts-model" name="facts_model" class="filter-input w-full font-mono"
-                  {{if .ErrFactsModel}}aria-invalid="true" aria-describedby="llm-facts-model-error"{{else}}aria-describedby="llm-facts-model-hint"{{end}}>
-            <option value="">— none —</option>
-            {{- range .Models}}
-            <option value="{{.}}"{{if eq $.FactsModel .}} selected{{end}}>{{.}}</option>
-            {{- end}}
-            {{- if and .FactsModel (not (has .Models .FactsModel))}}
-            <option value="{{.FactsModel}}" selected>⚠ {{.FactsModel}} (not offered by this endpoint)</option>
-            {{- end}}
-          </select>
-          {{- else}}
-          <input id="llm-facts-model" name="facts_model" type="text" class="filter-input w-full font-mono"
+          <input id="llm-facts-model" name="facts_model" type="text" list="llm-model-options"
+                 class="filter-input w-full font-mono"
                  value="{{.FactsModel}}" autocomplete="off" spellcheck="false"
-                 placeholder="local-chat"
+                 placeholder="{{if .Models}}select or type a model name{{else}}local-chat{{end}}"
                  {{if .ErrFactsModel}}aria-invalid="true" aria-describedby="llm-facts-model-error"{{else}}aria-describedby="llm-facts-model-hint"{{end}}>
-          {{- end}}
           {{- if .ErrFactsModel}}
           <p id="llm-facts-model-error" class="setup-note setup-note-warn">
             {{- if eq .ErrFactsModel "toolong"}}That model name is too long.
@@ -179,9 +172,12 @@
              the endpoint's /v1/models listing. No inline JS — CSP-safe. */}}
         <div class="flex flex-wrap gap-3">
           <button type="submit" class="setup-btn">Save and apply</button>
-          <button type="submit" class="setup-btn setup-btn-ghost"
-                  formaction="/settings/llm/test"
-                  hx-post="/settings/llm/test">Test connection</button>
+          {{/* hx-include the whole form (not a field list) so a future field
+               addition can't silently break the probe by being left out. */}}
+          <button type="button" class="setup-btn setup-btn-ghost"
+                  hx-post="/settings/llm/test"
+                  hx-target="#main-content" hx-select="#main-content" hx-swap="outerHTML"
+                  hx-include="closest form">Test connection</button>
           <button type="submit" class="setup-btn setup-btn-ghost"
                   formaction="/settings/llm/models"
                   hx-post="/settings/llm/models">Refresh models</button>

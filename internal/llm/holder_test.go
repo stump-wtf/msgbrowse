@@ -3,6 +3,7 @@ package llm
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -134,11 +135,11 @@ func TestApplierTestLLMProbesBothModels(t *testing.T) {
 
 	h := NewHolder(markerClient{marker: 7}, Settings{BaseURL: "http://old.invalid/v1"})
 	a := NewApplier(h, 0, nil)
-	err := a.TestLLM(context.Background(), Settings{
+	result := a.TestLLM(context.Background(), Settings{
 		BaseURL: srv.URL + "/v1", EmbedModel: "probe-embed", ChatModel: "probe-chat",
 	})
-	if err != nil {
-		t.Fatalf("TestLLM = %v, want nil", err)
+	if result.Failure != TestOK {
+		t.Fatalf("TestLLM failure = %q, want ok", result.Failure)
 	}
 	if !hits["/v1/embeddings"] {
 		t.Error("probe did not hit /v1/embeddings")
@@ -169,9 +170,9 @@ func TestApplierTestLLMFactsModelError(t *testing.T) {
 	defer srv.Close()
 
 	a := NewApplier(NewHolder(markerClient{marker: 1}, Settings{}), 0, nil)
-	if err := a.TestLLM(context.Background(), Settings{
+	if result := a.TestLLM(context.Background(), Settings{
 		BaseURL: srv.URL + "/v1", EmbedModel: "probe-embed", ChatModel: "probe-chat",
-	}); err == nil {
+	}); result.Failure == TestOK {
 		t.Error("TestLLM should surface a broken facts model even when the embed model is valid")
 	}
 }
@@ -187,8 +188,8 @@ func TestApplierTestLLMChatProbe(t *testing.T) {
 	defer srv.Close()
 
 	a := NewApplier(NewHolder(markerClient{marker: 1}, Settings{}), 0, nil)
-	if err := a.TestLLM(context.Background(), Settings{BaseURL: srv.URL + "/v1", ChatModel: "probe-chat"}); err != nil {
-		t.Fatalf("TestLLM = %v, want nil", err)
+	if result := a.TestLLM(context.Background(), Settings{BaseURL: srv.URL + "/v1", ChatModel: "probe-chat"}); result.Failure != TestOK {
+		t.Fatalf("TestLLM failure = %q, want ok", result.Failure)
 	}
 	if hitPath != "/v1/chat/completions" {
 		t.Errorf("probe hit %q, want /v1/chat/completions", hitPath)
@@ -203,15 +204,46 @@ func TestApplierTestLLMSurfacesError(t *testing.T) {
 	defer srv.Close()
 
 	a := NewApplier(NewHolder(markerClient{marker: 1}, Settings{}), 0, nil)
-	if err := a.TestLLM(context.Background(), Settings{BaseURL: srv.URL + "/v1", EmbedModel: "probe-embed"}); err == nil {
+	if result := a.TestLLM(context.Background(), Settings{BaseURL: srv.URL + "/v1", EmbedModel: "probe-embed"}); result.Failure == TestOK {
 		t.Error("TestLLM should surface a 5xx as an error")
 	}
 }
 
-// TestApplierTestLLMNoModel: with neither model set there is nothing to probe.
+// TestApplierTestLLMNoModel: with neither model set there is nothing to probe,
+// and the failure must say so — not claim the endpoint was unreachable.
 func TestApplierTestLLMNoModel(t *testing.T) {
 	a := NewApplier(NewHolder(markerClient{marker: 1}, Settings{}), 0, nil)
-	if err := a.TestLLM(context.Background(), Settings{BaseURL: "http://x.invalid/v1"}); err == nil {
-		t.Error("TestLLM with no models should error")
+	result := a.TestLLM(context.Background(), Settings{BaseURL: "http://x.invalid/v1"})
+	if result.Failure != TestNoModel {
+		t.Errorf("TestLLM with no models = %q, want %q", result.Failure, TestNoModel)
+	}
+}
+
+// TestClassifyError pins the probe-failure classification. HTTP failures are
+// classified by the typed statusError's real code — NOT by digits in the error
+// text, which also appear in ports (":4013"), paths, and body snippets.
+func TestClassifyError(t *testing.T) {
+	cases := []struct {
+		name string
+		err  error
+		want TestFailure
+	}{
+		{"nil", nil, TestOK},
+		{"401 status", &statusError{path: "/v1/embeddings", code: 401, body: "no key"}, TestUnauthorized},
+		{"403 status", &statusError{path: "/v1/embeddings", code: 403, body: "forbidden"}, TestUnauthorized},
+		{"404 status", &statusError{path: "/v1/chat/completions", code: 404, body: "unknown model"}, TestModelNotFound},
+		{"400 with model-not-found body", &statusError{path: "/v1/chat/completions", code: 400, body: `{"error":"model 'gpt-x' does not exist"}`}, TestModelNotFound},
+		{"500 with 401 in body is NOT unauthorized", &statusError{path: "/v1/embeddings", code: 500, body: `{"error":"upstream returned 401"}`}, TestBadResponse},
+		{"port containing 401 is NOT unauthorized", errors.New(`llm: request to /v1/embeddings: Post "http://10.0.0.9:4013/v1/embeddings": dial tcp 10.0.0.9:4013: connect: connection refused`), TestUnreachable},
+		{"deadline exceeded", fmt.Errorf("llm: request to /v1/embeddings: %w", context.DeadlineExceeded), TestTimeout},
+		{"no such host", errors.New(`llm: request to /v1/models: Get "http://nope.invalid/v1/models": dial tcp: lookup nope.invalid: no such host`), TestUnreachable},
+		{"json decode", errors.New(`llm: decode response from /v1/embeddings: invalid character '<' looking for beginning of value`), TestBadResponse},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := classifyError(tc.err); got != tc.want {
+				t.Errorf("classifyError(%v) = %q, want %q", tc.err, got, tc.want)
+			}
+		})
 	}
 }
