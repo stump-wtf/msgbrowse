@@ -495,6 +495,35 @@ func TestLLMTestConnectionUnreachable(t *testing.T) {
 	}
 }
 
+// TestLLMTestConnectionBannerPerFailure: every classified probe failure maps
+// to its own banner — the actionable-enum contract of #230.
+func TestLLMTestConnectionBannerPerFailure(t *testing.T) {
+	cases := []struct {
+		failure llm.TestFailure
+		banner  string
+	}{
+		{llm.TestUnauthorized, "Authentication failed."},
+		{llm.TestModelNotFound, "Model not found."},
+		{llm.TestTimeout, "Connection timed out."},
+		{llm.TestBadResponse, "Unexpected response."},
+		{llm.TestNoModel, "Nothing to test."},
+	}
+	for _, tc := range cases {
+		t.Run(string(tc.failure), func(t *testing.T) {
+			srv, _, _ := newTestServer(t)
+			srv.SetLLMConfig(&fakeLLMConfigurator{testFailure: tc.failure})
+			tok := mintToken(t, srv)
+			rec := llmTestPOST(t, srv, selfOrigin, tok, validLLMForm())
+			if rec.Code != http.StatusOK {
+				t.Fatalf("status = %d", rec.Code)
+			}
+			if !contains(rec.Body.String(), tc.banner) {
+				t.Errorf("failure %q: missing banner %q", tc.failure, tc.banner)
+			}
+		})
+	}
+}
+
 // TestLLMTestUnavailableWithoutConfigurator: no configurator wired → the
 // gate-passing probe reports itself unavailable and probes nothing.
 func TestLLMTestUnavailableWithoutConfigurator(t *testing.T) {

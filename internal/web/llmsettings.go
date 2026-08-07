@@ -95,9 +95,10 @@ type llmSettingsData struct {
 	// "unavailable" (no configurator wired), or "error" (persist/swap failed).
 	SaveResult string
 	// TestResult is the post-probe banner state for "Test connection": ""
-	// (no probe attempted), "ok" (endpoint reachable + model valid),
-	// "unreachable" (probe failed — no raw error is echoed), or "unavailable"
-	// (no configurator wired).
+	// (no probe attempted), "ok" (endpoint reachable + models valid),
+	// "unavailable" (no configurator wired), or one of llm.TestFailure's
+	// classified enums ("unauthorized", "model-not-found", "timeout",
+	// "bad-response", "unreachable", "no-model") — no raw error is echoed.
 	TestResult string
 	// ModelsResult is the post-refresh banner state for the "Refresh models"
 	// button: "" (no refresh attempted), "ok" (listing succeeded),
@@ -280,10 +281,10 @@ func (s *Server) handleSettingsLLMSave(w http.ResponseWriter, r *http.Request) {
 // per-session token + body cap, 403 before any work), it reads the SAME
 // currently-entered (unsaved) form values, validates them, then probes the
 // endpoint WITHOUT persisting or swapping the live client. The result is a
-// fixed-enum banner ("ok" / "unreachable" / "unavailable"); the raw probe
-// error is logged server-side but never echoed into the page (it can carry the
-// endpoint URL). The form and effective/entered values re-render unchanged so
-// the user can adjust and retry.
+// fixed-enum banner ("ok" / "unavailable" / a classified llm.TestFailure);
+// the raw probe error is logged server-side but never echoed into the page
+// (it can carry the endpoint URL). The form and effective/entered values
+// re-render unchanged so the user can adjust and retry.
 func (s *Server) handleSettingsLLMTest(w http.ResponseWriter, r *http.Request) {
 	if !s.checkSetupPOST(w, r) {
 		return // 403 already written; nothing was validated or probed

@@ -44,6 +44,8 @@
     {{template "status_banner" dict "variant" "error" "title" "Unexpected response." "body" "The endpoint responded but with an unexpected format. It may not be fully OpenAI-compatible. See Logs for details."}}
     {{- else if eq .TestResult "unreachable"}}
     {{template "status_banner" dict "variant" "error" "title" "Connection failed." "body" "The endpoint could not be reached. Check the base URL and try again. See Logs for details."}}
+    {{- else if eq .TestResult "no-model"}}
+    {{template "status_banner" dict "variant" "warning" "title" "Nothing to test." "body" "Neither an embed model nor a chat model is configured. Enter a model name and try again."}}
     {{- else if eq .TestResult "unavailable"}}
     {{template "status_banner" dict "variant" "warning" "title" "Testing is not available here." "body" "This server was started without a live LLM client to probe with."}}
     {{- else if eq .ModelsResult "ok"}}
@@ -170,10 +172,12 @@
              the endpoint's /v1/models listing. No inline JS — CSP-safe. */}}
         <div class="flex flex-wrap gap-3">
           <button type="submit" class="setup-btn">Save and apply</button>
+          {{/* hx-include the whole form (not a field list) so a future field
+               addition can't silently break the probe by being left out. */}}
           <button type="button" class="setup-btn setup-btn-ghost"
                   hx-post="/settings/llm/test"
                   hx-target="#main-content" hx-select="#main-content" hx-swap="outerHTML"
-                  hx-include="[name='setup_token'], [name='base_url'], [name='embed_model'], [name='facts_model'], [name='api_key'], [name='clear_api_key']">Test connection</button>
+                  hx-include="closest form">Test connection</button>
           <button type="submit" class="setup-btn setup-btn-ghost"
                   formaction="/settings/llm/models"
                   hx-post="/settings/llm/models">Refresh models</button>
