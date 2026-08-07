@@ -55,9 +55,10 @@ type LLMConfigurator interface {
 	ApplyLLM(s llm.Settings) error
 	// TestLLM probes the endpoint described by s with a cheap real call,
 	// WITHOUT persisting or swapping the live client — the "Test connection"
-	// affordance so a user can verify an endpoint before saving. Returns nil
-	// on success, an error otherwise.
-	TestLLM(ctx context.Context, s llm.Settings) error
+	// affordance so a user can verify an endpoint before saving. Returns a
+	// TestResult with per-model outcomes; the web layer maps Failure to a
+	// fixed-enum banner.
+	TestLLM(ctx context.Context, s llm.Settings) llm.TestResult
 	// ListModels fetches the model ids from the currently configured
 	// endpoint's /v1/models listing. Returns llm.ErrModelsNotSupported
 	// when the endpoint returns 404 or a non-JSON body. Returns the
@@ -315,18 +316,17 @@ func (s *Server) handleSettingsLLMTest(w http.ResponseWriter, r *http.Request) {
 		s.renderLLMSettings(w, r, data)
 		return
 	}
-	if err := s.llmConfig.TestLLM(r.Context(), llm.Settings{
+	result := s.llmConfig.TestLLM(r.Context(), llm.Settings{
 		BaseURL:    data.BaseURL,
 		EmbedModel: data.EmbedModel,
 		ChatModel:  data.FactsModel,
 		APIKey:     apiKey,
-	}); err != nil {
-		// The raw error can name the endpoint URL, so it is logged (endpoint
-		// names are configuration, never message content) but NEVER rendered.
+	})
+	if result.Failure != "" {
 		s.log.Warn("LLM test connection failed",
 			"base_url", data.BaseURL, "embed_model", data.EmbedModel, "chat_model", data.FactsModel,
-			"error", err)
-		data.TestResult = "unreachable"
+			"failure", result.Failure, "embed_ok", result.EmbedOK, "chat_ok", result.ChatOK)
+		data.TestResult = string(result.Failure)
 		s.renderLLMSettings(w, r, data)
 		return
 	}

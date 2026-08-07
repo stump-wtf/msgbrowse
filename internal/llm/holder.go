@@ -8,7 +8,7 @@ package llm
 
 import (
 	"context"
-	"fmt"
+	"strings"
 	"sync"
 	"time"
 )
@@ -160,39 +160,98 @@ func (a *Applier) ApplyLLM(s Settings) error {
 
 // llmTestTimeout caps a TestLLM probe so a wrong or dead endpoint fails fast
 // rather than hanging the Settings tab for the Applier's full request timeout.
+// The probe honours the Applier's configured timeout (a.timeout) when it is
+// set, falling back to this constant only when no timeout was wired.
 const llmTestTimeout = 5 * time.Second
+
+// TestFailure classifies a probe error into a fixed enum the web layer can
+// render as an actionable banner without echoing raw error text (which may
+// carry the endpoint URL).
+type TestFailure string
+
+const (
+	TestOK            TestFailure = ""
+	TestUnreachable   TestFailure = "unreachable"
+	TestUnauthorized  TestFailure = "unauthorized"
+	TestModelNotFound TestFailure = "model-not-found"
+	TestTimeout       TestFailure = "timeout"
+	TestBadResponse   TestFailure = "bad-response"
+	TestUnavailable   TestFailure = "unavailable"
+)
+
+// TestResult carries per-model probe outcomes so the UI can report which model
+// failed and why, instead of collapsing everything into one opaque error.
+type TestResult struct {
+	EmbedOK bool
+	ChatOK  bool
+	Failure TestFailure
+}
+
+// classifyError maps a probe error to a TestFailure enum by inspecting the
+// error chain for HTTP status codes, timeout markers, and DNS/refused signals.
+func classifyError(err error) TestFailure {
+	if err == nil {
+		return TestOK
+	}
+	msg := err.Error()
+	if strings.Contains(msg, "context deadline exceeded") || strings.Contains(msg, "timeout") {
+		return TestTimeout
+	}
+	if strings.Contains(msg, "401") || strings.Contains(msg, "403") || strings.Contains(msg, "unauthorized") {
+		return TestUnauthorized
+	}
+	if strings.Contains(msg, "404") || strings.Contains(msg, "model") && (strings.Contains(msg, "not found") || strings.Contains(msg, "does not exist")) {
+		return TestModelNotFound
+	}
+	if strings.Contains(msg, "connection refused") || strings.Contains(msg, "no such host") || strings.Contains(msg, "dial") {
+		return TestUnreachable
+	}
+	if strings.Contains(msg, "invalid character") || strings.Contains(msg, "unexpected") || strings.Contains(msg, "json") {
+		return TestBadResponse
+	}
+	return TestUnreachable
+}
 
 // TestLLM probes the endpoint described by s WITHOUT persisting or swapping the
 // live client — the Settings → LLM tab's "Test connection" affordance, so a
 // user can verify a LiteLLM/Ollama endpoint before saving. It builds a
 // transient client from s (same builder ApplyLLM uses) and makes one cheap real
 // call per configured model to prove reachability + model validity: a
-// single-string embed when an embed model is set AND a 1-token chat when a facts
+// single-string embed when an embed model is set AND a minimal chat when a facts
 // model is set. Probing every configured model keeps the "the model is valid"
 // banner honest — a valid embed model no longer masks a typo'd facts model.
-// Returns nil on success, the underlying error otherwise (the web layer maps it
-// to a fixed-enum banner and never echoes it into the page).
-func (a *Applier) TestLLM(ctx context.Context, s Settings) error {
-	ctx, cancel := context.WithTimeout(ctx, llmTestTimeout)
+// Returns a TestResult with per-model outcomes; the web layer maps Failure to
+// a fixed-enum banner and never echoes raw error text into the page.
+func (a *Applier) TestLLM(ctx context.Context, s Settings) TestResult {
+	timeout := a.timeout
+	if timeout == 0 {
+		timeout = llmTestTimeout
+	}
+	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	c := a.build(s)
+	result := TestResult{EmbedOK: true, ChatOK: true}
 	if s.EmbedModel == "" && s.ChatModel == "" {
-		return fmt.Errorf("llm: no embed or facts model configured to test")
+		result.Failure = TestUnreachable
+		return result
 	}
 	if s.EmbedModel != "" {
 		if _, err := c.Embed(ctx, []string{"ping"}); err != nil {
-			return err
+			result.EmbedOK = false
+			result.Failure = classifyError(err)
+			return result
 		}
 	}
 	if s.ChatModel != "" {
 		if _, err := c.Chat(ctx, ChatRequest{
-			Messages:  []Message{{Role: RoleUser, Content: "ping"}},
-			MaxTokens: 1,
+			Messages: []Message{{Role: RoleUser, Content: "ping"}},
 		}); err != nil {
-			return err
+			result.ChatOK = false
+			result.Failure = classifyError(err)
+			return result
 		}
 	}
-	return nil
+	return result
 }
 
 // build constructs a fresh client from s, reused by ApplyLLM's live swap and

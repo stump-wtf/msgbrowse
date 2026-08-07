@@ -23,10 +23,10 @@ type fakeLLMConfigurator struct {
 	applied  []llm.Settings
 	applyErr error
 	// tested records every TestLLM probe so the tests can assert a rejected
-	// POST probed NOTHING (the checkSetupPOST contract); testErr is the error
-	// the probe returns (nil = reachable).
-	tested  []llm.Settings
-	testErr error
+	// POST probed NOTHING (the checkSetupPOST contract); testFailure is the
+	// classified failure the probe returns (empty = success).
+	tested      []llm.Settings
+	testFailure llm.TestFailure
 	// models, when non-nil, is what ListModels returns; nil falls through to
 	// llm.ErrModelsNotSupported (the pre-#271 default).
 	models []string
@@ -42,15 +42,12 @@ func (f *fakeLLMConfigurator) ApplyLLM(s llm.Settings) error {
 	return nil
 }
 
-func (f *fakeLLMConfigurator) TestLLM(_ context.Context, s llm.Settings) error {
+func (f *fakeLLMConfigurator) TestLLM(_ context.Context, s llm.Settings) llm.TestResult {
 	f.tested = append(f.tested, s)
-	return f.testErr
+	return llm.TestResult{EmbedOK: f.testFailure == "", ChatOK: f.testFailure == "", Failure: f.testFailure}
 }
 
 func (f *fakeLLMConfigurator) ListModels(_ context.Context) ([]string, error) {
-	if f.testErr != nil {
-		return nil, f.testErr
-	}
 	if f.models != nil {
 		return f.models, nil
 	}
@@ -429,8 +426,9 @@ func TestLLMSaveApplyErrorReported(t *testing.T) {
 	}
 }
 
-// TestLLMTabHasTestButton: the tab renders a "Test connection" submit that
-// targets /settings/llm/test (both the htmx hx-post and the no-JS formaction).
+// TestLLMTabHasTestButton: the tab renders a "Test connection" button that
+// targets /settings/llm/test via hx-post. The button is type="button" (not
+// type="submit") to prevent double-firing the boosted form's save action.
 func TestLLMTabHasTestButton(t *testing.T) {
 	srv, _, _ := newTestServer(t)
 	srv.SetLLMConfig(&fakeLLMConfigurator{})
@@ -442,8 +440,8 @@ func TestLLMTabHasTestButton(t *testing.T) {
 	if !contains(body, `hx-post="/settings/llm/test"`) {
 		t.Error("Test connection button missing its hx-post route")
 	}
-	if !contains(body, `formaction="/settings/llm/test"`) {
-		t.Error("Test connection button missing its no-JS formaction route")
+	if contains(body, `formaction="/settings/llm/test"`) {
+		t.Error("Test connection button should not have formaction (type=button prevents double-fire)")
 	}
 }
 
@@ -477,7 +475,7 @@ func TestLLMTestConnectionOK(t *testing.T) {
 // banner and NEVER echoes the raw error (which can carry the endpoint URL).
 func TestLLMTestConnectionUnreachable(t *testing.T) {
 	srv, _, _ := newTestServer(t)
-	fc := &fakeLLMConfigurator{testErr: errors.New("dial tcp 10.0.0.9:4000: connection refused")}
+	fc := &fakeLLMConfigurator{testFailure: llm.TestUnreachable}
 	srv.SetLLMConfig(fc)
 
 	tok := mintToken(t, srv)
@@ -735,8 +733,8 @@ func TestLLMModelsRefreshValidationRejected(t *testing.T) {
 }
 
 // TestLLMTabAutoLoadsModels (#271): GET /settings/llm populates .Models from
-// the live configurator and the embed/facts fields render as <select>
-// dropdowns on first paint — no button click required.
+// the live configurator and the embed/facts fields render with a <datalist>
+// for autocomplete suggestions on first paint — no button click required.
 func TestLLMTabAutoLoadsModels(t *testing.T) {
 	srv, _, _ := newTestServer(t)
 	fc := &fakeLLMConfigurator{
@@ -753,13 +751,13 @@ func TestLLMTabAutoLoadsModels(t *testing.T) {
 		t.Fatalf("status = %d", rec.Code)
 	}
 	body := rec.Body.String()
-	if !contains(body, `<select id="llm-embed-model"`) {
-		t.Error("embed_model should render as a <select> when models are loaded")
+	if !contains(body, `<datalist id="llm-model-options">`) {
+		t.Error("model fields should render with a <datalist> when models are loaded")
 	}
-	if !contains(body, `<select id="llm-facts-model"`) {
-		t.Error("facts_model should render as a <select> when models are loaded")
+	if !contains(body, `list="llm-model-options"`) {
+		t.Error("model inputs should reference the datalist via list attribute")
 	}
-	// The auto-loaded models must appear as options.
+	// The auto-loaded models must appear as options in the datalist.
 	for _, m := range []string{"alpha", "beta", "gamma"} {
 		if !contains(body, `<option value="`+m+`"`) {
 			t.Errorf("missing option for model %q", m)

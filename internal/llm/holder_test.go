@@ -134,11 +134,11 @@ func TestApplierTestLLMProbesBothModels(t *testing.T) {
 
 	h := NewHolder(markerClient{marker: 7}, Settings{BaseURL: "http://old.invalid/v1"})
 	a := NewApplier(h, 0, nil)
-	err := a.TestLLM(context.Background(), Settings{
+	result := a.TestLLM(context.Background(), Settings{
 		BaseURL: srv.URL + "/v1", EmbedModel: "probe-embed", ChatModel: "probe-chat",
 	})
-	if err != nil {
-		t.Fatalf("TestLLM = %v, want nil", err)
+	if result.Failure != TestOK {
+		t.Fatalf("TestLLM failure = %q, want ok", result.Failure)
 	}
 	if !hits["/v1/embeddings"] {
 		t.Error("probe did not hit /v1/embeddings")
@@ -169,9 +169,9 @@ func TestApplierTestLLMFactsModelError(t *testing.T) {
 	defer srv.Close()
 
 	a := NewApplier(NewHolder(markerClient{marker: 1}, Settings{}), 0, nil)
-	if err := a.TestLLM(context.Background(), Settings{
+	if result := a.TestLLM(context.Background(), Settings{
 		BaseURL: srv.URL + "/v1", EmbedModel: "probe-embed", ChatModel: "probe-chat",
-	}); err == nil {
+	}); result.Failure == TestOK {
 		t.Error("TestLLM should surface a broken facts model even when the embed model is valid")
 	}
 }
@@ -187,8 +187,8 @@ func TestApplierTestLLMChatProbe(t *testing.T) {
 	defer srv.Close()
 
 	a := NewApplier(NewHolder(markerClient{marker: 1}, Settings{}), 0, nil)
-	if err := a.TestLLM(context.Background(), Settings{BaseURL: srv.URL + "/v1", ChatModel: "probe-chat"}); err != nil {
-		t.Fatalf("TestLLM = %v, want nil", err)
+	if result := a.TestLLM(context.Background(), Settings{BaseURL: srv.URL + "/v1", ChatModel: "probe-chat"}); result.Failure != TestOK {
+		t.Fatalf("TestLLM failure = %q, want ok", result.Failure)
 	}
 	if hitPath != "/v1/chat/completions" {
 		t.Errorf("probe hit %q, want /v1/chat/completions", hitPath)
@@ -203,7 +203,7 @@ func TestApplierTestLLMSurfacesError(t *testing.T) {
 	defer srv.Close()
 
 	a := NewApplier(NewHolder(markerClient{marker: 1}, Settings{}), 0, nil)
-	if err := a.TestLLM(context.Background(), Settings{BaseURL: srv.URL + "/v1", EmbedModel: "probe-embed"}); err == nil {
+	if result := a.TestLLM(context.Background(), Settings{BaseURL: srv.URL + "/v1", EmbedModel: "probe-embed"}); result.Failure == TestOK {
 		t.Error("TestLLM should surface a 5xx as an error")
 	}
 }
@@ -211,7 +211,7 @@ func TestApplierTestLLMSurfacesError(t *testing.T) {
 // TestApplierTestLLMNoModel: with neither model set there is nothing to probe.
 func TestApplierTestLLMNoModel(t *testing.T) {
 	a := NewApplier(NewHolder(markerClient{marker: 1}, Settings{}), 0, nil)
-	if err := a.TestLLM(context.Background(), Settings{BaseURL: "http://x.invalid/v1"}); err == nil {
-		t.Error("TestLLM with no models should error")
+	if result := a.TestLLM(context.Background(), Settings{BaseURL: "http://x.invalid/v1"}); result.Failure == TestOK {
+		t.Error("TestLLM with no models should report a failure")
 	}
 }
