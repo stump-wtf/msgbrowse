@@ -8,6 +8,8 @@ package llm
 
 import (
 	"context"
+	"errors"
+	"net"
 	"strings"
 	"sync"
 	"time"
@@ -158,10 +160,10 @@ func (a *Applier) ApplyLLM(s Settings) error {
 	return nil
 }
 
-// llmTestTimeout caps a TestLLM probe so a wrong or dead endpoint fails fast
-// rather than hanging the Settings tab for the Applier's full request timeout.
-// The probe honours the Applier's configured timeout (a.timeout) when it is
-// set, falling back to this constant only when no timeout was wired.
+// llmTestTimeout is the fallback cap for a TestLLM probe when no timeout was
+// wired into the Applier. When the Applier has a configured timeout (the user's
+// llm.timeout), the probe honours that instead (#230) — a slow endpoint that is
+// usable in production should also pass its own connection test.
 const llmTestTimeout = 5 * time.Second
 
 // TestFailure classifies a probe error into a fixed enum the web layer can
@@ -177,6 +179,7 @@ const (
 	TestTimeout       TestFailure = "timeout"
 	TestBadResponse   TestFailure = "bad-response"
 	TestUnavailable   TestFailure = "unavailable"
+	TestNoModel       TestFailure = "no-model"
 )
 
 // TestResult carries per-model probe outcomes so the UI can report which model
@@ -187,26 +190,43 @@ type TestResult struct {
 	Failure TestFailure
 }
 
-// classifyError maps a probe error to a TestFailure enum by inspecting the
-// error chain for HTTP status codes, timeout markers, and DNS/refused signals.
+// classifyError maps a probe error to a TestFailure enum. HTTP failures carry
+// a typed *statusError, so the real status code decides the class — substring
+// checks like "401" would also match ports, paths, and response-body text.
+// Transport errors have no typed shape, so those fall back to the well-known
+// net/http error strings.
 func classifyError(err error) TestFailure {
 	if err == nil {
 		return TestOK
 	}
-	msg := err.Error()
-	if strings.Contains(msg, "context deadline exceeded") || strings.Contains(msg, "timeout") {
+	var se *statusError
+	if errors.As(err, &se) {
+		switch se.code {
+		case 401, 403:
+			return TestUnauthorized
+		case 404:
+			return TestModelNotFound
+		}
+		// Some gateways (LiteLLM, Ollama) report an unknown model as a 400/422
+		// with an explanatory body rather than a 404.
+		body := strings.ToLower(se.body)
+		if strings.Contains(body, "model") && (strings.Contains(body, "not found") || strings.Contains(body, "does not exist")) {
+			return TestModelNotFound
+		}
+		return TestBadResponse
+	}
+	if errors.Is(err, context.DeadlineExceeded) {
 		return TestTimeout
 	}
-	if strings.Contains(msg, "401") || strings.Contains(msg, "403") || strings.Contains(msg, "unauthorized") {
-		return TestUnauthorized
+	var ne net.Error
+	if errors.As(err, &ne) && ne.Timeout() {
+		return TestTimeout
 	}
-	if strings.Contains(msg, "404") || strings.Contains(msg, "model") && (strings.Contains(msg, "not found") || strings.Contains(msg, "does not exist")) {
-		return TestModelNotFound
-	}
+	msg := err.Error()
 	if strings.Contains(msg, "connection refused") || strings.Contains(msg, "no such host") || strings.Contains(msg, "dial") {
 		return TestUnreachable
 	}
-	if strings.Contains(msg, "invalid character") || strings.Contains(msg, "unexpected") || strings.Contains(msg, "json") {
+	if strings.Contains(msg, "decode response") || strings.Contains(msg, "invalid character") || strings.Contains(msg, "json") {
 		return TestBadResponse
 	}
 	return TestUnreachable
@@ -232,7 +252,9 @@ func (a *Applier) TestLLM(ctx context.Context, s Settings) TestResult {
 	c := a.build(s)
 	result := TestResult{EmbedOK: true, ChatOK: true}
 	if s.EmbedModel == "" && s.ChatModel == "" {
-		result.Failure = TestUnreachable
+		// Nothing configured to probe — a distinct failure so the banner can
+		// say so instead of falsely claiming the endpoint was unreachable.
+		result.Failure = TestNoModel
 		return result
 	}
 	if s.EmbedModel != "" {

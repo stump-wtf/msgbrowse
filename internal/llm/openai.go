@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"mime/multipart"
@@ -123,7 +124,8 @@ func (c *OpenAIClient) ListModels(ctx context.Context) ([]string, error) {
 	respBody, err := c.do(req)
 	if err != nil {
 		// A 404 means the endpoint doesn't support model listing.
-		if strings.Contains(err.Error(), "404") {
+		var se *statusError
+		if errors.As(err, &se) && se.code == http.StatusNotFound {
 			return nil, ErrModelsNotSupported
 		}
 		return nil, err
@@ -296,8 +298,22 @@ func (c *OpenAIClient) setAuth(req *http.Request) {
 	}
 }
 
-// do executes the request and returns the body, mapping non-2xx to an error
-// that includes a (truncated) response body for diagnosis.
+// statusError is a non-2xx response from the endpoint. Error() keeps the exact
+// "llm: /path returned CODE: BODY" format — web.SummarizeEmbedError parses it —
+// while the typed form lets classifyError read the real status code instead of
+// substring-matching digits that also appear in ports, paths, and body text.
+type statusError struct {
+	path string
+	code int
+	body string
+}
+
+func (e *statusError) Error() string {
+	return fmt.Sprintf("llm: %s returned %d: %s", e.path, e.code, e.body)
+}
+
+// do executes the request and returns the body, mapping non-2xx to a
+// *statusError that includes a (truncated) response body for diagnosis.
 func (c *OpenAIClient) do(req *http.Request) ([]byte, error) {
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
@@ -317,7 +333,7 @@ func (c *OpenAIClient) do(req *http.Request) ([]byte, error) {
 		if len(snippet) > 500 {
 			snippet = snippet[:500]
 		}
-		return nil, fmt.Errorf("llm: %s returned %d: %s", req.URL.Path, resp.StatusCode, snippet)
+		return nil, &statusError{path: req.URL.Path, code: resp.StatusCode, body: snippet}
 	}
 	return body, nil
 }
