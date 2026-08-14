@@ -22,8 +22,9 @@ import (
 )
 
 func main() {
-	// Execute renders any error through the logger (with hints); main only sets
-	// the exit status so the failure isn't printed twice.
+	// Execute renders help and any error through fang (styled with the Slate
+	// palette); main only sets the exit status so the failure isn't printed
+	// twice.
 	if err := cli.Execute(); err != nil {
 		os.Exit(1)
 	}

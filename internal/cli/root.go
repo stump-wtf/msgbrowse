@@ -6,10 +6,14 @@
 package cli
 
 import (
+	"context"
 	"errors"
+	"fmt"
+	"io"
 	"log/slog"
 	"os"
 
+	"charm.land/fang/v2"
 	charmlog "github.com/charmbracelet/log"
 	"github.com/joestump/msgbrowse/internal/config"
 	"github.com/joestump/msgbrowse/internal/imessage"
@@ -49,6 +53,10 @@ func NewRootCommand() *cobra.Command {
 		},
 	}
 
+	// fang.WithVersion installs a --version flag on the root; pin its output to
+	// the same line the `version` subcommand prints so the two agree.
+	root.SetVersionTemplate(versionLine() + "\n")
+
 	pf := root.PersistentFlags()
 	pf.StringVar(&cfgFile, "config", "", "config file (default: ./config.yaml or $HOME/.config/msgbrowse/config.yaml)")
 	pf.String("archive-root", "", "path to the signal-export archive (read-only)")
@@ -80,34 +88,52 @@ func NewRootCommand() *cobra.Command {
 	return root
 }
 
-// Execute runs the root command. It is the single entry point used by main.
+// Execute runs the root command through fang (charm.land/fang/v2), the same
+// help/error layering Crush uses: --help for every command renders fang's
+// aligned command/flag tables, and failures render as its styled ERROR block
+// — both re-skinned with the Slate palette via slateColorScheme (#330).
 //
-// It installs a pretty default logger up front (so even config-load failures,
-// which happen before per-command config resolution, render nicely) and reports
-// the final error through that logger rather than as a bare line.
+// It still installs the pretty default logger up front (so log lines emitted
+// before per-command config resolution render nicely); fang owns only the
+// help and error surfaces. Exit codes are unchanged: main sets them.
+//
+// fang also injects a hidden `man` subcommand and keeps cobra's completions —
+// both harmless extras. Its signal handling (WithNotifySignal) is deliberately
+// NOT used: this change is presentation-only, and Ctrl-C semantics belong to
+// the commands' own context handling.
 func Execute() error {
 	configureLogger("info")
-	if err := NewRootCommand().Execute(); err != nil {
-		renderError(err)
-		return err
-	}
-	return nil
+	return fang.Execute(
+		context.Background(),
+		NewRootCommand(),
+		fang.WithVersion(Version),
+		fang.WithCommit(Commit),
+		fang.WithColorSchemeFunc(slateColorScheme),
+		fang.WithErrorHandler(slateErrorHandler),
+	)
 }
 
-// renderError prints a command failure as a styled error, appending an
-// actionable hint for the failure modes users actually hit.
-func renderError(err error) {
+// slateErrorHandler renders a command failure through fang's styled output
+// while keeping msgbrowse's actionable failure hints (errorHint). The hint
+// line inherits fang's error-text style, so it aligns under the message and
+// colorprofile strips its styling automatically on non-color output.
+func slateErrorHandler(w io.Writer, styles fang.Styles, err error) {
 	// `doctor` already printed a full human-readable report to stdout; its
-	// sentinel only exists to make the process exit non-zero. Don't double-report
-	// it as a logger error line.
+	// sentinel only exists to make the process exit non-zero. Don't re-report
+	// it as a fang error block.
 	if errors.Is(err, errDoctorFailed) {
 		return
 	}
+	// fang's ErrorText title-cases the first word. Several of our errors lead
+	// with a literal config key (`data_dir must not be empty`,
+	// `device_sync.listen_addr …`, `archive_root …`), and capitalizing those
+	// prints a key that does not exist in config.yaml or the environment. Drop
+	// the transform and render the message verbatim.
+	styles.ErrorText = styles.ErrorText.UnsetTransform()
+	fang.DefaultErrorHandler(w, styles, err)
 	if hint := errorHint(err); hint != "" {
-		slog.Error(err.Error(), "hint", hint)
-		return
+		_, _ = fmt.Fprintln(w, styles.ErrorText.Render("Hint: "+hint))
 	}
-	slog.Error(err.Error())
 }
 
 // errorHint maps known failures to an actionable next step. Matching is on
