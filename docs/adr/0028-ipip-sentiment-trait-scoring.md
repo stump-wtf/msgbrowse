@@ -1,4 +1,4 @@
-# ADR-0027: IPIP-anchored sentiment & trait scoring — the `message_sentiment` table
+# ADR-0028: IPIP-anchored sentiment & trait scoring — the `message_sentiment` table
 
 - **Status:** Proposed
 - **Date:** 2026-07-29

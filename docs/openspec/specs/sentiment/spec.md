@@ -1,7 +1,7 @@
 ---
 status: draft
 date: 2026-07-29
-implements: [ADR-0027]
+implements: [ADR-0028]
 extends: [SPEC-0016, SPEC-0017]
 ---
 
@@ -12,7 +12,7 @@ extends: [SPEC-0016, SPEC-0017]
   (`schema.go`, new `sentiment.go`), `internal/cli` (new `sentiment.go`),
   `internal/web` (`contact.go`, `journal.go`, `templates/contact.html`,
   `templates/journal.html`)
-- **Related ADRs:** [ADR-0027 (IPIP-anchored sentiment & trait scoring)](../../../adr/0027-ipip-sentiment-trait-scoring.md),
+- **Related ADRs:** [ADR-0028 (IPIP-anchored sentiment & trait scoring)](../../../adr/0028-ipip-sentiment-trait-scoring.md),
   [ADR-0011 (contact facts extraction)](../../../adr/0011-contact-facts-extraction.md),
   [ADR-0023 (AI-editorialized journal)](../../../adr/0023-ai-editorialized-journal.md),
   [ADR-0010 (security & privacy posture)](../../../adr/0010-security-privacy-posture.md),
@@ -28,7 +28,7 @@ extends: [SPEC-0016, SPEC-0017]
 msgbrowse scores messages against a curated subset of the public-domain
 [IPIP](https://ipip.ori.org) construct taxonomy — the Big Five trait domains
 plus ~10 affect facets — using the configured chat model, with IPIP's marker
-items as behavioral anchors in the prompt (ADR-0027). Scores land in a sparse,
+items as behavioral anchors in the prompt (ADR-0028). Scores land in a sparse,
 hash-keyed, model- and lexicon-stamped `message_sentiment` table that survives
 re-ingest, exactly as `embeddings` and `contact_facts` do. Three read-side
 surfaces consume it: sentiment-over-time and a Big Five trait sketch on the

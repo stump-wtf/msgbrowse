@@ -2,7 +2,7 @@
 
 ## Context
 
-[ADR-0027](../../../adr/0027-ipip-sentiment-trait-scoring.md) decided the
+[ADR-0028](../../../adr/0028-ipip-sentiment-trait-scoring.md) decided the
 taxonomy: a curated two-tier subset of the public-domain IPIP construct pool
 (five Big Five domains + ~10 affect facets), scored by the configured chat
 model with IPIP marker items as prompt anchors, stored in the hash-keyed,
