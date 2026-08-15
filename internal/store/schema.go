@@ -6,7 +6,7 @@ import "context"
 // `user_version` pragma. On Open, the migrations runner brings any older
 // database forward to this version. Bump it and append a migration whenever the
 // schema changes.
-const schemaVersion = 16
+const schemaVersion = 17
 
 // SchemaVersion returns the schema revision this binary expects (and migrates a
 // database forward to on Open). Read-only callers — notably `msgbrowse doctor` —
@@ -55,6 +55,7 @@ var migrations = []string{
 	14: schemaV14,
 	15: schemaV15,
 	16: schemaV16,
+	17: schemaV17,
 }
 
 // schemaV1 is the initial Signal-only schema. It is preserved verbatim so a
@@ -727,4 +728,56 @@ UPDATE attachments
     OR lower(rel_path) LIKE '%.mpeg'
     OR lower(rel_path) LIKE '%.3gp'
    );
+`
+
+// schemaV17 lays down IPIP-anchored sentiment scoring (ADR-0028, SPEC-0027).
+//
+// message_sentiment is a derived cache in the ADR-0002 sense and therefore has
+// NO foreign key to messages: it is keyed by the message's content hash, so a
+// re-ingest that deletes and re-inserts message rows with new rowids leaves the
+// scores intact and still joinable. It is also sparse — only constructs the
+// model reported as salient for a message get a row — and stamped with the
+// (model, lexicon_version) generation that produced it, because scores from
+// different models or curations are not comparable and must never be averaged
+// together. The UNIQUE constraint is what makes writes idempotent upserts, so
+// rescanning a conversation is always safe.
+//
+// contact_sentiment_optout is deliberately FK-less too, for a different reason:
+// it is a privacy preference, not derived data. Letting an ON DELETE CASCADE
+// drop it would silently re-enable scoring for a contact whose row was rewritten
+// by a merge/split (SPEC-0018), which is the one direction this table must never
+// fail in. A dangling marker is harmless; a vanished one is not.
+const schemaV17 = `
+CREATE TABLE IF NOT EXISTS message_sentiment (
+    message_hash    TEXT    NOT NULL,
+    model           TEXT    NOT NULL,
+    lexicon_version TEXT    NOT NULL,
+    construct       TEXT    NOT NULL,
+    score           REAL    NOT NULL,
+    ts_unix         INTEGER NOT NULL,
+    contact_id      INTEGER NOT NULL,
+    UNIQUE(message_hash, model, lexicon_version, construct)
+);
+
+-- The read-side aggregates (profile sentiment-over-time, trait sketch) always
+-- filter to one contact and the current generation, then bucket by time.
+CREATE INDEX IF NOT EXISTS idx_message_sentiment_contact
+    ON message_sentiment(contact_id, model, lexicon_version, ts_unix);
+
+-- The journal mood strip buckets every contact's scores by UTC day.
+CREATE INDEX IF NOT EXISTS idx_message_sentiment_ts
+    ON message_sentiment(model, lexicon_version, ts_unix);
+
+CREATE TABLE IF NOT EXISTS sentiment_state (
+    conversation_id INTEGER PRIMARY KEY REFERENCES conversations(id) ON DELETE CASCADE,
+    last_message_hash TEXT  NOT NULL,
+    model           TEXT    NOT NULL,
+    lexicon_version TEXT    NOT NULL,
+    updated_at      TEXT    NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS contact_sentiment_optout (
+    contact_id INTEGER PRIMARY KEY,
+    created_at TEXT NOT NULL
+);
 `
