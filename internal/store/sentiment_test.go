@@ -261,6 +261,54 @@ func TestOptOutDeletesRetroactively(t *testing.T) {
 	}
 }
 
+// TestPutSentimentBatchRefusesOptedOutContacts covers the race the caller-side
+// filter cannot: a run reads the opt-out set once at the top, so a contact who
+// opts out while that run is in flight would otherwise get scores written back
+// moments after SetSentimentOptOut deleted them — marked opted out and scored
+// anyway. The guard lives on the write, inside the same transaction.
+func TestPutSentimentBatchRefusesOptedOutContacts(t *testing.T) {
+	st := newTestStore(t)
+	ctx := context.Background()
+	conv := seedConversation(t, st, source.Signal, "Harper")
+	other := seedConversation(t, st, source.Signal, "Wren")
+	cid := contactID(t, st, conv)
+	otherCID := contactID(t, st, other)
+	hash, _, _, tsUnix := firstMessage(t, st, conv)
+
+	if err := st.SetSentimentOptOut(ctx, cid, true); err != nil {
+		t.Fatal(err)
+	}
+
+	// A batch computed before the opt-out lands, carrying both contacts.
+	if err := st.PutSentimentBatch(ctx, conv, genV1, hash, []SentimentScore{
+		{MessageHash: hash, Construct: "Anger", Score: 0.7, TSUnix: tsUnix, ContactID: cid},
+		{MessageHash: hash, Construct: "Empathy", Score: 0.4, TSUnix: tsUnix, ContactID: otherCID},
+	}); err != nil {
+		t.Fatalf("PutSentimentBatch: %v", err)
+	}
+
+	var reinstated int
+	if err := st.DB().QueryRow(`SELECT COUNT(*) FROM message_sentiment WHERE contact_id = ?`, cid).Scan(&reinstated); err != nil {
+		t.Fatal(err)
+	}
+	if reinstated != 0 {
+		t.Errorf("an in-flight batch wrote %d score rows for an opted-out contact, want 0", reinstated)
+	}
+
+	// The bystander in the same batch is still written, and the cursor still
+	// advanced — an opt-out must not stall the run.
+	var kept int
+	if err := st.DB().QueryRow(`SELECT COUNT(*) FROM message_sentiment WHERE contact_id = ?`, otherCID).Scan(&kept); err != nil {
+		t.Fatal(err)
+	}
+	if kept != 1 {
+		t.Errorf("bystander score rows = %d, want 1", kept)
+	}
+	if gotHash, _, ok, err := st.GetSentimentState(ctx, conv); err != nil || !ok || gotHash != hash {
+		t.Errorf("cursor = %q (ok %v, err %v), want it advanced to %q", gotHash, ok, err, hash)
+	}
+}
+
 func TestOptOutIsReversibleAndIdempotent(t *testing.T) {
 	st := newTestStore(t)
 	ctx := context.Background()

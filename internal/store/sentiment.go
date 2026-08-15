@@ -8,14 +8,11 @@ import (
 )
 
 // SentimentConversation identifies a conversation eligible for sentiment
-// scoring. It mirrors FactConversation: the orchestrator needs the name to
-// honor the exclude list and the contact to attribute scores.
-type SentimentConversation struct {
-	ID        int64
-	Source    string
-	Name      string
-	ContactID int64
-}
+// scoring. Eligibility is the same question fact extraction asks — linked to a
+// contact, holding at least one real message — so it is the same type, resolved
+// by the same query (see eligibleConversations). Keeping it an alias rather than
+// a parallel struct means the two orchestrators cannot drift apart silently.
+type SentimentConversation = FactConversation
 
 // SentimentScore is one construct's score for one message, as written by the
 // scoring engine. ContactID is the resolved *sender* at scoring time, which is
@@ -42,37 +39,7 @@ type SentimentGeneration struct {
 // Excluded conversations are filtered by name here, before any caller reads
 // message content, so their text never reaches the engine let alone the LLM.
 func (s *Store) SentimentConversations(ctx context.Context, exclude []string) ([]SentimentConversation, error) {
-	rows, err := s.db.QueryContext(ctx, `
-SELECT c.id, c.source, c.name, c.contact_id
-  FROM conversations c
- WHERE c.contact_id IS NOT NULL
-   AND EXISTS (
-       SELECT 1 FROM messages m
-        WHERE m.conversation_id = c.id AND m.is_system = 0 AND TRIM(m.body) <> ''
-   )
- ORDER BY c.id`)
-	if err != nil {
-		return nil, fmt.Errorf("sentiment conversations: %w", err)
-	}
-	defer rows.Close()
-
-	excluded := make(map[string]struct{}, len(exclude))
-	for _, name := range exclude {
-		excluded[name] = struct{}{}
-	}
-
-	var out []SentimentConversation
-	for rows.Next() {
-		var sc SentimentConversation
-		if err := rows.Scan(&sc.ID, &sc.Source, &sc.Name, &sc.ContactID); err != nil {
-			return nil, err
-		}
-		if _, skip := excluded[sc.Name]; skip {
-			continue
-		}
-		out = append(out, sc)
-	}
-	return out, rows.Err()
+	return s.eligibleConversations(ctx, "sentiment conversations", exclude)
 }
 
 // GetSentimentState returns the scoring cursor for a conversation: the hash of
@@ -104,6 +71,14 @@ func (s *Store) GetSentimentState(ctx context.Context, convID int64) (lastHash s
 // failure that lost the cursor, re-inserts nothing and overwrites nothing.
 // Passing an empty scores slice is valid and still advances the cursor — a
 // batch where the model found nothing salient is progress, not a no-op.
+//
+// Every insert is guarded on contact_sentiment_optout inside the write
+// transaction. Callers filter opted-out contacts before scoring, but that filter
+// is read once at the start of a run: a contact who opts out while a long run is
+// in flight would otherwise have scores written back seconds after
+// SetSentimentOptOut deleted them, leaving them marked opted out and scored
+// anyway. SPEC-0027 makes opt-out deletion rather than suppression, so the
+// invariant belongs on the write itself, not only on the caller.
 func (s *Store) PutSentimentBatch(ctx context.Context, convID int64, gen SentimentGeneration, lastHash string, scores []SentimentScore) error {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -114,7 +89,8 @@ func (s *Store) PutSentimentBatch(ctx context.Context, convID int64, gen Sentime
 	if len(scores) > 0 {
 		stmt, err := tx.PrepareContext(ctx, `
 INSERT INTO message_sentiment(message_hash, model, lexicon_version, construct, score, ts_unix, contact_id)
-VALUES (?, ?, ?, ?, ?, ?, ?)
+SELECT ?, ?, ?, ?, ?, ?, ?
+ WHERE NOT EXISTS (SELECT 1 FROM contact_sentiment_optout o WHERE o.contact_id = ?)
 ON CONFLICT(message_hash, model, lexicon_version, construct) DO NOTHING`)
 		if err != nil {
 			return fmt.Errorf("prepare sentiment insert: %w", err)
@@ -122,7 +98,7 @@ ON CONFLICT(message_hash, model, lexicon_version, construct) DO NOTHING`)
 		defer stmt.Close()
 
 		for _, sc := range scores {
-			if _, err := stmt.ExecContext(ctx, sc.MessageHash, gen.Model, gen.LexiconVersion, sc.Construct, sc.Score, sc.TSUnix, sc.ContactID); err != nil {
+			if _, err := stmt.ExecContext(ctx, sc.MessageHash, gen.Model, gen.LexiconVersion, sc.Construct, sc.Score, sc.TSUnix, sc.ContactID, sc.ContactID); err != nil {
 				return fmt.Errorf("insert sentiment score (%s/%s): %w", sc.MessageHash, sc.Construct, err)
 			}
 		}

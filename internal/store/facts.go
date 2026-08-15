@@ -69,6 +69,16 @@ func factHash(fact string) string {
 // journal honors) so their content is never handed to the orchestrator, let
 // alone the LLM.
 func (s *Store) FactConversations(ctx context.Context, exclude []string) ([]FactConversation, error) {
+	return s.eligibleConversations(ctx, "fact conversations", exclude)
+}
+
+// eligibleConversations answers the question both LLM-backed enrichment passes
+// ask: which conversations may be read at all? Linked to a contact, holding at
+// least one real (non-system, non-empty) message, and not on the exclude list.
+// The exclusion is applied here rather than by the caller so an excluded
+// conversation's content is never loaded in the first place. what names the
+// operation in the wrapped error.
+func (s *Store) eligibleConversations(ctx context.Context, what string, exclude []string) ([]FactConversation, error) {
 	rows, err := s.db.QueryContext(ctx, `
 SELECT c.id, c.source, c.name, c.contact_id
   FROM conversations c
@@ -79,7 +89,7 @@ SELECT c.id, c.source, c.name, c.contact_id
    )
  ORDER BY c.id`)
 	if err != nil {
-		return nil, fmt.Errorf("fact conversations: %w", err)
+		return nil, fmt.Errorf("%s: %w", what, err)
 	}
 	defer rows.Close()
 
