@@ -95,13 +95,27 @@ const (
 //	Command        secondary        light accent for subcommand names
 //	Flag           success          iMessage green for flags
 //	QuotedString   warning          the gold family the web reserves for highlights
-//	Base/Description/Argument/Help  base-content
+//	Base/Description/Argument       base-content
 //	Codeblock      base-200         the raised-panel surface behind the usage line
-//	FlagDefault/Comment/DimmedArgument/ErrorDetails  dim
+//	FlagDefault/Comment/DimmedArgument  dim
 //	ErrorHeader    errContent on errColor  the daisyUI error badge pairing
 //
-// Every role holds ≥4.5:1 against base-100 and base-200 — helptheme_test.go
-// asserts it — via the light-mode substitutes documented above.
+// Three of fang.ColorScheme's sixteen fields are deliberately left unset:
+// Help, Dash and ErrorDetails have no consumer. fang's makeStyles never reads
+// them (verified by grep over fang v2.0.1 — they appear only at their struct
+// declaration and in DefaultColorScheme), and neither does slateStyles. Mapping
+// them only invited the contrast test to prove a property of three values that
+// never reach a terminal (#333, M4).
+//
+// One guarantee that is easy to misread while looking at this table: the
+// ERROR *body* is not governed by it. fang builds styles.ErrorText with no
+// Foreground at all — only MarginLeft, Width and (in fang's own makeStyles) the
+// title-case transform — so error text renders in whatever foreground colour
+// the terminal already has. Only the ERROR badge itself (ErrorHeader) is ours.
+//
+// Every role that does render holds ≥4.5:1 against base-100 and base-200 —
+// helptheme_test.go asserts it — via the light-mode substitutes documented
+// above.
 func (p slatePalette) colorScheme() fang.ColorScheme {
 	base := lipgloss.Color(p.baseContent)
 	accent := lipgloss.Color(p.primary)
@@ -127,10 +141,7 @@ func (p slatePalette) colorScheme() fang.ColorScheme {
 		Command:        command,
 		QuotedString:   quoted,
 		Argument:       base,
-		Help:           base,
-		Dash:           dim,
 		ErrorHeader:    [2]color.Color{lipgloss.Color(p.errContent), lipgloss.Color(p.errColor)},
-		ErrorDetails:   dim,
 	}
 }
 
@@ -154,12 +165,10 @@ func slateColorScheme(c lipgloss.LightDarkFunc) fang.ColorScheme {
 		Command:        c(light.Command, dark.Command),
 		QuotedString:   c(light.QuotedString, dark.QuotedString),
 		Argument:       c(light.Argument, dark.Argument),
-		Help:           c(light.Help, dark.Help),
-		Dash:           c(light.Dash, dark.Dash),
 		ErrorHeader: [2]color.Color{
 			c(light.ErrorHeader[0], dark.ErrorHeader[0]),
 			c(light.ErrorHeader[1], dark.ErrorHeader[1]),
 		},
-		ErrorDetails: c(light.ErrorDetails, dark.ErrorDetails),
+		// Help, Dash and ErrorDetails stay unset — see colorScheme above.
 	}
 }

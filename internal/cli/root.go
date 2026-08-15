@@ -14,11 +14,14 @@ import (
 	"os"
 
 	"charm.land/fang/v2"
+	"github.com/charmbracelet/colorprofile"
 	charmlog "github.com/charmbracelet/log"
 	"github.com/joestump/msgbrowse/internal/config"
 	"github.com/joestump/msgbrowse/internal/imessage"
 	"github.com/joestump/msgbrowse/internal/ingest"
 	"github.com/joestump/msgbrowse/internal/whatsapp"
+	mango "github.com/muesli/mango-cobra"
+	"github.com/muesli/roff"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 )
@@ -94,29 +97,74 @@ func NewRootCommand() *cobra.Command {
 	return root
 }
 
-// Execute runs the root command through fang (charm.land/fang/v2), the same
-// help/error layering Crush uses: --help for every command renders fang's
-// aligned command/flag tables, and failures render as its styled ERROR block
-// — both re-skinned with the Slate palette via slateColorScheme (#330).
+// Execute runs the root command with the same help/error layering Crush uses:
+// --help for every command renders fang's aligned command/flag tables, and
+// failures render as its styled ERROR block — both re-skinned with the Slate
+// palette via slateColorScheme (#330).
+//
+// It no longer goes through fang.Execute. Three defects of fang v2.0.1 are
+// unreachable from its options (a 4s OSC 11 background query on every help
+// invocation, flag value types dropped from the flag table, and a title-case
+// transform that rewrites literal executable names), so help.go reproduces
+// fang's layout on top of fang's exported Styles instead — see the comment
+// there for the full accounting (#333). fang still owns the error surface,
+// and the dependency is unchanged.
 //
 // It still installs the pretty default logger up front (so log lines emitted
-// before per-command config resolution render nicely); fang owns only the
-// help and error surfaces. Exit codes are unchanged: main sets them.
-//
-// fang also injects a hidden `man` subcommand and keeps cobra's completions —
-// both harmless extras. Its signal handling (WithNotifySignal) is deliberately
-// NOT used: this change is presentation-only, and Ctrl-C semantics belong to
-// the commands' own context handling.
+// before per-command config resolution render nicely). Exit codes are
+// unchanged: main sets them. Signal handling is deliberately not installed
+// here: Ctrl-C semantics belong to the commands' own context handling.
 func Execute() error {
 	configureLogger("info")
-	return fang.Execute(
-		context.Background(),
-		NewRootCommand(),
-		fang.WithVersion(Version),
-		fang.WithCommit(Commit),
-		fang.WithColorSchemeFunc(slateColorScheme),
-		fang.WithErrorHandler(slateErrorHandler),
-	)
+	return execute(context.Background(), NewRootCommand(), os.Args[1:])
+}
+
+// execute is Execute's testable core: everything except reading os.Args and
+// configuring the logger.
+func execute(ctx context.Context, root *cobra.Command, args []string) error {
+	root.SilenceUsage = true
+	root.SilenceErrors = true
+	root.SetArgs(args)
+	// cobra only installs the --version flag when Version is non-empty; this
+	// is what fang.WithVersion used to do for us. The value is never printed —
+	// NewRootCommand pins --version's output with SetVersionTemplate.
+	if root.Version == "" {
+		root.Version = Version
+	}
+	installHelp(root)
+	root.AddCommand(newManCommand())
+
+	if err := root.ExecuteContext(ctx); err != nil {
+		out := root.ErrOrStderr()
+		styles, _ := styleFor(out)
+		slateErrorHandler(colorprofile.NewWriter(out, os.Environ()), styles, err)
+		return err
+	}
+	return nil
+}
+
+// newManCommand reproduces the hidden `man` subcommand fang.Execute injected,
+// so dropping fang.Execute does not silently drop manpage generation.
+func newManCommand() *cobra.Command {
+	return &cobra.Command{
+		Use:                   "man",
+		Short:                 "Generates manpages",
+		SilenceUsage:          true,
+		DisableFlagsInUseLine: true,
+		Hidden:                true,
+		Args:                  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			page, err := mango.NewManPage(1, cmd.Root())
+			if err != nil {
+				return fmt.Errorf("building manpage: %w", err)
+			}
+			_, err = fmt.Fprint(cmd.OutOrStdout(), page.Build(roff.NewDocument()))
+			if err != nil {
+				return fmt.Errorf("writing manpage: %w", err)
+			}
+			return nil
+		},
+	}
 }
 
 // slateErrorHandler renders a command failure through fang's styled output
