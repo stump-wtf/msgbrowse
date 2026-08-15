@@ -7,6 +7,15 @@ import (
 	"time"
 )
 
+// OwnerContactID attributes a score to the archive owner, who has no row in
+// contacts (they are identified by sender name, not as a contact). Real contact
+// ids are SQLite rowids and therefore start at 1, so 0 is unambiguous.
+//
+// Owner rows are stored rather than dropped because the journal's mood strip
+// aggregates everyone in a day, including you; the contact-profile surfaces
+// filter to a specific contact id and so never pick them up.
+const OwnerContactID int64 = 0
+
 // SentimentConversation identifies a conversation eligible for sentiment
 // scoring. Eligibility is the same question fact extraction asks — linked to a
 // contact, holding at least one real message — so it is the same type, resolved
