@@ -1,3 +1,17 @@
 {
-  "$schema": "https://docs.renovatebot.com/renovate-schema.json"
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "description": [
+    "This file was a bare $schema stanza until August 2026, which meant Renovate ran with no preset and opened one PR per package.",
+    "Six @docusaurus/* packages are released in lockstep, so that produced six PRs for one version bump — and merging any of them alone left the docs site with a peer mismatch (core@3.10.2 against preset-classic@3.9.2) while invalidating the other five lockfiles, costing a rebase and a CI run each.",
+    "config:recommended pulls in group:monorepos, which knows @docusaurus/* is one monorepo and groups it. The rule below covers the one grouping Renovate cannot infer on its own."
+  ],
+  "extends": ["config:recommended"],
+  "packageRules": [
+    {
+      "description": "The toolchain directive in both go.mod files and the golang base image in the Dockerfile are one decision. Split across two PRs, a build image a minor behind the directive either downloads a second toolchain at build time or fails outright under GOTOOLCHAIN=local.",
+      "groupName": "go toolchain",
+      "matchDatasources": ["golang-version", "docker"],
+      "matchPackageNames": ["go", "golang"]
+    }
+  ]
 }
