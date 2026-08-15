@@ -54,8 +54,14 @@ func NewRootCommand() *cobra.Command {
 	}
 
 	// fang.WithVersion installs a --version flag on the root; pin its output to
-	// the same line the `version` subcommand prints so the two agree.
-	root.SetVersionTemplate(versionLine() + "\n")
+	// the same line the `version` subcommand prints so the two agree. The line
+	// is handed to cobra as template *data* (an annotation), never baked into
+	// the template *text*: cobra renders the version template with
+	// text/template + template.Must, so a `{{` arriving from the ldflags-set
+	// Version would otherwise be re-parsed — printing a different line than the
+	// `version` subcommand at best, and panicking the process at worst.
+	root.Annotations = map[string]string{versionLineAnnotation: versionLine()}
+	root.SetVersionTemplate("{{index .Annotations \"" + versionLineAnnotation + "\"}}\n")
 
 	pf := root.PersistentFlags()
 	pf.StringVar(&cfgFile, "config", "", "config file (default: ./config.yaml or $HOME/.config/msgbrowse/config.yaml)")

@@ -84,22 +84,64 @@ func TestSlateErrorHandlerKeepsConfigKeyCase(t *testing.T) {
 	}
 }
 
+// runVersionSurface executes the root command and returns what it printed.
+//
+// `version` runs through PersistentPreRunE -> config.Load(""), which searches
+// ".", "$HOME/.config/msgbrowse", os.UserConfigDir()/msgbrowse and
+// "/etc/msgbrowse". A real config.yaml on the developer's or CI runner's box
+// therefore decides the result: a malformed one fails this test with "reading
+// config: ... yaml: ..." — a failure with nothing to do with versioning. Point
+// HOME and XDG_CONFIG_HOME at an empty temp dir so no host file is found: the
+// same hermetic-HOME pattern internal/config's loadHermetic and internal/setup
+// (PR #214) already use.
+func runVersionSurface(t *testing.T, args ...string) string {
+	t.Helper()
+	dir := t.TempDir()
+	t.Setenv("HOME", dir)
+	t.Setenv("XDG_CONFIG_HOME", dir)
+
+	var buf bytes.Buffer
+	root := NewRootCommand()
+	root.SetOut(&buf)
+	root.SetErr(&buf)
+	root.SetArgs(args)
+	root.Version = "ignored-by-the-template"
+	if err := root.Execute(); err != nil {
+		t.Fatalf("running %v: %v", args, err)
+	}
+	return strings.TrimSpace(buf.String())
+}
+
 // TestVersionSurfacesAgree pins the `version` subcommand and the --version
 // flag fang installs on the root to the same line.
 func TestVersionSurfacesAgree(t *testing.T) {
-	run := func(args ...string) string {
-		var buf bytes.Buffer
-		root := NewRootCommand()
-		root.SetOut(&buf)
-		root.SetErr(&buf)
-		root.SetArgs(args)
-		root.Version = "ignored-by-the-template"
-		if err := root.Execute(); err != nil {
-			t.Fatalf("running %v: %v", args, err)
-		}
-		return strings.TrimSpace(buf.String())
-	}
-	if sub, flag := run("version"), run("--version"); sub != flag {
+	sub := runVersionSurface(t, "version")
+	flag := runVersionSurface(t, "--version")
+	if sub != flag {
 		t.Errorf("`version` printed %q but `--version` printed %q", sub, flag)
+	}
+}
+
+// TestVersionSurfacesAgreeOnTemplateMetacharacters guards the version line
+// against being re-parsed as a template. Version is set from `git describe
+// --tags --always --dirty` and "{"/"}" are legal in git refnames, so "{{" can
+// reach the binary. Cobra renders the version template with text/template and
+// template.Must, so baking the rendered line into the template *text* made
+// --version either print a different line than `version` (an action like
+// "{{.Name}}" being evaluated) or panic the process outright (an unparsable
+// "{{oops"). Both were reproduced against real ldflags builds. Passing the line
+// as template data keeps it inert.
+func TestVersionSurfacesAgreeOnTemplateMetacharacters(t *testing.T) {
+	restore := Version
+	t.Cleanup(func() { Version = restore })
+	Version = "v0.0.0-{{.Name}}-{{oops"
+
+	sub := runVersionSurface(t, "version")
+	flag := runVersionSurface(t, "--version")
+	if sub != flag {
+		t.Errorf("`version` printed %q but `--version` printed %q", sub, flag)
+	}
+	if !strings.Contains(sub, Version) {
+		t.Errorf("version line %q does not contain the raw version %q verbatim", sub, Version)
 	}
 }

@@ -17,6 +17,13 @@ var (
 	BuildDate = "unknown"
 )
 
+// versionLineAnnotation is the root command annotation carrying the rendered
+// versionLine(). Cobra runs the version template through text/template with the
+// command as the template data, so passing the line through an annotation keeps
+// ldflags-injected values (Version comes from `git describe`, and `{`/`}` are
+// legal in git refnames) as inert *data* instead of template *text*.
+const versionLineAnnotation = "versionLine"
+
 // versionLine is the single rendering of build metadata. Both surfaces use it:
 // the `version` subcommand and the `--version` flag fang installs on the root
 // (fang.WithVersion), which would otherwise print cobra's shorter default and
