@@ -22,6 +22,7 @@ package sentiment
 
 import (
 	"context"
+	"math"
 	"testing"
 	"time"
 
@@ -101,18 +102,11 @@ func TestLiveScoringAgainstConfiguredModel(t *testing.T) {
 		if s.Score < -1 || s.Score > 1 {
 			t.Errorf("score %v for %q is out of range", s.Score, s.Construct)
 		}
-		if abs(s.Score) < salienceFloor {
+		if math.Abs(s.Score) < salienceFloor {
 			t.Errorf("score %v for %q is below the salience floor and should not have been kept", s.Score, s.Construct)
 		}
 	}
 	if len(scores) == 0 {
 		t.Error("the model scored nothing across four deliberately expressive messages — the prompt is probably not landing with this model")
 	}
-}
-
-func abs(f float64) float64 {
-	if f < 0 {
-		return -f
-	}
-	return f
 }

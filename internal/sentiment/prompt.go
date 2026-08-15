@@ -58,6 +58,19 @@ Constructs:
 	return b.String()
 }
 
+// maxBodyRunes caps how much of one message body reaches the prompt.
+//
+// This is a wedge guard, not a token optimization. A context-length rejection
+// comes back as a transport error, which is fatal by design and deliberately
+// does NOT advance the cursor — so a single pasted wall of text would abort
+// every subsequent run at the same batch, forever. --reset does not help
+// either: it rescans from the top and arrives at the same message again. At the
+// default batch size of 40 this bounds a batch's message text at ~80KB.
+//
+// Truncating costs almost nothing for this task: what a message expresses is
+// legible from its opening, and the alternative is scoring none of the batch.
+const maxBodyRunes = 2000
+
 // buildPrompt renders the numbered message batch. The 1-based position is the
 // index the model cites back, mirroring the facts extractor so both surfaces
 // read the same way. The owner is labeled "You" so the model can tell the two
@@ -74,7 +87,21 @@ func buildPrompt(contact string, included []store.MessageView) string {
 		if len(date) >= 10 {
 			date = date[:10]
 		}
-		fmt.Fprintf(&b, "%d. [%s] %s: %s\n", i+1, date, who, strings.TrimSpace(m.Body))
+		fmt.Fprintf(&b, "%d. [%s] %s: %s\n", i+1, date, who, truncateBody(m.Body))
 	}
 	return b.String()
+}
+
+// truncateBody trims a body to maxBodyRunes, counting runes so the cut never
+// lands mid-character and mangles the text handed to the model.
+func truncateBody(body string) string {
+	body = strings.TrimSpace(body)
+	if len(body) <= maxBodyRunes { // bytes >= runes, so this is the cheap fast path
+		return body
+	}
+	runes := []rune(body)
+	if len(runes) <= maxBodyRunes {
+		return body
+	}
+	return string(runes[:maxBodyRunes]) + "…[truncated]"
 }

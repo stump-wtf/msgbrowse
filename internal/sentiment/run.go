@@ -107,6 +107,12 @@ func Run(ctx context.Context, st *store.Store, client llm.Client, opts Options) 
 			}
 		}
 		convs = filtered
+		// A targeted run that matches nothing is a mistake, not a no-op. Reporting
+		// "0 scores written" and exiting 0 makes a typo'd id indistinguishable
+		// from a conversation that is already fully scored.
+		if len(convs) == 0 {
+			return Summary{}, fmt.Errorf("sentiment: conversation %d is not eligible for scoring — unknown id, not linked to a contact, holds no real messages, or is on journal.exclude_conversations", opts.OnlyConversationID)
+		}
 	}
 
 	// Opt-outs are resolved once up front. A conversation whose contact opted
@@ -130,6 +136,9 @@ func Run(ctx context.Context, st *store.Store, client llm.Client, opts Options) 
 	}
 
 	if len(convs) == 0 {
+		if opts.OnlyConversationID > 0 {
+			return Summary{SkippedOptedOut: skipped}, fmt.Errorf("sentiment: conversation %d belongs to a contact who opted out of scoring", opts.OnlyConversationID)
+		}
 		log.Info("sentiment: no eligible conversations", "skipped_opted_out", skipped)
 		return Summary{SkippedOptedOut: skipped, DurationMS: time.Since(start).Milliseconds()}, nil
 	}

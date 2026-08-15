@@ -11,6 +11,7 @@ import (
 	"sync"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/joestump/msgbrowse/internal/llm"
 	"github.com/joestump/msgbrowse/internal/signal"
@@ -372,6 +373,76 @@ func TestRunSkipsOptedOutContactsBeforeReadingContent(t *testing.T) {
 	}
 }
 
+// TestRunRejectsAnIneligibleTargetedConversation pins that --conversation with
+// an id the run cannot score is an error. Succeeding with "0 scores written"
+// makes a typo'd id look identical to a conversation that is already up to date.
+func TestRunRejectsAnIneligibleTargetedConversation(t *testing.T) {
+	st := openStore(t)
+	ctx := context.Background()
+	conv := seedN(t, st, source.Signal, "Alex", 2)
+
+	client := &fakeClient{respFn: func(p string) (string, error) { return scoreEveryMessage(p) }}
+
+	opts := baseOpts()
+	opts.OnlyConversationID = conv + 9999
+	if _, err := Run(ctx, st, client, opts); err == nil {
+		t.Error("Run accepted an unknown conversation id and reported success")
+	}
+
+	// On the exclude list is equally ineligible, and the message must say so
+	// rather than looking like "nothing new to score".
+	opts = baseOpts()
+	opts.OnlyConversationID = conv
+	opts.Exclude = []string{"Alex"}
+	if _, err := Run(ctx, st, client, opts); err == nil {
+		t.Error("Run accepted a targeted conversation that is on the exclude list")
+	}
+
+	// Opted out is its own case, reported distinctly.
+	var contactA int64
+	if err := st.DB().QueryRow(`SELECT contact_id FROM conversations WHERE id = ?`, conv).Scan(&contactA); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SetSentimentOptOut(ctx, contactA, true); err != nil {
+		t.Fatal(err)
+	}
+	opts = baseOpts()
+	opts.OnlyConversationID = conv
+	_, err := Run(ctx, st, client, opts)
+	if err == nil {
+		t.Fatal("Run accepted a targeted conversation whose contact opted out")
+	}
+	if !strings.Contains(err.Error(), "opted out") {
+		t.Errorf("error %q does not say the contact opted out", err)
+	}
+	if client.callCount() != 0 {
+		t.Errorf("the LLM was called %d times for conversations that were never eligible", client.callCount())
+	}
+}
+
+// TestRunTargetedConversationStillScores is the other half: a legitimate
+// --conversation target must not be caught by the eligibility error above.
+func TestRunTargetedConversationStillScores(t *testing.T) {
+	st := openStore(t)
+	ctx := context.Background()
+	conv := seedN(t, st, source.Signal, "Alex", 2)
+	seedN(t, st, source.Signal, "Blair", 2)
+
+	client := &fakeClient{respFn: func(p string) (string, error) { return scoreEveryMessage(p) }}
+	opts := baseOpts()
+	opts.OnlyConversationID = conv
+	sum, err := Run(ctx, st, client, opts)
+	if err != nil {
+		t.Fatalf("Run on an eligible target: %v", err)
+	}
+	if sum.Conversations != 1 || sum.RowsWritten == 0 {
+		t.Errorf("summary = %+v, want 1 conversation with rows written", sum)
+	}
+	if client.sawConversation("Blair") {
+		t.Error("a targeted run scored a conversation other than its target")
+	}
+}
+
 func TestRunResetClearsScoresButNotOptOuts(t *testing.T) {
 	st := openStore(t)
 	ctx := context.Background()
@@ -477,6 +548,45 @@ func TestSystemPromptCarriesAnchorsAndFraming(t *testing.T) {
 	}
 	if !strings.Contains(strings.ToLower(p), "omit") {
 		t.Error("prompt does not instruct the model to omit non-salient constructs")
+	}
+}
+
+// TestBuildPromptCapsRunawayBodies guards the wedge: a context-length rejection
+// is a transport error, which is fatal and does NOT advance the cursor, so an
+// uncapped body would abort every future run at the same batch — and --reset
+// would replay straight into it. The cap keeps a batch bounded no matter what
+// someone pasted into a chat.
+func TestBuildPromptCapsRunawayBodies(t *testing.T) {
+	huge := strings.Repeat("a", 500_000)
+	p := buildPrompt("Alex", []store.MessageView{
+		{Hash: "h1", TS: "2023-05-01 10:00:00", Body: huge},
+		{Hash: "h2", TS: "2023-05-01 10:01:00", Body: "short one"},
+	})
+	if len(p) > 4*maxBodyRunes {
+		t.Errorf("prompt is %d bytes for one oversized message; the cap is not holding", len(p))
+	}
+	if !strings.Contains(p, "truncated") {
+		t.Error("a truncated body is not marked as truncated")
+	}
+	if !strings.Contains(p, "short one") {
+		t.Error("an oversized message swallowed the rest of the batch")
+	}
+
+	// Multi-byte text must not be cut mid-rune: the cap counts runes, and the
+	// rendered prompt must still be valid UTF-8.
+	p = buildPrompt("Alex", []store.MessageView{
+		{Hash: "h1", TS: "2023-05-01 10:00:00", Body: strings.Repeat("日", maxBodyRunes+50)},
+	})
+	if !utf8.ValidString(p) {
+		t.Error("truncation cut a multi-byte rune in half")
+	}
+
+	// A body under the cap is passed through untouched.
+	p = buildPrompt("Alex", []store.MessageView{
+		{Hash: "h1", TS: "2023-05-01 10:00:00", Body: "  i got the job!!  "},
+	})
+	if !strings.Contains(p, "i got the job!!") || strings.Contains(p, "truncated") {
+		t.Errorf("a short body was altered: %q", p)
 	}
 }
 
