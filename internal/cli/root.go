@@ -86,6 +86,7 @@ func NewRootCommand() *cobra.Command {
 		newSyncCommand(),
 		newEmbedCommand(),
 		newFactsCommand(),
+		newSentimentCommand(),
 		newMediaCommand(),
 		newServeCommand(),
 		newMCPCommand(),
