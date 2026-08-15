@@ -77,6 +77,9 @@ run: build ## Build then run the web UI
 test: ## Run all tests
 	$(GO) test ./...
 
+test-race: ## Race-detector pass over the concurrency-bearing packages (SPEC-0027 REQ-0027-004)
+	CGO_ENABLED=1 $(GO) test -race ./internal/sentiment/ ./internal/store/
+
 cover: ## Run tests with coverage
 	$(GO) test -coverprofile=coverage.out ./...
 	$(GO) tool cover -func=coverage.out | tail -1
@@ -95,7 +98,7 @@ lint: fmt-check vet ## Static checks only (the uniform cross-repo entry point)
 tidy: ## Tidy go.mod/go.sum
 	$(GO) mod tidy
 
-check: fmt-check vet check-migrations test ## CI gate: format check, vet, migration guard, tests
+check: fmt-check vet check-migrations test test-race ## CI gate: format check, vet, migration guard, tests (+race on concurrent paths)
 
 check-migrations: ## Fail if a migration that already shipped was edited or deleted (#217)
 	./scripts/check-migrations.sh $(MIGRATION_BASE_REF)
