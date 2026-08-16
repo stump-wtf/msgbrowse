@@ -19,6 +19,14 @@ const config: Config = {
 
   future: {
     v4: true,
+    // Docusaurus 3.10 made `faster` (rspack + SWC + Lightning CSS) the default
+    // under `v4`, and it must now be an explicit @docusaurus/faster dependency.
+    // Held off deliberately: it builds ~5x quicker, but its stricter HTML
+    // minifier reports nested <a> elements in generated pages that the webpack
+    // path never flagged. Adopting the bundler and fixing that markup is its
+    // own change, tracked in #338 — not something to smuggle into a dependency
+    // bump.
+    faster: false,
   },
 
   url: SITE_URL,
