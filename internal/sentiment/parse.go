@@ -7,6 +7,7 @@ import (
 	"math"
 	"strings"
 
+	"github.com/joestump/msgbrowse/internal/llm"
 	"github.com/joestump/msgbrowse/internal/store"
 )
 
@@ -33,8 +34,9 @@ type rawScored struct {
 // Every coercion here is deliberate and required by SPEC-0027 REQ "Anchored
 // scoring engine with defensive parsing":
 //
-//   - code fences and surrounding prose are tolerated (the outermost JSON array
-//     is extracted) rather than failing the batch;
+//   - code fences and surrounding prose are tolerated (llm.ExtractJSONArray
+//     returns the first complete JSON array, so prose brackets cannot splice
+//     into the span) rather than failing the batch;
 //   - scores are clamped into [-1, +1];
 //   - constructs absent from the lexicon are dropped;
 //   - a malformed per-message entry is skipped without failing the batch;
@@ -47,7 +49,7 @@ func parseScores(raw string, included []store.MessageView, lex *Lexicon, contact
 	if len(included) == 0 {
 		return nil, nil
 	}
-	body := extractJSONArray(raw)
+	body := llm.ExtractJSONArray(raw)
 	if body == "" {
 		return nil, fmt.Errorf("no JSON array in model response")
 	}
@@ -98,16 +100,4 @@ func parseScores(raw string, included []store.MessageView, lex *Lexicon, contact
 		}
 	}
 	return out, nil
-}
-
-// extractJSONArray returns the substring from the first '[' to the last ']',
-// stripping markdown fences and any prose the model added around it.
-func extractJSONArray(s string) string {
-	s = strings.TrimSpace(s)
-	start := strings.IndexByte(s, '[')
-	end := strings.LastIndexByte(s, ']')
-	if start < 0 || end < 0 || end < start {
-		return ""
-	}
-	return s[start : end+1]
 }

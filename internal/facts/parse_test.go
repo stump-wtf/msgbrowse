@@ -85,17 +85,3 @@ func TestBuildPromptLabelsOwnerAndNumbers(t *testing.T) {
 		t.Errorf("owner not labeled 'You':\n%s", p)
 	}
 }
-
-func TestExtractJSONArray(t *testing.T) {
-	cases := map[string]string{
-		"```json\n[1,2]\n```":   "[1,2]",
-		"prose [a] more":        "[a]",
-		"no array here":         "",
-		"[outer [inner] outer]": "[outer [inner] outer]",
-	}
-	for in, want := range cases {
-		if got := extractJSONArray(in); got != want {
-			t.Errorf("extractJSONArray(%q) = %q, want %q", in, got, want)
-		}
-	}
-}

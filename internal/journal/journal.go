@@ -469,26 +469,13 @@ type parsedDigest struct {
 	Canonical string
 }
 
-// extractJSONObject returns the substring from the first '{' to the last '}',
-// stripping markdown fences and surrounding prose — the object twin of facts'
-// extractJSONArray. Returns "" when no object is present.
-func extractJSONObject(s string) string {
-	s = strings.TrimSpace(s)
-	start := strings.IndexByte(s, '{')
-	end := strings.LastIndexByte(s, '}')
-	if start < 0 || end < 0 || end < start {
-		return ""
-	}
-	return s[start : end+1]
-}
-
 // parseDigest turns a raw model response into a validated, canonicalized digest.
-// It tolerates fences/prose (extractJSONObject) and COERCES every field rather
+// It tolerates fences/prose (llm.ExtractJSONObject) and COERCES every field rather
 // than failing on any one (trim + drop empty list items, unknown mood → neutral,
 // blank a malformed highlight time) — only a total absence of JSON or an empty
 // summary is an error, mirroring facts.parseFacts.
 func parseDigest(raw string) (parsedDigest, error) {
-	obj := extractJSONObject(raw)
+	obj := llm.ExtractJSONObject(raw)
 	if obj == "" {
 		return parsedDigest{}, errBadDigest
 	}

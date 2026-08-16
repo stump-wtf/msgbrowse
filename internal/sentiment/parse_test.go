@@ -199,21 +199,6 @@ func TestParseScoresAttributesToSender(t *testing.T) {
 	}
 }
 
-func TestExtractJSONArray(t *testing.T) {
-	tests := []struct{ in, want string }{
-		{"[1,2]", "[1,2]"},
-		{"```json\n[1,2]\n```", "[1,2]"},
-		{"sure thing:\n[1,2]\nlet me know", "[1,2]"},
-		{"no array here", ""},
-		{"]backwards[", ""},
-	}
-	for _, tc := range tests {
-		if got := extractJSONArray(tc.in); got != tc.want {
-			t.Errorf("extractJSONArray(%q) = %q, want %q", tc.in, got, tc.want)
-		}
-	}
-}
-
 func mustParse(t *testing.T, raw string, lex *Lexicon) []store.SentimentScore {
 	t.Helper()
 	scores, err := parseScores(raw, testMessages(), lex, constant(1))

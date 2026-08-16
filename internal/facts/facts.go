@@ -105,14 +105,16 @@ func buildPrompt(contact string, included []store.MessageView) string {
 }
 
 // parseFacts turns a raw model response into validated facts bound to messages.
-// It tolerates code fences and surrounding prose by extracting the outermost
-// JSON array. Unknown categories become "other"; an out-of-range evidence index
-// falls back to the last included message so every fact keeps provenance.
+// It tolerates code fences and surrounding prose — including prose that itself
+// contains brackets — via llm.ExtractJSONArray, which returns the first span
+// that decodes as a complete JSON array. Unknown categories become "other"; an
+// out-of-range evidence index falls back to the last included message so every
+// fact keeps provenance.
 func parseFacts(raw string, included []store.MessageView) ([]parsedFact, error) {
 	if len(included) == 0 {
 		return nil, nil
 	}
-	body := extractJSONArray(raw)
+	body := llm.ExtractJSONArray(raw)
 	if body == "" {
 		return nil, fmt.Errorf("no JSON array in model response")
 	}
@@ -140,19 +142,6 @@ func parseFacts(raw string, included []store.MessageView) ([]parsedFact, error) 
 		out = append(out, parsedFact{Fact: fact, Category: cat, Msg: included[idx]})
 	}
 	return out, nil
-}
-
-// extractJSONArray returns the substring from the first '[' to the last ']',
-// stripping markdown fences and prose the model may have added. Returns "" when
-// no array is present.
-func extractJSONArray(s string) string {
-	s = strings.TrimSpace(s)
-	start := strings.IndexByte(s, '[')
-	end := strings.LastIndexByte(s, ']')
-	if start < 0 || end < 0 || end < start {
-		return ""
-	}
-	return s[start : end+1]
 }
 
 // Options configures a facts run.
