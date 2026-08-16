@@ -60,6 +60,28 @@ jobs:
       publish_image: true
     secrets: inherit
 
+  # ---- 4b. docs site build (PRs only, never publishes) --------------------
+  # The docs site used to be compiled ONLY by the `pages` job below, which sits
+  # behind `main-only`. Nothing in the repo built docs-site on a pull request,
+  # so every docs dependency bump went green without anything having compiled
+  # it, and breakage surfaced as a red main and a failed Pages deploy. Eight
+  # such PRs were open at once in August 2026 (#319-#326); the Docusaurus 3.10
+  # bump among them failed the build outright, and no check said so.
+  #
+  # `publish: "false"` is hardcoded rather than computed. The shared workflow
+  # gates publishing opt-out (`!= 'false'`) precisely because this runner has
+  # dropped caller-passed values before, and a PR must never be one mangled
+  # expression away from overwriting the live site.
+  docs:
+    needs: [secrets]
+    if: ${{ github.event_name == 'pull_request' }}
+    uses: https://gitea.stump.rocks/stump.wtf/ci/.gitea/workflows/static-site.yaml@main
+    with:
+      working_directory: docs-site
+      source_dir: docs-site/build
+      publish: "false"
+    secrets: inherit
+
   # ---- 5. ai review (PRs only, and only once the build is green) ----------
   review:
     needs: [build]
