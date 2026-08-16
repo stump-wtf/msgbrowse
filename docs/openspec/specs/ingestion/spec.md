@@ -1,10 +1,14 @@
+---
+status: approved
+date: 2026-06-27
+implements: [ADR-0003, ADR-0005]
+---
+
 # SPEC-0001: Archive Ingestion
 
-- **Status:** Accepted (backfilled)
-- **Date:** 2026-06-27
 - **Capability:** ingestion
 - **Source packages:** `internal/signal`, `internal/imessage`, `internal/ingest`, `internal/source`, `internal/store`
-- **Related ADRs:** [ADR-0003 (dual-source archive)](../../../adr/0003-dual-source-archive.md), [ADR-0005 (iMessage txt parser)](../../../adr/0005-imessage-txt-parser.md), [ADR-0001 (SQLite driver)](../../../adr/0001-sqlite-driver-mattn-cgo.md)
+- **Related ADRs:** [ADR-0003](../../../adr/0003-dual-source-archive.md), [ADR-0005](../../../adr/0005-imessage-txt-parser.md), [ADR-0001](../../../adr/0001-sqlite-driver-mattn-cgo.md)
 
 ## Overview
 

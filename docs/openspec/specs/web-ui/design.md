@@ -1,7 +1,7 @@
 # SPEC-0004 Design: Web UI
 
 - **Capability:** web-ui
-- **Related ADRs:** [ADR-0006 (web stack)](../../../adr/0006-web-stack-htmx.md), [ADR-0007 (frontend styling)](../../../adr/0007-frontend-styling-tailwind-daisyui.md), [ADR-0010 (security posture)](../../../adr/0010-security-privacy-posture.md), [ADR-0003](../../../adr/0003-dual-source-archive.md), [ADR-0005](../../../adr/0005-imessage-txt-parser.md)
+- **Related ADRs:** [ADR-0006](../../../adr/0006-web-stack-htmx.md), [ADR-0007](../../../adr/0007-frontend-styling-tailwind-daisyui.md), [ADR-0010](../../../adr/0010-security-privacy-posture.md), [ADR-0003](../../../adr/0003-dual-source-archive.md), [ADR-0005](../../../adr/0005-imessage-txt-parser.md)
 
 ## Architecture
 

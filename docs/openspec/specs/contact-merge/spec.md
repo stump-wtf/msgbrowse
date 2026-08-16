@@ -11,10 +11,10 @@ requires: [SPEC-0001]
 - **Target packages:** `internal/contacts` (new), `internal/store` (`schema.go`
   v11, merge/reconcile methods), `internal/web` (`SetContactResolver`, settings
   merge section), desktop/cli wiring
-- **Related ADRs:** [ADR-0024 (contact merging & address-book abstraction)](../../../adr/0024-contact-merging-and-address-book-abstraction.md),
-  [ADR-0003 (dual-source archive)](../../../adr/0003-dual-source-archive.md),
-  [ADR-0011 (contact facts extraction)](../../../adr/0011-contact-facts-extraction.md),
-  [ADR-0010 (security & privacy posture)](../../../adr/0010-security-privacy-posture.md)
+- **Related ADRs:** [ADR-0024](../../../adr/0024-contact-merging-and-address-book-abstraction.md),
+  [ADR-0003](../../../adr/0003-dual-source-archive.md),
+  [ADR-0011](../../../adr/0011-contact-facts-extraction.md),
+  [ADR-0010](../../../adr/0010-security-privacy-posture.md)
 - **Tracking:** epic #8 (#9 interface + no-op, #10 macOS provider, #11 merge
   engine, #12 settings UI; ADR/spec: #13)
 
@@ -32,7 +32,7 @@ in this capability may perform network egress.
 
 ## Requirements
 
-### REQ-0015-001: Pluggable address-book resolver with a safe absent state
+### REQ-0018-001: Pluggable address-book resolver with a safe absent state
 
 There MUST be a resolver interface — the Go identifier is `contacts.Resolver`
 (package `contacts`), wired into the web layer via `SetContactResolver` — in a
@@ -48,7 +48,7 @@ be read-only over the address book and MUST NOT perform network I/O.
 - **When** merge candidates are computed and a manual merge is performed
 - **Then** matching runs on stored identifiers alone, no error is raised, and the address-book hint surface reports itself absent.
 
-### REQ-0015-002: Injection seam mirroring the existing `Set…` contract
+### REQ-0018-002: Injection seam mirroring the existing `Set…` contract
 
 The resolver MUST be wired into the web layer via a `Set…` method on
 `web.Server` (the `SetDetector`/`SetEnabler`/`SetPairingSource` contract:
@@ -63,7 +63,7 @@ consume the resolver.
 - **When** the merge settings section renders
 - **Then** the address-book option appears in its disabled/absent state and every other merge control still functions.
 
-### REQ-0015-003: macOS provider is build-gated and permission-graceful
+### REQ-0018-003: macOS provider is build-gated and permission-graceful
 
 The macOS Contacts provider MUST be excluded from default builds by a build tag
 (with a paired stub supplying the no-op constructor, following the
@@ -78,7 +78,7 @@ a permission failure MUST NOT error the merge path.
 - **When** candidates are computed and settings render
 - **Then** matching proceeds without address-book hints, no operation errors, and the UI shows a needs-permission state for the address-book option.
 
-### REQ-0015-004: Normalized identifier matching produces explained candidates
+### REQ-0018-004: Normalized identifier matching produces explained candidates
 
 Candidate detection MUST group contacts whose identifiers are equal after
 normalization — phone numbers to E.164, emails lowercased — across sources, and
@@ -94,13 +94,13 @@ Candidates MUST NOT be silently merged by default.
 - **When** candidates are computed
 - **Then** the pair is listed as a candidate with the matching E.164 value as its reason, and the contacts remain unmerged.
 
-### REQ-0015-005: Manual merge unions the person
+### REQ-0018-005: Manual merge unions the person
 
 A manual merge of two contacts MUST repoint the loser's
 `contact_identifiers`, `conversations.contact_id`, and `contact_facts` rows to
 the winner (facts deduplicating via the existing `UNIQUE(contact_id,
 fact_hash)`), delete the loser's `contacts` row, and record the decision (see
-REQ-0015-007). After the merge, every conversation of either former contact
+REQ-0018-007). After the merge, every conversation of either former contact
 MUST render the same person and one deduplicated fact set
 ([ADR-0011](../../../adr/0011-contact-facts-extraction.md)).
 
@@ -109,11 +109,11 @@ MUST render the same person and one deduplicated fact set
 - **When** the user merges them
 - **Then** both conversations link to the surviving contact and the fact appears once.
 
-### REQ-0015-006: Manual split separates identifiers
+### REQ-0018-006: Manual split separates identifiers
 
 The user MUST be able to split chosen identifiers off a contact onto a new
 contact. The split MUST record that the separated identifier pairs stay apart
-(see REQ-0015-007), and conversations MUST follow their identifiers to the new
+(see REQ-0018-007), and conversations MUST follow their identifiers to the new
 contact. A pair holds one current decision: manually merging a previously-split
 pair MUST replace the split record, and splitting a previously-merged pair MUST
 replace the merge record — the latest manual action wins.
@@ -123,7 +123,7 @@ replace the merge record — the latest manual action wins.
 - **When** reconcile and candidate detection run
 - **Then** the pair is neither auto-merged nor re-applied by any stored decision, because the split record takes precedence.
 
-### REQ-0015-007: Overrides persist across re-ingest, keyed by stable identifiers
+### REQ-0018-007: Overrides persist across re-ingest, keyed by stable identifiers
 
 Merge and split decisions MUST be persisted keyed by canonical-ordered
 `(source, identifier)` pairs — never by contact rowids — with a uniqueness
@@ -143,7 +143,7 @@ re-importing it MUST converge back to the merged state without user action.
 - **When** the post-import reconcile runs
 - **Then** the re-created iMessage identity is folded back onto the surviving contact, and no duplicate person remains.
 
-### REQ-0015-008: Merge rules are persisted settings with safe defaults
+### REQ-0018-008: Merge rules are persisted settings with safe defaults
 
 Merge rules MUST persist in the store (a single-row settings table owned by
 migration v11) and MUST cover at least: auto-merge on/off (default **off** —
@@ -159,7 +159,7 @@ pre-merge msgbrowse only by the presence of suggestions.
 - **When** reconcile runs
 - **Then** the contacts merge, the decision is recorded with origin `auto`, and a later re-ingest converges to the same merged state.
 
-### REQ-0015-009: Settings UI for candidates, merge/split, and rules
+### REQ-0018-009: Settings UI for candidates, merge/split, and rules
 
 The settings surface MUST let the user: review candidates with their reasons,
 merge a candidate pair, split a contact, and edit the merge rules. It MUST be
@@ -175,7 +175,7 @@ available). Merge and split MUST be presented as explicit, confirmable actions.
 - **When** the user confirms a merge
 - **Then** the POST performs the merge, the page re-renders with a fixed-enum success banner naming the surviving contact, and the candidate disappears from the list.
 
-### REQ-0015-010: Local-only, no egress, no persisted address book
+### REQ-0018-010: Local-only, no egress, no persisted address book
 
 No operation in this capability may perform network I/O
 ([ADR-0010](../../../adr/0010-security-privacy-posture.md)): matching,

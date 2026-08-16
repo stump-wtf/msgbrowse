@@ -12,15 +12,15 @@ extends: [SPEC-0016, SPEC-0017]
   (`schema.go`, new `sentiment.go`), `internal/cli` (new `sentiment.go`),
   `internal/web` (`contact.go`, `journal.go`, `templates/contact.html`,
   `templates/journal.html`)
-- **Related ADRs:** [ADR-0028 (IPIP-anchored sentiment & trait scoring)](../../../adr/0028-ipip-sentiment-trait-scoring.md),
-  [ADR-0011 (contact facts extraction)](../../../adr/0011-contact-facts-extraction.md),
-  [ADR-0023 (AI-editorialized journal)](../../../adr/0023-ai-editorialized-journal.md),
-  [ADR-0010 (security & privacy posture)](../../../adr/0010-security-privacy-posture.md),
-  [ADR-0002 (vector backend)](../../../adr/0002-vector-backend.md)
-- **Related specs:** [SPEC-0017 (contact profile)](../contact-profile/spec.md)
+- **Related ADRs:** [ADR-0028](../../../adr/0028-ipip-sentiment-trait-scoring.md),
+  [ADR-0011](../../../adr/0011-contact-facts-extraction.md),
+  [ADR-0023](../../../adr/0023-ai-editorialized-journal.md),
+  [ADR-0010](../../../adr/0010-security-privacy-posture.md),
+  [ADR-0002](../../../adr/0002-vector-backend.md)
+- **Related specs:** [SPEC-0017](../contact-profile/spec.md)
   — REQ-0017-010 reserved the slot this spec fills;
-  [SPEC-0016 (journal)](../journal/spec.md) — gains the per-day mood strip;
-  [SPEC-0005 (contact facts)](../contact-facts/spec.md) — the sibling
+  [SPEC-0016](../journal/spec.md) — gains the per-day mood strip;
+  [SPEC-0005](../contact-facts/spec.md) — the sibling
   extraction feature whose incremental design this mirrors.
 
 ## Overview

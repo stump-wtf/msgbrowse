@@ -1,10 +1,14 @@
+---
+status: approved
+date: 2026-06-27
+implements: [ADR-0002, ADR-0004]
+---
+
 # SPEC-0002: Search
 
-- **Status:** Accepted (backfilled)
-- **Date:** 2026-06-27
 - **Capability:** search
 - **Source packages:** `internal/store` (`search.go`, `vector.go`), `internal/web` (`search.go`), `internal/embed`, `internal/mcp` (hybrid fusion)
-- **Related ADRs:** [ADR-0002 (vector backend)](../../../adr/0002-vector-backend.md), [ADR-0004 (MCP SDK and RAG)](../../../adr/0004-mcp-sdk-and-rag.md)
+- **Related ADRs:** [ADR-0002](../../../adr/0002-vector-backend.md), [ADR-0004](../../../adr/0004-mcp-sdk-and-rag.md)
 
 ## Overview
 

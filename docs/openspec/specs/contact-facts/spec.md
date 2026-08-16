@@ -1,10 +1,14 @@
+---
+status: approved
+date: 2026-06-27
+implements: [ADR-0011]
+---
+
 # SPEC-0005: Contact facts
 
-- **Status:** Accepted
-- **Date:** 2026-06-27
 - **Capability:** contact-facts
 - **Source packages:** `internal/facts`, `internal/store` (`facts.go`, `schema.go` v4, `query.go`), `internal/cli` (`facts.go`), `internal/web` (`templates/conversation.html`)
-- **Related ADRs:** [ADR-0011 (contact facts extraction)](../../../adr/0011-contact-facts-extraction.md), [ADR-0003 (dual-source archive)](../../../adr/0003-dual-source-archive.md), [ADR-0010 (security & privacy posture)](../../../adr/0010-security-privacy-posture.md)
+- **Related ADRs:** [ADR-0011](../../../adr/0011-contact-facts-extraction.md), [ADR-0003](../../../adr/0003-dual-source-archive.md), [ADR-0010](../../../adr/0010-security-privacy-posture.md)
 
 ## Overview
 

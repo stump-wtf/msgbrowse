@@ -11,9 +11,9 @@ requires: [SPEC-0008]
 - **Target packages:** `internal/backup` (new), `internal/store`
   (`store.go`, `query.go`), `internal/web` (`backups.go`, `server.go`,
   `templates/backups.html`), `internal/cli` (`backups.go`, new)
-- **Related ADRs:** [ADR-0026 (msgbrowse owns its own snapshots)](../../../adr/0026-msgbrowse-owned-snapshots.md),
-  [ADR-0010 (security/privacy posture)](../../../adr/0010-security-privacy-posture.md),
-  [ADR-0013 (pure-Go SQLite driver)](../../../adr/0013-pure-go-sqlite-driver.md)
+- **Related ADRs:** [ADR-0026](../../../adr/0026-msgbrowse-owned-snapshots.md),
+  [ADR-0010](../../../adr/0010-security-privacy-posture.md),
+  [ADR-0013](../../../adr/0013-pure-go-sqlite-driver.md)
 - **Tracking:** epic #232 (children: #233 ADR + spec, #234 create/prune/restore)
 
 ## Overview

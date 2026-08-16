@@ -3,7 +3,7 @@
 // given the archive's stored identifiers and — optionally — an address book's
 // people, it groups the ones that belong to the same real person and explains
 // why. It performs NO storage, NO I/O, and NO merging: it only ever *suggests*
-// (ADR-0024 / SPEC-0018 REQ-0015-004), so it is trivially unit-testable without
+// (ADR-0024 / SPEC-0018 REQ-0018-004), so it is trivially unit-testable without
 // a database or a framework.
 //
 // Both sides canonicalize through the Normalize* helpers in this package, so
@@ -92,7 +92,7 @@ type Candidate struct {
 //
 // Address-book grouping is applied only when rules.UseAddressBook is set and
 // people were supplied; on the no-op resolver (or Linux) people is empty and
-// matching runs on stored identifiers alone, exactly as SPEC-0018 REQ-0015-001
+// matching runs on stored identifiers alone, exactly as SPEC-0018 REQ-0018-001
 // requires.
 func Candidates(stored []StoredIdentifier, people []Person, rules MatchRules) []Candidate {
 	// Canonicalize every stored identifier once; drop anything that is not an

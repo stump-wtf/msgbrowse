@@ -24,7 +24,7 @@ Python runtime plus a prebuilt venv (`signal-export`, `whatsapp-chat-exporter`)
 and the native `imessage-exporter` binary. The app resolves those bundled paths
 directly; it never reads PATH and never asks the user to install anything. The
 detection, export-orchestration, and incremental-import building blocks already
-exist ([SPEC-0007 onboarding](../onboarding/spec.md), reused here; ingestion per
+exist ([SPEC-0007](../onboarding/spec.md), reused here; ingestion per
 [SPEC-0001](../ingestion/spec.md)); this spec refactors the detection logic out
 of `internal/cli/doctor.go` into a shared package both the CLI and the UI call.
 

@@ -1,10 +1,16 @@
+---
+status: approved
+date: 2026-06-27
+implements: [ADR-0006, ADR-0007]
+---
+
 # SPEC-0004: Web UI
 
-- **Status:** Accepted (backfilled) — superseded **visually** by [SPEC-0006 (web-ui-redesign)](../web-ui-redesign/spec.md); the behavioral requirements below (chronological order, keyset paging, jump-to-context, safe rendering) still hold.
-- **Date:** 2026-06-27
+> **Note:** superseded **visually** by [SPEC-0006](../web-ui-redesign/spec.md); the behavioral requirements below (chronological order, keyset paging, jump-to-context, safe rendering) still hold.
+
 - **Capability:** web-ui
 - **Source packages:** `internal/web` (`server.go`, `handlers.go`, `media.go`, `gallery.go`, `render.go`, `search.go`, `templates/`)
-- **Related ADRs:** [ADR-0006 (web stack)](../../../adr/0006-web-stack-htmx.md), [ADR-0007 (frontend styling)](../../../adr/0007-frontend-styling-tailwind-daisyui.md), [ADR-0010 (security posture)](../../../adr/0010-security-privacy-posture.md), [ADR-0003 (dual-source archive)](../../../adr/0003-dual-source-archive.md), [ADR-0005 (iMessage source-aware media serving)](../../../adr/0005-imessage-txt-parser.md)
+- **Related ADRs:** [ADR-0006](../../../adr/0006-web-stack-htmx.md), [ADR-0007](../../../adr/0007-frontend-styling-tailwind-daisyui.md), [ADR-0010](../../../adr/0010-security-privacy-posture.md), [ADR-0003](../../../adr/0003-dual-source-archive.md), [ADR-0005](../../../adr/0005-imessage-txt-parser.md)
 
 ## Overview
 

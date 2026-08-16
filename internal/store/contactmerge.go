@@ -250,14 +250,14 @@ SELECT c.id, c.display_name, ci.source, ci.identifier
 	return filtered, nil
 }
 
-// MergeContacts unions two contacts into one person (issue #11 / REQ-0015-005):
+// MergeContacts unions two contacts into one person (issue #11 / REQ-0018-005):
 // it records the full bipartite pairing of their identifiers as manual merge
 // decisions (so the merge survives re-ingest), repoints the loser's
 // identifiers, conversations, and facts onto the deterministically-chosen
 // winner (facts deduplicating via UNIQUE(contact_id, fact_hash)), and deletes
 // the loser's contacts row. It returns the surviving (winner) contact id.
 //
-// The winner is chosen by the ordered rule (ADR-0024 / REQ-0015-007): the
+// The winner is chosen by the ordered rule (ADR-0024 / REQ-0018-007): the
 // contact with a user-meaningful display_name (differs from all its
 // identifiers) wins; otherwise the lower id wins. Merging a pair that was
 // previously split replaces the split records — the latest manual action wins.
@@ -311,7 +311,7 @@ func (s *Store) MergeContacts(ctx context.Context, a, b int64) (int64, error) {
 }
 
 // SplitContact separates the chosen identifiers off contactID onto a fresh
-// contact (issue #11 / REQ-0015-006). The moved identifiers' conversations
+// contact (issue #11 / REQ-0018-006). The moved identifiers' conversations
 // follow them to the new contact, and every moved↔remaining identifier pair is
 // recorded as a manual split decision so auto-match and any stored merge never
 // re-unite them (precedence: manual split wins). It returns the new contact id.
@@ -413,7 +413,7 @@ func (s *Store) SplitContact(ctx context.Context, contactID int64, moved []Conta
 }
 
 // ReconcileContacts is the idempotent decision-replay pass that runs after
-// every import and on demand (issue #11 / REQ-0015-007). It (1) re-applies
+// every import and on demand (issue #11 / REQ-0018-007). It (1) re-applies
 // every stored *manual* merge decision — plus stored auto merges only while
 // auto-merge is enabled — whose two identifiers currently sit on different
 // contacts, folding a re-ingested identity back onto its person, then (2), if
@@ -786,7 +786,7 @@ func loadContactRow(ctx context.Context, tx *sql.Tx, id int64) (string, []idPair
 }
 
 // pickWinner implements the deterministic winner rule (ADR-0024 /
-// REQ-0015-007): if exactly one contact has a user-meaningful display_name
+// REQ-0018-007): if exactly one contact has a user-meaningful display_name
 // (differs from all its identifiers), it wins; otherwise the lower id wins.
 func pickWinner(aID int64, aName string, aIDs []idPair, bID int64, bName string, bIDs []idPair) (winner, loser int64) {
 	am := isMeaningfulName(aName, aIDs)

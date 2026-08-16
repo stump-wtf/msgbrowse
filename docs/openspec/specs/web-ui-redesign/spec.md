@@ -1,12 +1,16 @@
+---
+status: approved
+date: 2026-06-28
+implements: [ADR-0012]
+---
+
 # SPEC-0006: Web UI redesign (slate)
 
-- **Status:** Accepted
-- **Date:** 2026-06-28
 - **Capability:** web-ui-redesign
 - **Source packages:** `internal/web` (templates, render, server), `internal/store` (small additions), `internal/web/tailwind/input.css`
-- **Related ADRs:** [ADR-0012 (slate design system)](../../../adr/0012-slate-redesign-design-system.md), [ADR-0007 (Tailwind + daisyUI)](../../../adr/0007-frontend-styling-tailwind-daisyui.md), [ADR-0006 (web stack/CSP)](../../../adr/0006-web-stack-htmx.md), [ADR-0010 (privacy posture)](../../../adr/0010-security-privacy-posture.md)
+- **Related ADRs:** [ADR-0012 (slate design system)](../../../adr/0012-slate-redesign-design-system.md), [ADR-0007](../../../adr/0007-frontend-styling-tailwind-daisyui.md), [ADR-0006](../../../adr/0006-web-stack-htmx.md), [ADR-0010](../../../adr/0010-security-privacy-posture.md)
 - **Design source:** [docs/design/redesign-handoff.md](../../../design/redesign-handoff.md)
-- **Extends / supersedes (visually):** [SPEC-0004 (web-ui)](../web-ui/spec.md)
+- **Extends / supersedes (visually):** [SPEC-0004](../web-ui/spec.md)
 
 ## Overview
 

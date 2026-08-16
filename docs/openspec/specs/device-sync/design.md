@@ -35,7 +35,7 @@ constraints that shape everything here:
 
 Expected touchpoints: a new sync package, settings-page additions in
 `internal/web` (the shared `/settings` Connect page —
-[SPEC-0010 (desktop shell)](../desktop-shell/spec.md) — which renders this
+[SPEC-0010](../desktop-shell/spec.md) — which renders this
 spec's pairing QR and surfaces sync status), CLI commands, a small store
 migration for sync-state tables, and `doctor` checks.
 

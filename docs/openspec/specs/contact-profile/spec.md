@@ -1,10 +1,14 @@
+---
+status: approved
+date: 2026-07-11
+
+---
+
 # SPEC-0017: Contact profile
 
-- **Status:** Accepted
-- **Date:** 2026-07-11
 - **Capability:** contact-profile
 - **Source packages:** `internal/store` (`contacts.go`, `facts.go`, `query.go`), `internal/web` (`contact.go`, `templates/contact.html`, `server.go`)
-- **Related ADRs:** [ADR-0003 (dual-source archive)](../../../adr/0003-dual-source-archive.md), [ADR-0011 (contact facts extraction)](../../../adr/0011-contact-facts-extraction.md), [ADR-0010 (security & privacy posture)](../../../adr/0010-security-privacy-posture.md)
+- **Related ADRs:** [ADR-0003](../../../adr/0003-dual-source-archive.md), [ADR-0011](../../../adr/0011-contact-facts-extraction.md), [ADR-0010](../../../adr/0010-security-privacy-posture.md)
 
 ## Overview
 

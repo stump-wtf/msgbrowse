@@ -19,7 +19,7 @@ rejects it as unmaintained and wrong-stack). Today the closest thing is
 `serve --open`, which launches a browser tab and leaves a terminal running.
 
 The shell also gives the Connect story a home:
-[SPEC-0011 (device sync)](../device-sync/spec.md) needs a place to show a
+[SPEC-0011](../device-sync/spec.md) needs a place to show a
 pairing QR and MCP connection details, and that place should exist in browser
 mode too — it's a web page, not a desktop feature.
 

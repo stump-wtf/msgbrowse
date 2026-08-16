@@ -1,10 +1,14 @@
+---
+status: approved
+date: 2026-07-03
+implements: [ADR-0016]
+---
+
 # SPEC-0009: WhatsApp source
 
-- **Status:** Accepted
-- **Date:** 2026-07-03
 - **Capability:** whatsapp-source
 - **Source packages:** `internal/whatsapp` (new), `internal/source`, `internal/archivepath`, `internal/ingest`, `internal/cli` (`export.go`, `sync.go`, `import.go`, `doctor.go`), `internal/config`, `internal/web` (source styling), `docs-site`
-- **Related ADRs:** [ADR-0016 (WhatsApp exporter choice)](../../../adr/0016-whatsapp-source-exporter.md), [ADR-0003 (dual-source archive)](../../../adr/0003-dual-source-archive.md), [ADR-0010 (security & privacy posture)](../../../adr/0010-security-privacy-posture.md), [ADR-0015 (doctor/export/sync)](../../../adr/0015-onboarding-doctor-export-sync.md)
+- **Related ADRs:** [ADR-0016](../../../adr/0016-whatsapp-source-exporter.md), [ADR-0003](../../../adr/0003-dual-source-archive.md), [ADR-0010](../../../adr/0010-security-privacy-posture.md), [ADR-0015](../../../adr/0015-onboarding-doctor-export-sync.md)
 
 ## Overview
 

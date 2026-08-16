@@ -1,3 +1,9 @@
+---
+status: draft
+date: 2026-07-06
+implements: [ADR-0022]
+---
+
 # SPEC-0015: Telegram source
 
 > **⚠️ Premise refuted — revision pending (#296).** This spec binds
@@ -10,12 +16,10 @@
 > over in spirit. The revision to the `tg-export` v1 contract is tracked in
 > #296.
 
-- **Status:** Accepted (premise refuted; revision pending per #296)
-- **Date:** 2026-07-06
 - **Capability:** telegram-source
 - **Source packages:** `internal/telegram` (new — parser of exporter output), `internal/toolchain` (bundled `tdl`), `internal/source`, `internal/store` (allowed-source migration), `internal/archivepath`, `internal/ingest`, `internal/setup` (detection + authorization + guidance), `internal/onboard`/`internal/onboardsvc` (export/adopt/refresh), `internal/cli` (`export.go`, `import.go`, `doctor.go`, `sync.go`), `internal/config`, `internal/web` (Providers card, source styling), `internal/devsync` (folder provisioning), `.github/workflows/desktop.yml` (bundle + pin), `docs-site`
-- **Related ADRs:** [ADR-0022 (Telegram via delegated exporter)](../../../adr/0022-telegram-source-delegated-exporter.md), [ADR-0020 (bundled exporters + guided setup)](../../../adr/0020-bundled-exporters-guided-setup.md), [ADR-0016 (WhatsApp source)](../../../adr/0016-whatsapp-source-exporter.md), [ADR-0003 (dual-source archive)](../../../adr/0003-dual-source-archive.md), [ADR-0010 (security & privacy posture)](../../../adr/0010-security-privacy-posture.md)
-- **Related specs:** [SPEC-0013 (desktop guided setup)](../desktop-onboarding/spec.md), [SPEC-0001 (archive ingestion)](../ingestion/spec.md), [SPEC-0014 (Syncthing device sync)](../device-sync-syncthing/spec.md)
+- **Related ADRs:** [ADR-0022](../../../adr/0022-telegram-source-delegated-exporter.md), [ADR-0020](../../../adr/0020-bundled-exporters-guided-setup.md), [ADR-0016](../../../adr/0016-whatsapp-source-exporter.md), [ADR-0003](../../../adr/0003-dual-source-archive.md), [ADR-0010](../../../adr/0010-security-privacy-posture.md)
+- **Related specs:** [SPEC-0013](../desktop-onboarding/spec.md), [SPEC-0001](../ingestion/spec.md), [SPEC-0014](../device-sync-syncthing/spec.md)
 
 ## Overview
 

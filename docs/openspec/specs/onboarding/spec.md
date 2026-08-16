@@ -1,10 +1,14 @@
+---
+status: approved
+date: 2026-06-28
+implements: [ADR-0015]
+---
+
 # SPEC-0007: Onboarding (doctor, export, sync)
 
-- **Status:** Accepted
-- **Date:** 2026-06-28
 - **Capability:** onboarding
 - **Source packages:** `internal/cli` (`doctor.go`, `export.go`, `sync.go`), `internal/store` (`OpenReadOnly`), `internal/ingest`, `internal/imessage`, `internal/imageconv`, `internal/embed`, `internal/facts`
-- **Related ADRs:** [ADR-0015 (onboarding)](../../../adr/0015-onboarding-doctor-export-sync.md), [ADR-0010 (privacy posture)](../../../adr/0010-security-privacy-posture.md), [ADR-0005 (iMessage)](../../../adr/0005-imessage-txt-parser.md), [ADR-0014 (image converter)](../../../adr/0014-image-transcoding-external-converter.md)
+- **Related ADRs:** [ADR-0015](../../../adr/0015-onboarding-doctor-export-sync.md), [ADR-0010](../../../adr/0010-security-privacy-posture.md), [ADR-0005](../../../adr/0005-imessage-txt-parser.md), [ADR-0014](../../../adr/0014-image-transcoding-external-converter.md)
 
 ## Overview
 

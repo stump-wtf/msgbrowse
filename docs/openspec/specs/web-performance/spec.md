@@ -1,10 +1,14 @@
+---
+status: approved
+date: 2026-07-03
+
+---
+
 # SPEC-0008: Web performance
 
-- **Status:** Accepted
-- **Date:** 2026-07-03
 - **Capability:** web-performance
 - **Source packages:** `internal/store` (`query.go`, `schema.go`, `gallery.go`), `internal/web` (`server.go`, `handlers.go`, `media.go`, `gallery.go`, `templates/`, `static/`, `tailwind/`)
-- **Related ADRs:** [ADR-0006 (web stack)](../../../adr/0006-web-stack-htmx.md), [ADR-0007 (styling)](../../../adr/0007-frontend-styling-tailwind-daisyui.md), [ADR-0012 (slate design system)](../../../adr/0012-slate-redesign-design-system.md), [ADR-0013 (pure-Go SQLite)](../../../adr/0013-pure-go-sqlite-driver.md)
+- **Related ADRs:** [ADR-0006](../../../adr/0006-web-stack-htmx.md), [ADR-0007](../../../adr/0007-frontend-styling-tailwind-daisyui.md), [ADR-0012 (slate design system)](../../../adr/0012-slate-redesign-design-system.md), [ADR-0013](../../../adr/0013-pure-go-sqlite-driver.md)
 
 ## Overview
 

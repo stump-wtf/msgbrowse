@@ -2,7 +2,7 @@
 
 - **Capability:** journal
 - **Related ADRs:** [ADR-0023](../../../adr/0023-ai-editorialized-journal.md), [ADR-0011](../../../adr/0011-contact-facts-extraction.md), [ADR-0010](../../../adr/0010-security-privacy-posture.md)
-- **Related specs:** [SPEC-0005 (contact facts)](../contact-facts/spec.md)
+- **Related specs:** [SPEC-0005](../contact-facts/spec.md)
 
 ## Architecture
 

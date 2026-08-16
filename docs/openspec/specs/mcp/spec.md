@@ -1,10 +1,14 @@
+---
+status: approved
+date: 2026-06-27
+implements: [ADR-0004]
+---
+
 # SPEC-0003: MCP Server
 
-- **Status:** Accepted (backfilled)
-- **Date:** 2026-06-27
 - **Capability:** mcp
 - **Source packages:** `internal/mcp` (`server.go`, `tools.go`), `internal/cli` (`mcp.go`)
-- **Related ADRs:** [ADR-0004 (MCP SDK and RAG)](../../../adr/0004-mcp-sdk-and-rag.md)
+- **Related ADRs:** [ADR-0004](../../../adr/0004-mcp-sdk-and-rag.md)
 
 ## Overview
 

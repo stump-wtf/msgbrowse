@@ -1,11 +1,16 @@
+---
+status: approved
+date: 2026-07-11
+# Phase 2 revision: 2026-07-12
+implements: [ADR-0023]
+---
+
 # SPEC-0016: AI-editorialized journal
 
-- **Status:** Accepted
-- **Date:** 2026-07-11 (Phase 2 revision: 2026-07-12)
 - **Capability:** journal
 - **Source packages:** `internal/journal` (`journal.go`), `internal/store` (`journal.go`, `journal_calendar.go`, `schema.go` v11), `internal/config` (`config.go` `DefaultDigestPrompt`), `internal/cli` (`journal.go`), `internal/web` (`journal.go`, `templates/journal.html`, `templates/home.html`)
-- **Related ADRs:** [ADR-0023 (AI-editorialized journal)](../../../adr/0023-ai-editorialized-journal.md), [ADR-0011 (contact facts extraction)](../../../adr/0011-contact-facts-extraction.md), [ADR-0010 (security & privacy posture)](../../../adr/0010-security-privacy-posture.md)
-- **Related specs:** [SPEC-0005 (contact facts)](../contact-facts/spec.md) — the sibling extraction feature
+- **Related ADRs:** [ADR-0023](../../../adr/0023-ai-editorialized-journal.md), [ADR-0011](../../../adr/0011-contact-facts-extraction.md), [ADR-0010](../../../adr/0010-security-privacy-posture.md)
+- **Related specs:** [SPEC-0005](../contact-facts/spec.md) — the sibling extraction feature
 
 ## Overview
 

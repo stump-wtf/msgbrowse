@@ -19,7 +19,7 @@ remains the path for servers and Docker.
 The shell adds no second frontend. Its one new page — Connect/Settings —
 belongs to the web app itself, served identically in browser and desktop
 modes: MCP connection details plus a server-rendered QR code whose payload is
-defined by [SPEC-0011 (device sync)](../device-sync/spec.md). This spec owns
+defined by [SPEC-0011](../device-sync/spec.md). This spec owns
 rendering that QR, not its contents.
 
 The core build stays pure Go: the desktop target is the only cgo code in the

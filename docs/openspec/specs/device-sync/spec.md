@@ -9,8 +9,7 @@ requires: [SPEC-0001]
 
 > **Deprecated.** The bespoke pairing-token + mTLS transfer design specified
 > here was retired before full implementation (#158); device sync is now
-> specified by [SPEC-0014 (Syncthing-based device
-> sync)](../device-sync-syncthing/spec.md) per
+> specified by [SPEC-0014](../device-sync-syncthing/spec.md) per
 > [ADR-0021](../../../adr/0021-syncthing-sync-engine.md), which preserves this
 > spec's archive-not-DB and importer/replica invariants.
 
@@ -28,7 +27,7 @@ and never crosses the wire.
 This is the first msgbrowse feature that listens beyond loopback. Trust is
 established once, physically, via a QR/manual pairing code — displayed on the
 web app's `/settings` Connect page, whose rendering
-[SPEC-0010 (desktop shell)](../desktop-shell/spec.md) owns while this spec
+[SPEC-0010](../desktop-shell/spec.md) owns while this spec
 owns the payload and pairing semantics — and enforced thereafter with mutual
 TLS on pinned self-signed certificates. The sync listener is disabled by
 default; the loopback web UI posture

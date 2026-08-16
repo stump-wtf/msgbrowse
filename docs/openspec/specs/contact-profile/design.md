@@ -2,7 +2,7 @@
 
 - **Capability:** contact-profile
 - **Related ADRs:** [ADR-0003](../../../adr/0003-dual-source-archive.md), [ADR-0011](../../../adr/0011-contact-facts-extraction.md), [ADR-0010](../../../adr/0010-security-privacy-posture.md)
-- **Related specs:** [SPEC-0005 (contact facts)](../contact-facts/spec.md), [SPEC-0008 (web performance)](../web-performance/spec.md)
+- **Related specs:** [SPEC-0005](../contact-facts/spec.md), [SPEC-0008](../web-performance/spec.md)
 
 ## Architecture
 
