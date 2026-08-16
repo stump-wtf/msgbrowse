@@ -2,7 +2,7 @@ module github.com/joestump/msgbrowse
 
 go 1.25.0
 
-toolchain go1.25.12
+toolchain go1.26.6
 
 require (
 	charm.land/fang/v2 v2.0.1
