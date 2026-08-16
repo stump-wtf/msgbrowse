@@ -82,6 +82,31 @@ jobs:
       publish: "false"
     secrets: inherit
 
+  # ---- 4c. desktop module tests (PRs too) ----------------------------------
+  # `cmd/msgbrowse-desktop` is a nested Go module pinned to the root one by a
+  # `replace` directive, and `go` refuses to build it once the two drift: the
+  # lipgloss v2.0.6 bump (#343) merged green because nothing on a PR exercised
+  # the desktop module — `make desktop-test` only ran inside the main-only
+  # `desktop` job, so the `go mod tidy` the bump required surfaced as a red
+  # main (run 6669) instead of a red PR. Same failure class the docs job (4b)
+  # was added for. The tests are pure Go — no GTK/webview toolchain — so they
+  # are cheap enough to run on every PR.
+  desktop-test:
+    needs: [secrets]
+    if: ${{ github.event_name == 'pull_request' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+          cache-dependency-path: |
+            go.sum
+            cmd/msgbrowse-desktop/go.sum
+      - name: Headless desktop module tests
+        run: make desktop-test
+
   # ---- 5. ai review (PRs only, and only once the build is green) ----------
   review:
     needs: [build]
