@@ -2,7 +2,7 @@
 
 - **Status:** Accepted
 - **Date:** 2026-06-27
-- **Supersedes:** the implicit Signal-only model in ADR-0001 (schema scope)
+- **Supersedes:** the implicit Signal-only model in [ADR-0001](0001-sqlite-driver-mattn-cgo.md) (schema scope)
 
 ## Context
 

@@ -3,7 +3,7 @@
 - **Status:** Accepted
 - **Date:** 2026-07-03
 - **Deciders:** Joe Stump
-- **Related:** [ADR-0003 (dual-source archive)](0003-dual-source-archive.md), [ADR-0005 (iMessage txt parser)](0005-imessage-txt-parser.md), [ADR-0015 (onboarding: doctor/export/sync)](0015-onboarding-doctor-export-sync.md)
+- **Related:** [ADR-0003](0003-dual-source-archive.md), [ADR-0005](0005-imessage-txt-parser.md), [ADR-0015](0015-onboarding-doctor-export-sync.md)
 
 ## Context and Problem Statement
 

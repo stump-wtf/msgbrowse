@@ -3,18 +3,18 @@
 - **Status:** Proposed
 - **Date:** 2026-07-29
 - **Deciders:** Joe Stump
-- **Extends:** [ADR-0011 (contact facts)](0011-contact-facts-extraction.md) —
+- **Extends:** [ADR-0011](0011-contact-facts-extraction.md) —
   the incremental, cited, model-stamped LLM extraction pattern this feature is
   modeled on: hash cursor, idempotent writes, bounded concurrency, exclude list,
   single egress.
 - **Related:**
-  - [ADR-0023 (AI-editorialized journal)](0023-ai-editorialized-journal.md) —
+  - [ADR-0023](0023-ai-editorialized-journal.md) —
     per-day mood is a deferred consumer of this table; the journal established
     the UTC day-bucketing rule any mood rollup must reuse.
-  - [ADR-0010 (security/privacy posture)](0010-security-privacy-posture.md) —
+  - [ADR-0010](0010-security-privacy-posture.md) —
     single egress to `llm.base_url`, `journal.exclude_conversations`, and the
     "deliberate step, never a side effect" rule all bind here.
-  - [ADR-0002 (vector backend)](0002-vector-backend.md) — the FK-less,
+  - [ADR-0002](0002-vector-backend.md) — the FK-less,
     hash-keyed derived-cache precedent that survives re-ingest, and the "no new
     services" posture that rules out a separate NLP stack.
   - [SPEC-0017 REQ-0017-010](../openspec/specs/contact-profile/spec.md) — the

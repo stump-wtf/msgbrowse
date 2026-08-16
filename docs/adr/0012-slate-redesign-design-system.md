@@ -3,7 +3,7 @@
 - **Status:** Accepted
 - **Date:** 2026-06-28
 - **Relates to:** [ADR-0006](0006-web-stack-htmx.md) (web stack/CSP), [ADR-0007](0007-frontend-styling-tailwind-daisyui.md) (Tailwind + daisyUI), [ADR-0010](0010-security-privacy-posture.md) (no CDN / self-hosted assets)
-- **Supersedes (in part):** the visual-token and chat-bubble-transcript choices in [ADR-0007](0007-frontend-styling-tailwind-daisyui.md) (the bubble transcript is ADR-0007's component vocabulary + `internal/web/templates/partials.html`, not a SPEC-0004 requirement). [SPEC-0004 (web-ui)](../openspec/specs/web-ui/spec.md) is superseded **visually only** — its behavioral requirements (chronological order, keyset paging) are kept by SPEC-0006.
+- **Supersedes (in part):** the visual-token and chat-bubble-transcript choices in [ADR-0007](0007-frontend-styling-tailwind-daisyui.md) (the bubble transcript is ADR-0007's component vocabulary + `internal/web/templates/partials.html`, not a SPEC-0004 requirement). [SPEC-0004](../openspec/specs/web-ui/spec.md) is superseded **visually only** — its behavioral requirements (chronological order, keyset paging) are kept by SPEC-0006.
 - **Design source:** [docs/design/redesign-handoff.md](../design/redesign-handoff.md) + `docs/design/msgbrowse-redesign.dc.html`
 
 ## Context

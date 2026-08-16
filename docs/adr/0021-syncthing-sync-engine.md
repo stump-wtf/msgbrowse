@@ -4,10 +4,10 @@
 - **Date:** 2026-07-04
 - **Deciders:** Joe Stump
 - **Related:**
-  - **Supersedes** [ADR-0018 (multi-device via QR pairing and archive sync)](0018-device-pairing-archive-sync.md) — this ADR reverses ADR-0018's "build bespoke pairing + mTLS + resumable transfer" decision while preserving its two structural invariants (archive-not-DB, importer/replica roles).
-  - [ADR-0020 (bundled exporters + guided setup)](0020-bundled-exporters-guided-setup.md) — the bundling precedent: Syncthing ships in `Contents/Resources` exactly like the exporter toolchain, and inherits the same signing/notarization obligation.
-  - [ADR-0010 (security & privacy posture)](0010-security-privacy-posture.md) — **amends** the loopback-only framing the same way ADR-0018 did: a P2P listener appears, but it is Syncthing's, LAN-scoped, off by default, and adds no cloud egress.
-  - [ADR-0017 (desktop shell via Wails v2)](0017-desktop-shell-wails.md) — the `.app` that bundles and supervises Syncthing, and whose signing pipeline now covers a third-party daemon.
+  - **Supersedes** [ADR-0018](0018-device-pairing-archive-sync.md) — this ADR reverses ADR-0018's "build bespoke pairing + mTLS + resumable transfer" decision while preserving its two structural invariants (archive-not-DB, importer/replica roles).
+  - [ADR-0020](0020-bundled-exporters-guided-setup.md) — the bundling precedent: Syncthing ships in `Contents/Resources` exactly like the exporter toolchain, and inherits the same signing/notarization obligation.
+  - [ADR-0010](0010-security-privacy-posture.md) — **amends** the loopback-only framing the same way ADR-0018 did: a P2P listener appears, but it is Syncthing's, LAN-scoped, off by default, and adds no cloud egress.
+  - [ADR-0017](0017-desktop-shell-wails.md) — the `.app` that bundles and supervises Syncthing, and whose signing pipeline now covers a third-party daemon.
 
 ## Context and Problem Statement
 
@@ -152,7 +152,7 @@ repurposed to carry Syncthing device IDs and folder mappings.
 [SPEC-0014](../openspec/specs/device-sync-syncthing/spec.md) records what
 survives versus what is removed.
 
-Requirements: [SPEC-0014 (Syncthing-based device sync)](../openspec/specs/device-sync-syncthing/spec.md),
+Requirements: [SPEC-0014](../openspec/specs/device-sync-syncthing/spec.md),
 which supersedes [SPEC-0011](../openspec/specs/device-sync/spec.md).
 
 ### Consequences

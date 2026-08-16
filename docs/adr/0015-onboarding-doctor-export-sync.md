@@ -65,4 +65,4 @@ Add three onboarding commands.
   invocation of the user's own tools, with no secret storage, and documented
   here + in SECURITY.md.
 - `doctor` is a safe first slice; `export`/`sync` follow. Requirements:
-  [SPEC-0007 (onboarding)](../openspec/specs/onboarding/spec.md).
+  [SPEC-0007](../openspec/specs/onboarding/spec.md).

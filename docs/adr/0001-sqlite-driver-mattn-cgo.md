@@ -1,7 +1,7 @@
-# 1. SQLite driver: mattn/go-sqlite3 (cgo) with FTS5
+# ADR-0001: SQLite driver — mattn/go-sqlite3 (cgo) with FTS5
 
-- Status: superseded by [ADR-0013](0013-pure-go-sqlite-driver.md) (switched to pure-Go `modernc.org/sqlite`; the `sqlite-vec` path that drove the cgo choice is moot per [ADR-0002](0002-vector-backend.md))
-- Date: 2026-06-27
+- **Status:** Superseded by [ADR-0013](0013-pure-go-sqlite-driver.md) (switched to pure-Go `modernc.org/sqlite`; the `sqlite-vec` path that drove the cgo choice is moot per [ADR-0002](0002-vector-backend.md))
+- **Date:** 2026-06-27
 
 ## Context and Problem Statement
 

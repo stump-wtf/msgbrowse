@@ -5,16 +5,16 @@
 - **Deciders:** Joe Stump
 - **Supersedes:** the "msgbrowse never creates or prunes snapshots" posture
   documented in `internal/ingest/snapshots.go` and in
-  [ADR-0010 §5 (Encrypted `.snapshots` are listed, never opened)](0010-security-privacy-posture.md).
+  [ADR-0010 §5](0010-security-privacy-posture.md).
 - **Related:**
-  - [ADR-0010 (security/privacy posture)](0010-security-privacy-posture.md) —
+  - [ADR-0010](0010-security-privacy-posture.md) —
     the snapshot is a *second full plaintext copy of the corpus*; this ADR
     broadens the on-disk asset list and the SECURITY.md copy, it does not
     weaken the loopback-only / one-egress posture.
-  - [ADR-0013 (pure-Go SQLite driver)](0013-pure-go-sqlite-driver.md) —
+  - [ADR-0013](0013-pure-go-sqlite-driver.md) —
     msgbrowse's database is **not** SQLCipher-encrypted; a snapshot is therefore
     a plaintext copy, which is why file mode and storage location matter here.
-  - [SPEC-0026 (msgbrowse-owned snapshots)](../openspec/specs/backups/spec.md)
+  - [SPEC-0026](../openspec/specs/backups/spec.md)
     — the requirements and WHEN/THEN scenarios that pin this decision.
 
 ## Context and Problem Statement
@@ -297,7 +297,7 @@ re-open the connection), and does not serve a half-swapped database.
 ## Requirements
 
 Normative requirements live in
-[SPEC-0026 (msgbrowse-owned snapshots)](../openspec/specs/backups/spec.md)
+[SPEC-0026](../openspec/specs/backups/spec.md)
 with design rationale in its paired
 [design.md](../openspec/specs/backups/design.md). Implementation is tracked by
 epic #232 (children: #233 this ADR + spec, #234 the create/prune/restore

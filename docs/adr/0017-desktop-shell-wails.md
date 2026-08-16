@@ -3,7 +3,7 @@
 - **Status:** Accepted
 - **Date:** 2026-07-03
 - **Deciders:** Joe Stump
-- **Related:** [ADR-0006 (web stack)](0006-web-stack-htmx.md), [ADR-0010 (security & privacy posture)](0010-security-privacy-posture.md), [ADR-0013 (pure-Go SQLite driver)](0013-pure-go-sqlite-driver.md), [ADR-0021 (Syncthing sync engine)](0021-syncthing-sync-engine.md), [SPEC-0008 (web performance)](../openspec/specs/web-performance/spec.md), [SPEC-0010 (desktop shell)](../openspec/specs/desktop-shell/spec.md)
+- **Related:** [ADR-0006](0006-web-stack-htmx.md), [ADR-0010](0010-security-privacy-posture.md), [ADR-0013](0013-pure-go-sqlite-driver.md), [ADR-0021](0021-syncthing-sync-engine.md), [SPEC-0008](../openspec/specs/web-performance/spec.md), [SPEC-0010](../openspec/specs/desktop-shell/spec.md)
 
 ## Context and Problem Statement
 
@@ -15,7 +15,7 @@ no dock icon, no app menu, no lifecycle (quit the terminal, kill the app), and
 a terminal is required at all. The owner wants msgbrowse installable and
 launchable as a normal desktop application — and specifically asked whether
 Proton Native was the way to do it. The core constraint is ADR-0013: the
-server and CLI build with `CGO_ENABLED=0`, and that stays sacred.
+server and CLI build with `CGO_ENABLED=0`, and that is non-negotiable.
 
 ## Decision Drivers
 
@@ -59,9 +59,9 @@ server and CLI build with `CGO_ENABLED=0`, and that stays sacred.
 server. The desktop app starts the existing `internal/web` server in-process
 on a loopback ephemeral port and points its window at it, so browser mode and
 desktop mode serve the identical app
-([SPEC-0010 (desktop shell)](../openspec/specs/desktop-shell/spec.md)
+([SPEC-0010](../openspec/specs/desktop-shell/spec.md)
 specifies the shell;
-[SPEC-0014 (Syncthing device sync)](../openspec/specs/device-sync-syncthing/spec.md)
+[SPEC-0014](../openspec/specs/device-sync-syncthing/spec.md)
 — see [ADR-0021](0021-syncthing-sync-engine.md), which superseded the original
 [ADR-0018](0018-device-pairing-archive-sync.md)/SPEC-0011 pairing design —
 specifies device sync, whose QR the shared Connect page renders).

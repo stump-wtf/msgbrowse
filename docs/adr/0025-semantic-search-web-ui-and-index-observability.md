@@ -4,15 +4,15 @@
 - **Date:** 2026-07-19
 - **Deciders:** Joe Stump
 - **Related:**
-  - [ADR-0002 (vector backend)](0002-vector-backend.md) — the brute-force
+  - [ADR-0002](0002-vector-backend.md) — the brute-force
     `SemanticSearch` this ADR finally surfaces to a human; no new backend.
-  - [ADR-0004 (MCP SDK and RAG)](0004-mcp-sdk-and-rag.md) — hybrid RRF fusion
+  - [ADR-0004](0004-mcp-sdk-and-rag.md) — hybrid RRF fusion
     and the "degrade to keyword-only, log it" contract, reused in the web layer.
-  - [ADR-0010 (security/privacy posture)](0010-security-privacy-posture.md) —
+  - [ADR-0010](0010-security-privacy-posture.md) —
     the single egress (query embedding + the Build pass are the only
     `llm.base_url` calls) and the privileged-POST gate the Build/Reset controls
     keep.
-  - [SPEC-0002 (search)](../openspec/specs/search/spec.md) — REQ-0002-008
+  - [SPEC-0002](../openspec/specs/search/spec.md) — REQ-0002-008
     (web semantic/hybrid) and REQ-0002-009 (index observability + management).
 
 ## Context and Problem Statement

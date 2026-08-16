@@ -11,7 +11,7 @@
   tracked in #296).
 - **Date:** 2026-07-06
 - **Deciders:** Joe Stump
-- **Related:** [ADR-0003 (dual-source archive)](0003-dual-source-archive.md), [ADR-0016 (WhatsApp source)](0016-whatsapp-source-exporter.md), [ADR-0020 (bundled exporters + guided setup)](0020-bundled-exporters-guided-setup.md), [ADR-0015 (onboarding: doctor/export/sync)](0015-onboarding-doctor-export-sync.md), [ADR-0010 (security & privacy posture)](0010-security-privacy-posture.md)
+- **Related:** [ADR-0003](0003-dual-source-archive.md), [ADR-0016](0016-whatsapp-source-exporter.md), [ADR-0020](0020-bundled-exporters-guided-setup.md), [ADR-0015](0015-onboarding-doctor-export-sync.md), [ADR-0010](0010-security-privacy-posture.md)
 
 ## Context and Problem Statement
 
@@ -114,7 +114,7 @@ protocols.
 
 ### Confirmation
 
-SPEC-0015 (Telegram source) governs the requirements. Compliance is confirmed
+[SPEC-0015](../openspec/specs/telegram-source/spec.md) (Telegram source) governs the requirements. Compliance is confirmed
 by: the delegation invariant asserted in the spec (no extraction code in
 msgbrowse; the exporter is invoked with explicit argv from the bundled,
 pinned toolchain); parser unit tests over synthetic fixtures of `tdl`'s JSON

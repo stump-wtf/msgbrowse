@@ -4,12 +4,12 @@
 - **Date:** 2026-07-04
 - **Deciders:** Joe Stump
 - **Related:**
-  - [ADR-0015 (onboarding: doctor/export/sync)](0015-onboarding-doctor-export-sync.md) — this ADR evolves the CLI doctor/export/sync into a consumer surface.
-  - [ADR-0017 (desktop shell via Wails v2)](0017-desktop-shell-wails.md) — **amends** its "signing/notarization deferred" stance: signing + notarization become required.
-  - [ADR-0010 (security & privacy posture)](0010-security-privacy-posture.md) — **amends** the "archives are read-only external inputs" framing: archives become app-managed local outputs of a bundled local tool.
-  - [ADR-0005 (iMessage txt parser)](0005-imessage-txt-parser.md) — the `imessage-exporter` binary bundled here.
-  - [ADR-0016 (WhatsApp exporter)](0016-whatsapp-source-exporter.md) — the `whatsapp-chat-exporter` (`wtsexporter`) tool bundled here.
-  - [ADR-0003 (dual/multi-source archive)](0003-dual-source-archive.md) — the three-source model the setup enables.
+  - [ADR-0015](0015-onboarding-doctor-export-sync.md) — this ADR evolves the CLI doctor/export/sync into a consumer surface.
+  - [ADR-0017](0017-desktop-shell-wails.md) — **amends** its "signing/notarization deferred" stance: signing + notarization become required.
+  - [ADR-0010](0010-security-privacy-posture.md) — **amends** the "archives are read-only external inputs" framing: archives become app-managed local outputs of a bundled local tool.
+  - [ADR-0005](0005-imessage-txt-parser.md) — the `imessage-exporter` binary bundled here.
+  - [ADR-0016](0016-whatsapp-source-exporter.md) — the `whatsapp-chat-exporter` (`wtsexporter`) tool bundled here.
+  - [ADR-0003](0003-dual-source-archive.md) — the three-source model the setup enables.
 
 ## Context and Problem Statement
 
@@ -42,7 +42,7 @@ Homebrew nor Python.
   Homebrew tap state, a working Python, or network reachability at setup time.
 - **The exporters must "just work."** Detection, permission guidance, export,
   and import are one click per source, with no version skew the user can see.
-- **The `CGO_ENABLED=0` core stays sacred** ([ADR-0013](0013-pure-go-sqlite-driver.md));
+- **The `CGO_ENABLED=0` core is non-negotiable** ([ADR-0013](0013-pure-go-sqlite-driver.md));
   bundling changes packaging, not the pure-Go server/CLI/MCP core.
 
 ## Considered Options
@@ -150,7 +150,7 @@ Alongside the provisioning choice, this ADR settles five coupled decisions:
    every embedded binary, and a downloaded `.app` needs
    `xattr -dr com.apple.quarantine` to launch.
 
-Requirements: [SPEC-0013 (desktop guided setup)](../openspec/specs/desktop-onboarding/spec.md).
+Requirements: [SPEC-0013](../openspec/specs/desktop-onboarding/spec.md).
 
 ### Consequences
 

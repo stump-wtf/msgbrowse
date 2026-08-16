@@ -4,24 +4,24 @@
 - **Date:** 2026-07-11
 - **Deciders:** Joe Stump
 - **Related:**
-  - [ADR-0003 (dual-source archive with unified contacts)](0003-dual-source-archive.md) — established
+  - [ADR-0003](0003-dual-source-archive.md) — established
     `contacts` + `contact_identifiers`, auto-creation on import, and the rule
     that cross-source merging is a **manual confirmation, never a heuristic**;
     this ADR builds the machinery that ADR-0003 deferred to "the contacts page".
-  - [ADR-0011 (contact facts extraction)](0011-contact-facts-extraction.md) — prior art for
+  - [ADR-0011](0011-contact-facts-extraction.md) — prior art for
     per-contact data that must survive merges and re-ingest: facts are keyed to
     `contacts(id)` with idempotent, hash-deduplicated writes; merged threads
     accumulate a single fact set.
-  - [ADR-0010 (security & privacy posture)](0010-security-privacy-posture.md) — the address-book
+  - [ADR-0010](0010-security-privacy-posture.md) — the address-book
     integration is local-only, read-only, and adds **no** network egress.
-  - [ADR-0020 (bundled exporters + guided setup)](0020-bundled-exporters-guided-setup.md) /
-    [ADR-0021 (Syncthing sync engine)](0021-syncthing-sync-engine.md) — the platform-gating
+  - [ADR-0020](0020-bundled-exporters-guided-setup.md) /
+    [ADR-0021](0021-syncthing-sync-engine.md) — the platform-gating
     precedents: permission-probed macOS integrations behind seams, and the
     `devicesync` build tag that keeps an unfinished/platform-specific feature
     out of the default build (#20).
 - **Tracking:** epic #8; children #9 (interface + no-op), #10 (macOS provider),
   #11 (merge engine), #12 (settings UI); this ADR is #13.
-- **Requirements:** [SPEC-0018 (contact merging & de-duplication)](../openspec/specs/contact-merge/spec.md)
+- **Requirements:** [SPEC-0018](../openspec/specs/contact-merge/spec.md)
 
 ## Context and Problem Statement
 
@@ -308,7 +308,7 @@ contact mid-import, and reconcile immediately folds it back.
 ## Requirements
 
 Normative requirements live in
-[SPEC-0018 (contact merging & de-duplication)](../openspec/specs/contact-merge/spec.md)
+[SPEC-0018](../openspec/specs/contact-merge/spec.md)
 with design rationale in its paired
 [design.md](../openspec/specs/contact-merge/design.md). Implementation is
 tracked by epic #8 (children: #9 interface + no-op, #10 macOS provider, #11

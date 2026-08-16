@@ -3,7 +3,7 @@
 - **Status:** Accepted (not yet implemented — tracked in [#99](https://github.com/joestump/msgbrowse/issues/99))
 - **Date:** 2026-07-03
 - **Deciders:** Joe Stump
-- **Related:** [ADR-0013 (pure-Go SQLite / toolchain-free builds)](0013-pure-go-sqlite-driver.md), [ADR-0017 (desktop shell)](0017-desktop-shell-wails.md), [ADR-0016 (WhatsApp exporter)](0016-whatsapp-source-exporter.md)
+- **Related:** [ADR-0013](0013-pure-go-sqlite-driver.md), [ADR-0017](0017-desktop-shell-wails.md), [ADR-0016](0016-whatsapp-source-exporter.md)
 
 ## Context and Problem Statement
 

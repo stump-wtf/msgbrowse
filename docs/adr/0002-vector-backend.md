@@ -1,7 +1,7 @@
-# 2. Vector backend: sqlite-vec loadable extension, Go brute-force fallback
+# ADR-0002: Vector backend — sqlite-vec loadable extension, Go brute-force fallback
 
-- Status: accepted; superseded in part by [ADR-0013](0013-pure-go-sqlite-driver.md) (the loadable-extension path is closed — the Go brute-force scan is the implemented backend)
-- Date: 2026-06-27
+- **Status:** Accepted; superseded in part by [ADR-0013](0013-pure-go-sqlite-driver.md) (the loadable-extension path is closed — the Go brute-force scan is the implemented backend)
+- **Date:** 2026-06-27
 
 ## Context and Problem Statement
 

@@ -3,8 +3,8 @@
 - **Status:** Accepted
 - **Date:** 2026-07-30 (pivot decided 2026-07-08; recorded here after the fact)
 - **Deciders:** Joe Stump
-- **Supersedes:** [ADR-0022 (Telegram via delegated exporter — tdl)](0022-telegram-source-delegated-exporter.md)
-- **Related:** [ADR-0020 (bundled exporters + guided setup)](0020-bundled-exporters-guided-setup.md), [ADR-0016 (WhatsApp source)](0016-whatsapp-source-exporter.md), [ADR-0010 (security & privacy posture)](0010-security-privacy-posture.md), SPEC-0015 (telegram-source — revision tracked in #296)
+- **Supersedes:** [ADR-0022](0022-telegram-source-delegated-exporter.md)
+- **Related:** [ADR-0020](0020-bundled-exporters-guided-setup.md), [ADR-0016](0016-whatsapp-source-exporter.md), [ADR-0010](0010-security-privacy-posture.md), [SPEC-0015](../openspec/specs/telegram-source/spec.md) (telegram-source — revision tracked in #296)
 
 ## Context and Problem Statement
 
@@ -109,7 +109,7 @@ SPEC-0015 carries a premise-refuted banner until its revision lands.
 
 ### Confirmation
 
-SPEC-0015 (as revised under #296) governs requirements. Compliance is
+[SPEC-0015](../openspec/specs/telegram-source/spec.md) (as revised under #296) governs requirements. Compliance is
 confirmed by: the delegation invariant asserted in the spec; parser unit
 tests over synthetic fixtures of `tg-export`'s NDJSON contract
 (schema_version-pinned); detection/authorization/guidance tests in

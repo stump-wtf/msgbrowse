@@ -3,7 +3,7 @@
 - **Status:** Superseded by [ADR-0021](0021-syncthing-sync-engine.md)
 - **Date:** 2026-07-03
 - **Deciders:** Joe Stump
-- **Related:** [ADR-0010 (security & privacy posture — **amended** by this ADR)](0010-security-privacy-posture.md), [ADR-0015 (onboarding: doctor/export/sync)](0015-onboarding-doctor-export-sync.md), [ADR-0003 (dual-source archive)](0003-dual-source-archive.md), [ADR-0013 (pure-Go SQLite)](0013-pure-go-sqlite-driver.md), [ADR-0017 (desktop shell)](0017-desktop-shell-wails.md)
+- **Related:** [ADR-0010](0010-security-privacy-posture.md) (amended by this ADR), [ADR-0015](0015-onboarding-doctor-export-sync.md), [ADR-0003](0003-dual-source-archive.md), [ADR-0013](0013-pure-go-sqlite-driver.md), [ADR-0017](0017-desktop-shell-wails.md)
 
 ## Context and Problem Statement
 
@@ -80,7 +80,7 @@ source of truth and become the unit of replication.
   verify, stage, atomic rename — then each node ingests locally and
   idempotently.
 
-Requirements: [SPEC-0011 (device sync)](../openspec/specs/device-sync/spec.md).
+Requirements: [SPEC-0011](../openspec/specs/device-sync/spec.md).
 
 ### Consequences
 
