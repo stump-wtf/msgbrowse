@@ -597,6 +597,77 @@ jobs:
           # every release stays a prerelease rather than implying notarized
           # bits. Flip this once the signing secrets in the darwin job go live.
           prerelease: true
+
+      # --- Canonical-host asset mirror + Homebrew tap bump ----------------------
+      # The tap (stump.wtf/homebrew-tap, canonical on Gitea) installs from
+      # Gitea release-download URLs, NOT from this mirror — the Gitea→GitHub
+      # push mirror has lagged or broken outright in the past, so nothing that
+      # users `brew install` may depend on this host staying current. This step
+      # therefore, after publishing here:
+      #   1. attaches the desktop zip + a deterministic source tarball
+      #      (git archive of the tag) to the Gitea release for this tag, and
+      #   2. bumps Formula/msgbrowse.rb + Casks/msgbrowse-desktop.rb in the
+      #      tap with the new versions and sha256s, and pushes to the tap's
+      #      main on Gitea.
+      # Gated on GITEA_PAT (scoped write:repository token) so the job stays
+      # green if the secret is ever absent.
+      # The tag object is needed for the deterministic source tarball below.
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Mirror release assets to Gitea + bump Homebrew tap
+        env:
+          GITEA_PAT: ${{ secrets.GITEA_PAT }}
+          GITEA_URL: https://gitea.stump.rocks
+        if: ${{ env.GITEA_PAT != '' }}
+        run: |
+          set -euo pipefail
+          TAG="$GITHUB_REF_NAME"          # e.g. v0.5.1
+          VER="${TAG#v}"                   # e.g. 0.5.1
+          API="$GITEA_URL/api/v1"
+          AUTH="Authorization: token $GITEA_PAT"
+          SRC_ASSET="msgbrowse-v${VER}-source.tar.gz"
+          ZIP="msgbrowse-desktop_darwin_universal.zip"
+
+          # Deterministic source tarball — same bytes every run for a tag, so
+          # the formula sha256 is stable (on-the-fly archive endpoints are not).
+          git archive --format=tar.gz --prefix="msgbrowse/" -o "dist/$SRC_ASSET" "$TAG"
+
+          # The release object is created on Gitea by the release flow; require it.
+          RID=$(curl -sf -H "$AUTH" "$API/repos/stump.wtf/msgbrowse/releases/tags/$TAG" | jq -r '.id')
+          [ "$RID" != "null" ] || { echo "no Gitea release for $TAG"; exit 1; }
+
+          upload_asset() { # $1 = file, $2 = name
+            OLD=$(curl -sf -H "$AUTH" "$API/repos/stump.wtf/msgbrowse/releases/$RID/assets?limit=50" \
+              | jq -r ".[] | select(.name == \"$2\") | .id")
+            [ -z "$OLD" ] || curl -sf -X DELETE -H "$AUTH" \
+              "$API/repos/stump.wtf/msgbrowse/releases/$RID/assets/$OLD"
+            curl -sf -X POST -H "$AUTH" \
+              "$API/repos/stump.wtf/msgbrowse/releases/$RID/assets?name=$2" \
+              -F "attachment=@$1" > /dev/null
+            echo "attached $2 to Gitea release $RID"
+          }
+
+          upload_asset "dist/$SRC_ASSET" "$SRC_ASSET"
+          upload_asset "dist/$ZIP" "$ZIP"
+          SHA_SRC=$(sha256sum "dist/$SRC_ASSET" | cut -d' ' -f1)
+          SHA_ZIP=$(sha256sum "dist/$ZIP" | cut -d' ' -f1)
+
+          # --- bump the tap -------------------------------------------------
+          git clone -q "$GITEA_URL/stump.wtf/homebrew-tap.git" tap
+          cd tap
+          F="Formula/msgbrowse.rb"; C="Casks/msgbrowse-desktop.rb"
+          sed -i "s|releases/download/v[0-9.]*/msgbrowse-v[0-9.]*-source.tar.gz|releases/download/$TAG/$SRC_ASSET|" "$F"
+          sed -i "s|sha256 \"[0-9a-f]*\"|sha256 \"$SHA_SRC\"|" "$F"
+          sed -i "s|version \"[0-9.]*\"|version \"$VER\"|" "$C"
+          sed -i "s|sha256 \"[0-9a-f]*\"|sha256 \"$SHA_ZIP\"|" "$C"
+          grep -q "$TAG/$SRC_ASSET" "$F" && grep -q "$SHA_SRC" "$F" \
+            && grep -q "version \"$VER\"" "$C" && grep -q "$SHA_ZIP" "$C"
+          git config user.name "joestump-agent"
+          git config user.email "joestump-agent@noreply.stump.rocks"
+          git commit -aqm "msgbrowse + msgbrowse-desktop v${VER} (automated tap bump)"
+          git -c http.extraheader="$AUTH" push -q origin main
           body: |
             ## Install
 
