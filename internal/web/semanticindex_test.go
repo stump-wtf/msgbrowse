@@ -354,14 +354,23 @@ func TestStatusCardUnavailable(t *testing.T) {
 // the Build form when an indexer is wired.
 func TestOverviewSharesIndexCard(t *testing.T) {
 	srv, _ := newStatusServer(t, "test-embed", true)
-	body := get(t, srv, "/").Body.String()
+	body := get(t, srv, "/status").Body.String()
 	// The shared card renders (not the old inline copy).
 	if !contains(body, "semantic-index-card") {
-		t.Error("Overview missing the shared semantic_index_card")
+		t.Error("Status missing the shared semantic_index_card")
 	}
-	// With an indexer wired, Home shows the Build form too (#224).
+	// With an indexer wired, Status shows the Build form.
 	if !contains(body, `action="/status/index"`) {
-		t.Error("Overview should render the Build form via the shared card")
+		t.Error("Status should render the Build form via the shared card")
+	}
+	// Home no longer renders the card (consolidation into Settings): it
+	// carries a pointer instead.
+	home := get(t, srv, "/").Body.String()
+	if contains(home, "semantic-index-card") {
+		t.Error("Home must not render the semantic-index card")
+	}
+	if !contains(home, `href="/status"`) {
+		t.Error("Home should point at Settings → Status for index management")
 	}
 }
 

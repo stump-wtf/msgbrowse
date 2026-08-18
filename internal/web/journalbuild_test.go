@@ -163,7 +163,7 @@ func TestJournalRebuildAllRegenerates(t *testing.T) {
 	srv.SetJournalBuilder(fb)
 
 	rec := journalPOST(t, srv, "/journal/rebuild", selfOrigin, mintToken(t, srv), "")
-	if !contains(rec.Body.String(), "Rebuilding every day") {
+	if !contains(rec.Body.String(), "Rebuilding every digest") {
 		t.Errorf("missing the rebuild banner:\n%s", rec.Body.String())
 	}
 	waitFor(t, func() bool { return fb.starts() == 1 })
@@ -289,7 +289,7 @@ func TestJournalRebuildDayStartsForKnownDay(t *testing.T) {
 	seedJournalDay(t, st, "2026-06-01", 12, 8)
 
 	rec := journalPOST(t, srv, "/journal/rebuild/day", selfOrigin, mintToken(t, srv), "2026-06-01")
-	if !contains(rec.Body.String(), "Rebuilding this day") {
+	if !contains(rec.Body.String(), "Rebuilding that day") {
 		t.Errorf("missing the per-day banner:\n%s", rec.Body.String())
 	}
 	waitFor(t, func() bool { return fb.starts() == 1 })
@@ -305,17 +305,22 @@ func TestJournalRebuildDayStartsForKnownDay(t *testing.T) {
 
 // --- Unavailable mode -----------------------------------------------------
 
-// TestJournalBuildUnavailableRendersNoControls: with no builder wired the page
-// explains the CLI path and renders NO form and NO token — never a dead button.
+// TestJournalBuildUnavailableRendersNoControls: with no builder wired the
+// Status page (where the build card now lives) explains the CLI path and
+// renders NO form and NO token — never a dead button. The Journal page
+// renders no build machinery at all.
 func TestJournalBuildUnavailableRendersNoControls(t *testing.T) {
 	srv, _, _ := newTestServer(t) // no SetJournalBuilder
-	body := get(t, srv, "/journal").Body.String()
+	body := get(t, srv, "/status").Body.String()
 
 	if !contains(body, "unavailable in this mode") {
 		t.Error("expected the unavailable explanation")
 	}
 	if contains(body, `action="/journal/build"`) {
 		t.Error("no builder is wired, so no build form may render")
+	}
+	if jbody := get(t, srv, "/journal").Body.String(); contains(jbody, "unavailable in this mode") || contains(jbody, setupTokenField) {
+		t.Error("the journal page must stay free of build machinery")
 	}
 	if contains(body, setupTokenField) {
 		t.Error("no token may be minted into a page that renders no privileged form")
@@ -337,13 +342,17 @@ func TestJournalBuildUnavailablePOSTStartsNothing(t *testing.T) {
 
 // --- Page contract --------------------------------------------------------
 
-// TestJournalPageOptsOutOfHistory: the page renders a live per-session token, so
-// htmx must not snapshot it into localStorage.
-func TestJournalPageOptsOutOfHistory(t *testing.T) {
+// TestStatusPageOptsOutOfHistory: the Status page renders the journal build
+// forms with a live per-session token, so htmx must not snapshot it into
+// localStorage. (The Journal page no longer renders any privileged form.)
+func TestStatusPageOptsOutOfHistory(t *testing.T) {
 	srv, _, _ := newTestServer(t)
 	srv.SetJournalBuilder(newFakeJournalBuilder("test-chat", true))
-	if !contains(get(t, srv, "/journal").Body.String(), `hx-history="false"`) {
+	if !contains(get(t, srv, "/status").Body.String(), `hx-history="false"`) {
 		t.Error("a page rendering a live setup token must opt out of the htmx history cache")
+	}
+	if contains(get(t, srv, "/journal").Body.String(), setupTokenField) {
+		t.Error("the journal page must not mint a setup token (no privileged forms there)")
 	}
 }
 
@@ -361,8 +370,11 @@ func TestJournalStaleDayCard(t *testing.T) {
 	if !contains(body, "28 more messages") {
 		t.Errorf("expected the new-message count in the staleness note:\n%s", body)
 	}
-	if !contains(body, `action="/journal/rebuild/day"`) {
-		t.Error("a stale day should offer a per-day rebuild")
+	if contains(body, `action="/journal/rebuild/day"`) {
+		t.Error("the journal day card no longer carries a rebuild form (controls live on Status)")
+	}
+	if !contains(body, "/status") {
+		t.Error("the stale note should point at the Status build surface")
 	}
 }
 
@@ -425,7 +437,7 @@ func TestJournalRebuildAllStatesTheCount(t *testing.T) {
 	for _, d := range []string{"2026-06-06", "2026-06-07", "2026-06-08"} {
 		seedJournalDay(t, st, d, 5, 5)
 	}
-	body := get(t, srv, "/journal").Body.String()
+	body := get(t, srv, "/status").Body.String()
 	if !contains(body, "Rebuild all 3 digests") {
 		t.Errorf("the rebuild control should state how many digests it will regenerate:\n%s", body)
 	}

@@ -29,13 +29,6 @@ type journalData struct {
 	PeakHourLabel string   // "11 PM" ("" when no activity)
 	Moods         []string // legend order (journal.Moods)
 	Selected      *dayCard // the selected day's editorial card (nil = none)
-	// Build drives the in-app build card (#240); BuildResult is the fixed-enum
-	// banner from a just-completed Build / Rebuild POST ("" on a plain GET).
-	Build       journalBuildData
-	BuildResult string
-	// SetupToken arms the privileged build POSTs. "" when no builder is wired,
-	// in which case no forms render at all.
-	SetupToken string
 }
 
 // calCell is one day cell in the month grid. A zero-value cell (InMonth false)
@@ -76,14 +69,14 @@ type dayCard struct {
 // handleJournal renders the journal as a mood-tinted month calendar with an
 // editorial day card. Boosted navigations swap only #main-content.
 func (s *Server) handleJournal(w http.ResponseWriter, r *http.Request) {
-	s.renderJournalPage(w, r, "")
+	s.renderJournalPage(w, r)
 }
 
 // renderJournalPage assembles and renders the Journal page (full document or
-// boosted #main-content partial). buildResult is the fixed-enum banner from a
-// just-completed Build / Rebuild POST, "" on a plain GET — the same shape
-// renderStatus uses for the index controls.
-func (s *Server) renderJournalPage(w http.ResponseWriter, r *http.Request, buildResult string) {
+// boosted #main-content partial). The journal surface is deliberately free of
+// build/indexing machinery — those controls live on the Settings → Status tab
+// (issue #300-era consolidation of the LLM/semantic surfaces into Settings).
+func (s *Server) renderJournalPage(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	var base baseData
 	if isPartialRequest(r) {
@@ -105,35 +98,16 @@ func (s *Server) renderJournalPage(w http.ResponseWriter, r *http.Request, build
 	// after a boosted swap shell.js re-derives the active tab from location.
 	base.NavTab = navTabJournal
 
-	build, err := s.journalBuildStatus(ctx)
-	if err != nil {
-		s.serverError(w, err)
-		return
-	}
-	// The build forms are privileged POSTs: arm them with a live token, but only
-	// when there is a builder to drive. Browser / no-op mode renders the
-	// unavailable note and no forms, so it needs no token.
-	token := ""
-	if s.journalBuilder != nil {
-		tok, terr := s.setupTokens.mint()
-		if terr != nil {
-			s.serverError(w, terr)
-			return
-		}
-		token = tok
-	}
-
 	latest, err := s.store.LatestJournalDay(ctx)
 	if err != nil {
 		s.serverError(w, err)
 		return
 	}
 	if latest == "" {
-		// The empty state is now the PRIMARY place a first-time user starts a
-		// build, so it carries the full card rather than a CLI instruction.
+		// The empty state points at the build surface on Settings → Status —
+		// the journal page itself carries no build machinery.
 		s.render(w, r, "journal", journalData{
 			baseData: base, Empty: true,
-			Build: build, BuildResult: buildResult, SetupToken: token,
 		})
 		return
 	}
@@ -212,9 +186,6 @@ func (s *Server) renderJournalPage(w http.ResponseWriter, r *http.Request, build
 		Moods:         journal.Moods,
 		WeekdayLabel:  weekdayLabel(stats),
 		PeakHourLabel: peakHourLabel(stats),
-		Build:         build,
-		BuildResult:   buildResult,
-		SetupToken:    token,
 	}
 	if day != "" {
 		if view, ok, err := s.store.GetJournalDay(ctx, day); err != nil {

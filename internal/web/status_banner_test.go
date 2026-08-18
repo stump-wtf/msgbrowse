@@ -143,7 +143,6 @@ func TestStatusBannerNoHandrolledMarkup(t *testing.T) {
 		"settings.html",
 		"status.html",
 		"backups.html",
-		"journal.html",
 	}
 
 	for _, tmpl := range templates {

@@ -111,12 +111,11 @@
       </div>
       {{end}}
 
-      {{/* Semantic-search index status (issue #1): coverage of the embeddable
-           corpus for the configured model, plus the latest recorded index run —
-           live (fresh embed_runs heartbeat), stalled (heartbeat went cold
-           before the terminal write), or finished. Unconfigured renders a
-           pointer, never fake zeros. */}}
-      {{template "semantic_index_card" .}}
+      {{/* Semantic-index status card removed from Home (consolidation: the
+           LLM/semantic/pipeline surfaces live on Settings → Status). Home is
+           the reading room; one pointer keeps them findable. */}}
+      <p class="status-note mt-2">Semantic search index and journal builds are managed on the
+        <a href="/status" class="link link-hover">Settings → Status</a> tab.</p>
       </div>{{/* end diagnostics block */}}
       {{else}}
       <div class="notice-card">

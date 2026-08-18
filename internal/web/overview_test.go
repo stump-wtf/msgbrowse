@@ -76,10 +76,10 @@ func TestOverviewProviderBreakdown(t *testing.T) {
 // TestOverviewEmbeddingNotConfigured: with no embed model set, the
 // semantic-index card renders a pointer to Settings → LLM — never fake zeros.
 func TestOverviewEmbeddingNotConfigured(t *testing.T) {
-	srv, _, _ := newTestServer(t)
-	body := get(t, srv, "/").Body.String()
+	srv, _ := newStatusServer(t, "", true)
+	body := get(t, srv, "/status").Body.String()
 	if !contains(body, "Semantic search index") {
-		t.Fatal("overview missing the semantic-index card")
+		t.Fatal("status missing the semantic-index card")
 	}
 	for _, want := range []string{"Semantic search is not configured", `href="/settings/llm"`} {
 		if !contains(body, want) {
@@ -89,13 +89,16 @@ func TestOverviewEmbeddingNotConfigured(t *testing.T) {
 	if contains(body, "Coverage") {
 		t.Error("unconfigured card must not render coverage metrics")
 	}
+	if home := get(t, srv, "/").Body.String(); contains(home, "semantic-index-card") {
+		t.Error("home must not render the semantic-index card (it lives on Status)")
+	}
 }
 
 // TestOverviewEmbeddingCoverageAndLastRun: with a model configured, the card
 // shows embedded-vs-total coverage and the latest completed index run's
 // stamp, totals, and duration.
 func TestOverviewEmbeddingCoverageAndLastRun(t *testing.T) {
-	srv, st := newOverviewServer(t, "test-embed")
+	srv, st := newStatusServer(t, "test-embed", true)
 	ctx := context.Background()
 
 	// Never indexed: full corpus pending, run line reads "never".
@@ -103,7 +106,7 @@ func TestOverviewEmbeddingCoverageAndLastRun(t *testing.T) {
 	if err != nil || cov.Embeddable == 0 {
 		t.Fatalf("coverage = %+v, %v", cov, err)
 	}
-	body := get(t, srv, "/").Body.String()
+	body := get(t, srv, "/status").Body.String()
 	for _, want := range []string{
 		"Coverage",
 		"0 of " + itoa(int64(cov.Embeddable)) + " messages (0%)",
@@ -134,7 +137,7 @@ func TestOverviewEmbeddingCoverageAndLastRun(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	body = get(t, srv, "/").Body.String()
+	body = get(t, srv, "/status").Body.String()
 	pct := 100 / cov.Embeddable // 1 of N
 	for _, want := range []string{
 		"1 of " + itoa(int64(cov.Embeddable)) + " messages (" + itoa(int64(pct)) + "%)",
@@ -154,7 +157,7 @@ func TestOverviewEmbeddingCoverageAndLastRun(t *testing.T) {
 // renders the live in-progress state with its running total; one whose
 // heartbeat went stale renders the interrupted state instead.
 func TestOverviewEmbeddingInProgress(t *testing.T) {
-	srv, st := newOverviewServer(t, "test-embed")
+	srv, st := newStatusServer(t, "test-embed", true)
 	ctx := context.Background()
 
 	id, err := st.BeginEmbedRun(ctx, "test-embed", time.Now())
@@ -164,7 +167,7 @@ func TestOverviewEmbeddingInProgress(t *testing.T) {
 	if err := st.UpdateEmbedRunProgress(ctx, id, 42, 1, time.Now()); err != nil {
 		t.Fatal(err)
 	}
-	body := get(t, srv, "/").Body.String()
+	body := get(t, srv, "/status").Body.String()
 	for _, want := range []string{"Indexing…", "42 messages embedded so far", "running now"} {
 		if !contains(body, want) {
 			t.Errorf("in-progress card missing %q", want)
@@ -175,7 +178,7 @@ func TestOverviewEmbeddingInProgress(t *testing.T) {
 	if err := st.UpdateEmbedRunProgress(ctx, id, 42, 1, time.Now().Add(-embedRunStaleAfter-time.Minute)); err != nil {
 		t.Fatal(err)
 	}
-	body = get(t, srv, "/").Body.String()
+	body = get(t, srv, "/status").Body.String()
 	if !contains(body, "Interrupted") || !contains(body, "stopped before finishing") {
 		t.Error("stale in-flight run not rendered as interrupted")
 	}
@@ -187,7 +190,7 @@ func TestOverviewEmbeddingInProgress(t *testing.T) {
 // TestOverviewEmbeddingFailedRun: a completed-but-failed run surfaces its
 // abort reason.
 func TestOverviewEmbeddingFailedRun(t *testing.T) {
-	srv, st := newOverviewServer(t, "test-embed")
+	srv, st := newStatusServer(t, "test-embed", true)
 	ctx := context.Background()
 	id, err := st.BeginEmbedRun(ctx, "test-embed", time.Now())
 	if err != nil {
@@ -198,7 +201,7 @@ func TestOverviewEmbeddingFailedRun(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	body := get(t, srv, "/").Body.String()
+	body := get(t, srv, "/status").Body.String()
 	if !contains(body, "Last run aborted") || !contains(body, "provider unreachable") {
 		t.Error("failed run's abort reason missing from the card")
 	}
@@ -235,7 +238,7 @@ func TestOverviewMCPCard(t *testing.T) {
 		t.Error("Home should not render the MCP quick-link (tiles removed)")
 	}
 	// Device pairing stays on Settings only (issue #1 scope).
-	if body := get(t, srv, "/").Body.String(); contains(body, "Pair a device") {
+	if body := get(t, srv, "/status").Body.String(); contains(body, "Pair a device") {
 		t.Error("device pairing leaked onto the Overview")
 	}
 }

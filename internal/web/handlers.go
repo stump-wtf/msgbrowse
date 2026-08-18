@@ -227,6 +227,11 @@ type statusData struct {
 	// gate the other privileged POSTs use; "" when no Indexer is wired (the
 	// forms are not rendered then).
 	SetupToken string
+	// Build drives the journal build card (#240, moved to the Status tab with
+	// the rest of the LLM/pipeline surfaces); JournalResult is the fixed-enum
+	// banner from a just-completed Build / Rebuild POST, "" on a plain GET.
+	Build         journalBuildData
+	JournalResult string
 }
 
 // pageSize is the number of messages per transcript page.
@@ -560,7 +565,7 @@ func (s *Server) handleMessages(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
-	s.renderStatus(w, r, "")
+	s.renderStatus(w, r, "", "")
 }
 
 // handleStatusIndex is POST /status/index — the privileged "Build" control that
@@ -578,7 +583,7 @@ func (s *Server) handleStatusIndex(w http.ResponseWriter, r *http.Request) {
 		s.renderStatusCard(w, r, result)
 		return
 	}
-	s.renderStatus(w, r, result)
+	s.renderStatus(w, r, result, "")
 }
 
 // handleStatusIndexReset is POST /status/index/reset — the privileged "Reset &
@@ -596,7 +601,7 @@ func (s *Server) handleStatusIndexReset(w http.ResponseWriter, r *http.Request) 
 		s.renderStatusCard(w, r, result)
 		return
 	}
-	s.renderStatus(w, r, result)
+	s.renderStatus(w, r, result, "")
 }
 
 // renderStatusCard renders just the semantic-index card fragment with the
@@ -642,7 +647,7 @@ func (s *Server) renderStatusCard(w http.ResponseWriter, r *http.Request, indexR
 // reflects coverage as of THIS render — a manual refresh shows the count climb
 // while a job runs (no hx-poll, keeping the page CSP-clean and free of a
 // background request the user did not ask for).
-func (s *Server) renderStatus(w http.ResponseWriter, r *http.Request, indexResult string) {
+func (s *Server) renderStatus(w http.ResponseWriter, r *http.Request, indexResult, journalResult string) {
 	ctx := r.Context()
 	var (
 		base      baseData
@@ -688,6 +693,11 @@ func (s *Server) renderStatus(w http.ResponseWriter, r *http.Request, indexResul
 		s.serverError(w, err)
 		return
 	}
+	jbuild, err := s.journalBuildStatus(ctx)
+	if err != nil {
+		s.serverError(w, err)
+		return
+	}
 	data := statusData{
 		baseData:          base,
 		ConversationCount: convCount,
@@ -701,11 +711,13 @@ func (s *Server) renderStatus(w http.ResponseWriter, r *http.Request, indexResul
 		IndexAvailable:    s.indexer != nil,
 		IndexRunning:      s.indexJobRunning(),
 		IndexResult:       indexResult,
+		Build:             jbuild,
+		JournalResult:     journalResult,
 	}
 	// The Build / Reset forms are privileged POSTs: arm them with a live token,
-	// but only when there is an Indexer to drive (browser mode renders the
-	// unavailable note, no forms).
-	if s.indexer != nil {
+	// but only when there is an Indexer or journal builder to drive (browser
+	// mode renders the unavailable note, no forms).
+	if s.indexer != nil || s.journalBuilder != nil {
 		tok, err := s.setupTokens.mint()
 		if err != nil {
 			s.serverError(w, err)
