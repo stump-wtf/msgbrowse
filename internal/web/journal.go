@@ -49,6 +49,9 @@ type calCell struct {
 	Stale      bool   // digest predates later messages on this day (#240)
 	Selected   bool
 	URL        string
+	// Reactions is the day's top emojis (issue #299), rendered as small
+	// emoji × count chips on the cell. nil/empty renders no chips.
+	Reactions []store.EmojiCount
 }
 
 // dayCard is the editorial reading card for one selected day.
@@ -186,6 +189,11 @@ func (s *Server) renderJournalPage(w http.ResponseWriter, r *http.Request, build
 		s.serverError(w, err)
 		return
 	}
+	topReactions, err := s.store.MonthTopReactions(ctx, year, month, s.journalExclude, 2)
+	if err != nil {
+		s.serverError(w, err)
+		return
+	}
 	stats, err := s.store.JournalStats(ctx, year, s.journalExclude)
 	if err != nil {
 		s.serverError(w, err)
@@ -199,7 +207,7 @@ func (s *Server) renderJournalPage(w http.ResponseWriter, r *http.Request, build
 		MonthLabel:    time.Date(year, month, 1, 0, 0, 0, 0, time.UTC).Format("January 2006"),
 		PrevURL:       monthNavURL(year, month, -1),
 		NextURL:       monthNavURL(year, month, +1),
-		Grid:          buildMonthGrid(year, month, monthDays, day),
+		Grid:          buildMonthGrid(year, month, monthDays, day, topReactions),
 		Stats:         stats,
 		Moods:         journal.Moods,
 		WeekdayLabel:  weekdayLabel(stats),
@@ -240,7 +248,9 @@ func journalContext(day, yearQ, monthQ, latest string) (int, time.Month) {
 
 // buildMonthGrid lays the month's present days into a fixed 6x7 (Sun-first) grid;
 // absent days are blank cells. Present days link to their editorial card.
-func buildMonthGrid(year int, month time.Month, days []store.JournalMonthDay, selected string) [][]calCell {
+// reactions maps "YYYY-MM-DD" → the day's top emojis for the cells' chips
+// (issue #299); a nil map renders no chips.
+func buildMonthGrid(year int, month time.Month, days []store.JournalMonthDay, selected string, reactions map[string][]store.EmojiCount) [][]calCell {
 	byDOM := make(map[int]store.JournalMonthDay, len(days))
 	for _, d := range days {
 		if len(d.Day) == 10 {
@@ -268,6 +278,7 @@ func buildMonthGrid(year int, month time.Month, days []store.JournalMonthDay, se
 			if md.Mood != "" {
 				cell.MoodClass = "cal-day--" + md.Mood
 			}
+			cell.Reactions = reactions[dayStr]
 		}
 		if md, ok := byDOM[dom]; ok && md.Stale {
 			cell.Stale = true

@@ -307,3 +307,53 @@ SELECT COUNT(*),
 	}
 	return c, nil
 }
+
+// MonthTopReactions returns the top reaction emojis per day for the given
+// month (issue #299), for the calendar day cells' emoji chips. Days map to
+// "YYYY-MM-DD" keys; each value lists the day's most-used emojis, ties
+// broken by emoji so the chips are deterministic for the same data. The
+// journal exclude denylist is honored exactly like JournalStats — an
+// excluded conversation's reactions must not surface on the calendar.
+//
+// One GROUP BY over reactions joined to messages bounded by a sargable
+// ts_unix range; per-day top-N selection happens in Go (<=31 * few rows).
+func (s *Store) MonthTopReactions(ctx context.Context, year int, month time.Month, exclude []string, perDay int) (map[string][]EmojiCount, error) {
+	if perDay <= 0 {
+		return nil, nil
+	}
+	excl, err := s.excludedConversationIDs(ctx, exclude)
+	if err != nil {
+		return nil, err
+	}
+	start := time.Date(year, month, 1, 0, 0, 0, 0, time.UTC)
+	startUnix := start.Unix()
+	endUnix := start.AddDate(0, 1, 0).Unix()
+
+	q := `
+SELECT date(m.ts_unix,'unixepoch') d, r.emoji, COUNT(*) n
+  FROM reactions r
+  JOIN messages m ON m.hash = r.message_hash
+ WHERE m.ts_unix >= ? AND m.ts_unix < ?`
+	var args []any
+	args = append(args, startUnix, endUnix)
+	q += notInClause("m.conversation_id", excl, &args)
+	q += ` GROUP BY d, r.emoji ORDER BY d, n DESC, r.emoji`
+
+	rows, err := s.db.QueryContext(ctx, q, args...)
+	if err != nil {
+		return nil, fmt.Errorf("month top reactions: %w", err)
+	}
+	defer rows.Close()
+	out := make(map[string][]EmojiCount)
+	for rows.Next() {
+		var day, emoji string
+		var n int
+		if err := rows.Scan(&day, &emoji, &n); err != nil {
+			return nil, err
+		}
+		if len(out[day]) < perDay {
+			out[day] = append(out[day], EmojiCount{Emoji: emoji, Count: n})
+		}
+	}
+	return out, rows.Err()
+}

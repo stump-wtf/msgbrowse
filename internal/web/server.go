@@ -73,6 +73,7 @@ type Store interface {
 	LatestJournalDayInYear(ctx context.Context, year int) (string, bool, error)
 	JournalYears(ctx context.Context) ([]int, error)
 	JournalMonth(ctx context.Context, year int, month time.Month) ([]store.JournalMonthDay, error)
+	MonthTopReactions(ctx context.Context, year int, month time.Month, exclude []string, perDay int) (map[string][]store.EmojiCount, error)
 	JournalStats(ctx context.Context, year int, exclude []string) (store.JournalStats, error)
 	GetJournalDay(ctx context.Context, day string) (store.JournalDayView, bool, error)
 	// Home's two resurfacing cards (#239). Both are LIMITed and index-served so

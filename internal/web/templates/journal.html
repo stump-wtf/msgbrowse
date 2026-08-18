@@ -91,6 +91,11 @@
              {{- if .Stale}} title="This day&rsquo;s digest is out of date"{{end}}
              hx-boost="true" hx-target="#main-content" hx-select="#main-content" hx-swap="outerHTML" hx-push-url="true">
             <span class="cal-day-num">{{.DayNum}}</span><span class="cal-day-count font-mono">{{num .Count}}</span>
+            {{- if .Reactions}}
+            <span class="cal-day-emojis" aria-label="Top reactions">
+              {{- range .Reactions}}<span class="cal-day-emoji">{{.Emoji}} {{num .Count}}</span>{{- end}}
+            </span>
+            {{- end}}
           </a>
           {{- else}}
           <span class="cal-day cal-day--none"><span class="cal-day-num">{{.DayNum}}</span></span>

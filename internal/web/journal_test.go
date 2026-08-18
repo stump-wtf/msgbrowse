@@ -181,3 +181,54 @@ func TestJournalDigestFieldsEscaped(t *testing.T) {
 		t.Error("digest summary should appear HTML-escaped")
 	}
 }
+
+// TestJournalCalendarEmojiChips (issue #299): a day with reactions renders
+// its top emojis as chips on the calendar cell (emoji + count, deterministic
+// order); a reaction-less day renders none.
+func TestJournalCalendarEmojiChips(t *testing.T) {
+	srv, st := newJournalServer(t)
+	ctx := context.Background()
+	conv, err := st.UpsertConversation(ctx, source.Signal, "Harper")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ts1, _ := time.Parse(signal.TimestampLayout, "2023-05-01 09:00:00")
+	ts2, _ := time.Parse(signal.TimestampLayout, "2023-05-02 09:00:00")
+	withRx := signal.Message{
+		Conversation: "Harper", Timestamp: ts1, TimestampRaw: "2023-05-01 09:00:00",
+		Sender: "Harper", Body: "a",
+		Reactions: []signal.Reaction{{Actor: "A", Emoji: "❤️"}, {Actor: "B", Emoji: "❤️"}, {Actor: "A", Emoji: "👍"}},
+	}
+	plain := signal.Message{
+		Conversation: "Harper", Timestamp: ts2, TimestampRaw: "2023-05-02 09:00:00",
+		Sender: "Harper", Body: "b",
+	}
+	if _, err := st.ReplaceConversationMessages(ctx, conv, source.Signal, []signal.Message{withRx, plain}); err != nil {
+		t.Fatal(err)
+	}
+	days, err := st.BuildJournalDays(ctx, "", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, d := range days {
+		if err := st.PutJournalDay(ctx, d); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	body := get(t, srv, "/journal?year=2023&month=5").Body.String()
+	if !contains(body, `cal-day-emoji`) {
+		t.Error("calendar day cell missing the reaction chip class")
+	}
+	if !contains(body, "❤️ 2") {
+		t.Error("calendar day cell missing the top emoji chip (❤️ 2)")
+	}
+	if !contains(body, "👍 1") {
+		t.Error("calendar day cell missing the second emoji chip (👍 1)")
+	}
+	// 2023-05-02 has no reactions; the count of chip spans is exactly the
+	// two seeded emojis — no chip leaked onto the plain day.
+	if n := strings.Count(body, `"cal-day-emoji"`); n != 2 {
+		t.Errorf("rendered %d emoji chips, want 2", n)
+	}
+}

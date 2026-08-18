@@ -153,3 +153,93 @@ func TestJournalStats(t *testing.T) {
 		t.Errorf("all-time days = %d, want 3", all.DaysWithEntries)
 	}
 }
+
+// TestMonthTopReactions (issue #299): per-day top emojis for the calendar
+// chips — deterministic (ties broken by emoji), bounded to perDay, month-
+// scoped, and honoring the journal exclude denylist.
+func TestMonthTopReactions(t *testing.T) {
+	st := newTestStore(t)
+	ctx := context.Background()
+	conv, err := st.UpsertConversation(ctx, source.Signal, "Harper")
+	if err != nil {
+		t.Fatal(err)
+	}
+	excl, err := st.UpsertConversation(ctx, source.Signal, "Group Trip")
+	if err != nil {
+		t.Fatal(err)
+	}
+	rx := func(es ...string) []signal.Reaction {
+		var out []signal.Reaction
+		for _, e := range es {
+			out = append(out, signal.Reaction{Actor: "Harper", Emoji: e})
+		}
+		return out
+	}
+	m1 := msg("Harper", "2023-05-01 09:00:00", "Harper", "a", nil, nil)
+	// Distinct actors: reactions are deduped per (message, emoji, actor), so
+	// counting needs different actors on the same emoji.
+	m1.Reactions = []signal.Reaction{
+		{Actor: "A", Emoji: "❤️"}, {Actor: "B", Emoji: "❤️"},
+		{Actor: "A", Emoji: "👍"}, {Actor: "B", Emoji: "👍"},
+		{Actor: "C", Emoji: "👍"},
+	}
+	m2 := msg("Harper", "2023-05-01 10:00:00", "Harper", "b", nil, nil)
+	m2.Reactions = rx("❤️", "😂")
+	m3 := msg("Harper", "2023-06-02 09:00:00", "Harper", "c", nil, nil) // other month
+	m3.Reactions = rx("🔥")
+	// Excluded conversation's reactions must never surface.
+	m4 := msg("Group Trip", "2023-05-01 11:00:00", "Harper", "secret", nil, nil)
+	m4.Reactions = rx("🤖", "🤖", "🤖")
+	if _, err := st.ReplaceConversationMessages(ctx, conv, source.Signal, []signal.Message{m1, m2, m3}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.ReplaceConversationMessages(ctx, excl, source.Signal, []signal.Message{m4}); err != nil {
+		t.Fatal(err)
+	}
+
+	top, err := st.MonthTopReactions(ctx, 2023, time.May, nil, 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := top["2023-05-01"]
+	if len(got) != 2 {
+		t.Fatalf("2023-05-01 top = %+v, want 2 entries", got)
+	}
+	// ❤️ totals 3 (two actors on m1 + one on m2), 👍 totals 3 (three actors on
+	// m1). Both are 3, so ORDER BY n DESC, emoji decides: codepoint-wise
+	// ❤️ (U+2764) < 👍 (U+1F44D), hence ❤️ first — deterministic.
+	if got[0].Emoji != "❤️" || got[0].Count != 3 {
+		t.Errorf("top[0] = %+v, want ❤️ ×3", got[0])
+	}
+	if got[1].Emoji != "👍" || got[1].Count != 3 {
+		t.Errorf("top[1] = %+v, want 👍 ×3", got[1])
+	}
+	if len(top) != 1 {
+		t.Errorf("days = %v, want only 2023-05-01 (June excluded, Group Trip not in denylist yet but not excluded)", keysOf(top))
+	}
+
+	// Exclude the Group Trip conversation: nothing changes here (its day still
+	// has Harper reactions), but with ONLY excluded reactions the day vanishes.
+	topExcl, err := st.MonthTopReactions(ctx, 2023, time.May, []string{"Harper"}, 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	day, ok := topExcl["2023-05-01"]
+	if !ok || len(day) != 1 || day[0].Emoji != "🤖" || day[0].Count != 1 {
+		t.Errorf("with Harper excluded, 2023-05-01 = %+v ok=%v, want 🤖 ×1 only", day, ok)
+	}
+
+	// perDay 0: nothing.
+	none, err := st.MonthTopReactions(ctx, 2023, time.May, nil, 0)
+	if err != nil || none != nil {
+		t.Errorf("perDay 0 = %v, %v; want nil, nil", none, err)
+	}
+}
+
+func keysOf(m map[string][]EmojiCount) []string {
+	var out []string
+	for k := range m {
+		out = append(out, k)
+	}
+	return out
+}

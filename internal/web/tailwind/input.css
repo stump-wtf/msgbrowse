@@ -1685,6 +1685,18 @@ a.meta-chip:hover {
   font-size: 9px;
   color: color-mix(in oklab, var(--color-base-content) 45%, transparent);
 }
+/* Top-reaction emoji chips (issue #299): tiny deterministic "emoji N" chips
+   under the day count, at most two per cell. */
+.cal-day-emojis {
+  display: flex;
+  gap: 3px;
+}
+.cal-day-emoji {
+  font-size: 9px;
+  font-variant-numeric: tabular-nums;
+  color: color-mix(in oklab, var(--color-base-content) 60%, transparent);
+  white-space: nowrap;
+}
 .cal-day--blank {
   border: 0;
 }
