@@ -174,3 +174,53 @@ func TestSaveLLMRejectsMalformedExisting(t *testing.T) {
 		t.Errorf("original file was modified: %q", b)
 	}
 }
+
+// TestSaveBackupsRoundTrip (issue #300): SaveBackups creates a minimal file
+// on first save, merges surgically into an existing one, and round-trips
+// unrelated keys verbatim.
+func TestSaveBackupsRoundTrip(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	if err := SaveBackups(path, "/srv/backups", RetentionConfig{Daily: 7, Monthly: 6}); err != nil {
+		t.Fatalf("SaveBackups: %v", err)
+	}
+	b, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read back: %v", err)
+	}
+	var doc map[string]any
+	if err := yaml.Unmarshal(b, &doc); err != nil {
+		t.Fatalf("parse back: %v", err)
+	}
+	if len(doc) != 1 {
+		t.Errorf("fresh file has %d top-level keys, want just backups: %v", len(doc), doc)
+	}
+	blk, _ := doc["backups"].(map[string]any)
+	if blk == nil {
+		t.Fatalf("no backups block in %s", b)
+	}
+	if blk["dir"] != "/srv/backups" {
+		t.Errorf("dir = %v, want /srv/backups", blk["dir"])
+	}
+	ret, _ := blk["retention"].(map[string]any)
+	if ret == nil || ret["daily"] != 7 || ret["monthly"] != 6 {
+		t.Errorf("retention = %v, want daily 7 monthly 6", ret)
+	}
+
+	// Second save: unrelated keys round-trip, backups keys update.
+	if err := SaveBackups(path, "", DefaultRetention); err != nil {
+		t.Fatalf("SaveBackups 2: %v", err)
+	}
+	b, _ = os.ReadFile(path)
+	doc = map[string]any{}
+	if err := yaml.Unmarshal(b, &doc); err != nil {
+		t.Fatalf("parse back 2: %v", err)
+	}
+	blk, _ = doc["backups"].(map[string]any)
+	if blk == nil || blk["dir"] != "" {
+		t.Errorf("second save dir = %v, want empty (default)", blk)
+	}
+	ret, _ = blk["retention"].(map[string]any)
+	if ret == nil || ret["yearly"] != 2 {
+		t.Errorf("second save retention = %v, want yearly 2", ret)
+	}
+}

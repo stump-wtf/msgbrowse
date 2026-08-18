@@ -104,6 +104,11 @@ func newServeCommand() *cobra.Command {
 				cfg.SourceFile,
 				cfg.Backups.EffectiveRetention(),
 			))
+			// The Backups tab's configuration form (issue #300): saves persist
+			// backups.dir + retention into the loaded config file and rebuild
+			// the live manager, so a changed directory or policy applies with
+			// no restart.
+			srv.SetBackupConfig(newBackupApplier(cfg, srv, dbPath(cfg)))
 
 			// Device sync (ADR-0021) is gated behind the `devicesync` build
 			// tag — it is NOT compiled into release binaries. wireDeviceSync is

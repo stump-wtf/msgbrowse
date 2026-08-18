@@ -58,6 +58,52 @@ func SaveLLM(path, baseURL, embedModel, chatModel, apiKey string) error {
 	return atomicWrite(path, out)
 }
 
+// SaveBackups merges the user-configurable backups keys into the YAML config
+// file at path, creating the file (and its directory) if absent (issue #300).
+// It writes backups.dir and backups.retention.{daily,monthly,quarterly,
+// yearly}; unrelated keys round-trip verbatim. An empty dir is written as an
+// empty value (resetting to the <data_dir>/backups default), and tier counts
+// are written as given — the form's source of truth.
+func SaveBackups(path, dir string, retention RetentionConfig) error {
+	doc := map[string]any{}
+	b, err := os.ReadFile(path)
+	switch {
+	case err == nil:
+		if err := yaml.Unmarshal(b, &doc); err != nil {
+			return fmt.Errorf("parse existing config %q: %w", path, err)
+		}
+		if doc == nil {
+			doc = map[string]any{}
+		}
+	case os.IsNotExist(err):
+		// No file yet: create one holding only the backups block below.
+	default:
+		return fmt.Errorf("read config %q: %w", path, err)
+	}
+
+	backupsBlock, ok := doc["backups"].(map[string]any)
+	if !ok || backupsBlock == nil {
+		backupsBlock = map[string]any{}
+	}
+	retentionBlock, ok := backupsBlock["retention"].(map[string]any)
+	if !ok || retentionBlock == nil {
+		retentionBlock = map[string]any{}
+	}
+	backupsBlock["dir"] = dir
+	retentionBlock["daily"] = retention.Daily
+	retentionBlock["monthly"] = retention.Monthly
+	retentionBlock["quarterly"] = retention.Quarterly
+	retentionBlock["yearly"] = retention.Yearly
+	backupsBlock["retention"] = retentionBlock
+	doc["backups"] = backupsBlock
+
+	out, err := yaml.Marshal(doc)
+	if err != nil {
+		return fmt.Errorf("encode config: %w", err)
+	}
+	return atomicWrite(path, out)
+}
+
 // atomicWrite lands data at path via a same-directory temp file + rename, so
 // readers only ever see the old or the complete new file. The temp file is
 // created 0600 (os.CreateTemp's mode) — the config can carry paths and, if a

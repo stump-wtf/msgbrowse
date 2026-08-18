@@ -230,6 +230,16 @@ type Server struct {
 	backupMgr      BackupManager
 	backupMu       sync.Mutex
 	backupInFlight bool
+	// backupConfig is the live backup settings source behind the Backups
+	// tab's configuration form (issue #300): serve and the desktop shell wire
+	// an applier over the loaded config file via SetBackupConfig. nil renders
+	// the form from backupBoot and makes the save POST report itself
+	// unavailable.
+	backupConfig BackupConfigurator
+	// backupBoot is the boot-time backups config snapshot (file + defaults
+	// merged), the configuration form's display fallback when no
+	// configurator is wired.
+	backupBoot config.BackupsConfig
 }
 
 // NewServer constructs a Server, parsing templates and wiring routes.
@@ -265,6 +275,7 @@ func NewServer(st Store, cfg *config.Config, log *slog.Logger) (*Server, error) 
 			ChatModel:  cfg.LLM.ChatModel,
 			APIKey:     cfg.LLM.APIKey,
 		},
+		backupBoot: cfg.Backups,
 	}
 	tmpl, err := template.New("").Funcs(template.FuncMap{
 		"renderBody":       renderBody,
@@ -489,6 +500,7 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("POST /backups/create", s.handleBackupsCreate)
 	mux.HandleFunc("POST /backups/prune", s.handleBackupsPrune)
 	mux.HandleFunc("POST /backups/restore", s.handleBackupsRestore)
+	mux.HandleFunc("POST /backups/config", s.handleBackupsConfigSave)
 	// The Setup surface is presented to the user as "Providers" (its route is
 	// /providers); /setup 301-redirects for compatibility with any existing links
 	// or bookmarks. The privileged POSTs keep the /setup/* prefix — they are

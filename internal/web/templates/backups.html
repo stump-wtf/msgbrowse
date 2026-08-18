@@ -38,6 +38,89 @@
     {{template "status_banner" dict "variant" "warning" "title" "Backups unavailable" "body" "Snapshot operations are not available in this mode (no data directory configured)."}}
     {{end}}
 
+    {{/* Config-save banners (issue #300). Fixed enums, same pattern as the
+         Create / Prune / Restore banners above. */}}
+    {{if eq .CfgSaveResult "ok"}}
+    {{template "status_banner" dict "variant" "success" "title" "Backup settings saved" "body" "The snapshot directory and retention policy were written to the config file and applied live."}}
+    {{else if eq .CfgSaveResult "error"}}
+    {{template "status_banner" dict "variant" "error" "title" "Save failed" "body" "The settings could not be written to the config file. Check the logs, then try again."}}
+    {{else if eq .CfgSaveResult "unavailable"}}
+    {{template "status_banner" dict "variant" "warning" "title" "Save unavailable" "body" "Backup configuration can only be saved when msgbrowse is serving a data directory."}}
+    {{else if eq .CfgSaveResult "unwritable"}}
+    {{template "status_banner" dict "variant" "error" "title" "Directory not writable" "body" "The snapshot directory could not be created or written to. Check the path and permissions, then try again."}}
+    {{end}}
+
+    {{/* Configuration form (issue #300): snapshot directory + GFS retention,
+         persisted to the config file (the Settings → LLM pattern — saves
+         apply live, no restart). */}}
+    <section class="status-card space-y-4" aria-labelledby="backups-config-heading">
+      <h2 id="backups-config-heading" class="status-card-title">Backup configuration</h2>
+      <form method="post" action="/backups/config" class="space-y-4"
+            hx-boost="true" hx-target="#main-content" hx-select="#main-content" hx-swap="outerHTML">
+        <input type="hidden" name="setup_token" value="{{.SetupToken}}">
+
+        <div class="space-y-1">
+          <label class="eyebrow block" for="backup-dir">Snapshot directory</label>
+          <input id="backup-dir" name="dir" type="text" class="filter-input w-full font-mono"
+                 value="{{.ConfigDir}}" autocomplete="off" spellcheck="false"
+                 placeholder="{{.DefaultDir}}"
+                 {{if .ErrDir}}aria-invalid="true" aria-describedby="backup-dir-error"{{else}}aria-describedby="backup-dir-hint"{{end}}>
+          {{if .ErrDir}}
+          <p id="backup-dir-error" class="setup-note setup-note-warn">
+            {{if eq .ErrDir "toolong"}}That path is too long.
+            {{else if eq .ErrDir "invalid"}}Enter an absolute path.
+            {{else if eq .ErrDir "inarchive"}}The directory must not be inside the read-only archive root.
+            {{end}}</p>
+          {{end}}
+          <p id="backup-dir-hint" class="status-note">Absolute path. Leave blank to use the default:
+            <code class="font-mono">{{.DefaultDir}}</code>.</p>
+        </div>
+
+        <div class="space-y-1">
+          <span class="eyebrow block">Retention (snapshots kept per tier)</span>
+          <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <div class="space-y-1">
+              <label class="status-note" for="ret-daily">Daily</label>
+              <input id="ret-daily" name="retention_daily" type="number" min="0" max="1000"
+                     class="filter-input w-full font-mono" value="{{.Retention.Daily}}"
+                     {{if .ErrRetention}}aria-invalid="true"{{end}}>
+            </div>
+            <div class="space-y-1">
+              <label class="status-note" for="ret-monthly">Monthly</label>
+              <input id="ret-monthly" name="retention_monthly" type="number" min="0" max="1000"
+                     class="filter-input w-full font-mono" value="{{.Retention.Monthly}}"
+                     {{if .ErrRetention}}aria-invalid="true"{{end}}>
+            </div>
+            <div class="space-y-1">
+              <label class="status-note" for="ret-quarterly">Quarterly</label>
+              <input id="ret-quarterly" name="retention_quarterly" type="number" min="0" max="1000"
+                     class="filter-input w-full font-mono" value="{{.Retention.Quarterly}}"
+                     {{if .ErrRetention}}aria-invalid="true"{{end}}>
+            </div>
+            <div class="space-y-1">
+              <label class="status-note" for="ret-yearly">Yearly</label>
+              <input id="ret-yearly" name="retention_yearly" type="number" min="0" max="1000"
+                     class="filter-input w-full font-mono" value="{{.Retention.Yearly}}"
+                     {{if .ErrRetention}}aria-invalid="true"{{end}}>
+            </div>
+          </div>
+          {{if .ErrRetention}}
+          <p class="setup-note setup-note-warn">Retention counts must be whole numbers between 0 and 1000.</p>
+          {{end}}
+          <p class="status-note">0 means "use the default" (14 daily / 12 monthly / 4 quarterly / 2 yearly).</p>
+        </div>
+
+        <div class="setup-card-actions">
+          {{if .ConfigAvailable}}
+          <button type="submit" class="setup-btn">Save settings</button>
+          {{else}}
+          <button type="submit" class="setup-btn" disabled
+              title="Saving requires a served data directory">Save settings</button>
+          {{end}}
+        </div>
+      </form>
+    </section>
+
     {{/* msgbrowse-owned snapshots (ADR-0026) */}}
     {{if .BackupMgrAvailable}}
     <div class="status-card">
