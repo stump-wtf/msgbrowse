@@ -6,7 +6,7 @@
 # The official golang images set GOTOOLCHAIN=local, which would silently ignore
 # the go.mod toolchain directive — pin the exact patch so the shipped image gets
 # stdlib security fixes (see GO-2026-5856).
-FROM golang:1.26.6-bookworm AS build
+FROM golang:1.27.0-bookworm AS build
 
 WORKDIR /src
 
