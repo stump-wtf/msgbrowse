@@ -324,3 +324,35 @@ carry model-derived values.
 - **Given** a digest whose `summary` contains `<script>` and whose `notable_links` contains a `javascript:` URL
 - **When** the day card renders
 - **Then** the `<script>` is HTML-escaped as inert text, the link is shown as escaped text with no clickable `href`, no inline `style=` is emitted, and the mood tint is a fixed `cal-day--<mood>` class.
+
+### REQ-0016-017: The Journal page is a reading surface — no pipeline status, ever
+
+`GET /journal` is a reading surface. It MUST NOT render **any** journal-pipeline
+machinery: digest coverage counts or percentages, a build progress bar, the
+configured chat model, the built-through date, run history, run error strings, or
+Build / Rebuild controls. Those belong on the Settings surface that owns the
+journal pipeline (REQ-0004-010). The same prohibition applies to the semantic
+index — no index card of any kind renders on `/journal`.
+
+The single permitted exception is a **one-line, non-interactive** progress note
+shown only while a build is actively running, linking to the Settings tab. It MUST
+NOT carry a coverage percentage, a model name, a history table, error text, or any
+control.
+
+> **Why this is a prohibition and not a preference.** This requirement exists
+> because the build card was repeatedly re-added to `/journal` — reasonably, since
+> nothing forbade it and issue #274 positively required the Journal page to "keep
+> its Build / Rebuild controls". Rendering an eight-row table of failed LLM runs on
+> top of the archive's most narrative surface is the failure mode. Anyone tempted
+> to place pipeline status here again should change this requirement first, in a PR
+> that argues the case — not add the markup and leave the requirement contradicted.
+
+#### Scenario: A partially built journal renders no diagnostics
+- **Given** a journal with 3,591 of 3,920 days digested and several failed runs recorded
+- **When** the user opens `/journal`
+- **Then** the page renders the calendar and the selected day's editorial card only, with no coverage figure, no progress bar, no run history, no error strings, and no Build or Rebuild control.
+
+#### Scenario: An active build shows at most a one-line note
+- **Given** a journal build in progress
+- **When** the user opens `/journal`
+- **Then** at most a single-line progress note linking to the Settings journal tab is shown, carrying no percentage, model name, history, or control.

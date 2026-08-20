@@ -152,3 +152,69 @@ under `script-src 'self'`, and a theme toggle (ADR-0007).
 - **Given** a previously selected theme
 - **When** a page loads
 - **Then** the theme is applied before first paint by the self-hosted theme script.
+
+### REQ-0004-010: Pipeline status lives in Settings, on one tab per pipeline
+
+Every derived-data pipeline — semantic-search embeddings, journal digests, contact
+facts, sentiment scoring — MUST expose its status and its build controls **only**
+under Settings, and MUST have its **own tab**. There MUST be a Settings tab for
+semantic-search / embeddings indexing and a separate Settings tab for journal
+indexing; the two MUST NOT share one page, because their coverage figures, models,
+run histories and costs are unrelated and reading them interleaved is what a
+single combined "Status" tab produces.
+
+Reading surfaces MUST NOT render pipeline status. Specifically, the Home page
+(`/`) MUST NOT render the semantic-index card or any build control, and `/journal`
+is governed by [SPEC-0016 REQ-0016-017](../journal/spec.md). Pipeline status MUST
+NOT be duplicated across surfaces: each card renders on exactly one tab.
+
+Run-history presentation MUST come from a single shared template `define`
+parameterised per pipeline, so the pipelines' cards cannot drift apart.
+
+#### Scenario: Home carries no index card
+- **Given** an archive with a partially built semantic index
+- **When** the user opens `/`
+- **Then** the page renders reading content only, and the index coverage, progress and controls appear solely on the Settings search-index tab.
+
+#### Scenario: The two indexes are separate tabs
+- **Given** a user who wants to rebuild journal digests
+- **When** they open Settings
+- **Then** the journal tab carries digest coverage, chat model, built-through and Build / Rebuild, and the search-index tab carries embedding coverage, embed model and Build / Reset, with neither tab showing the other's figures.
+
+### REQ-0004-011: LLM model selection is always a discovered dropdown — never free text
+
+Any UI field that selects an LLM model MUST be a `<select>` whose options come from
+the configured endpoint's `/v1/models` listing. A model name MUST NOT be accepted as
+free text anywhere in the UI — not as a primary control, not as a fallback, and not
+as an "or type your own" affordance. A `<datalist>`-backed text input does not
+satisfy this requirement: it is a text input.
+
+The currently-configured value MUST be preserved as a selected option even when the
+endpoint's listing does not contain it (a config file or `MSGBROWSE_LLM_*`
+environment variable may have set it, or the endpoint may have dropped the model),
+and MUST survive a form save unchanged. Where a model is optional — an empty embed
+model turns semantic search off — the "off" state MUST be an explicit option rather
+than an empty field.
+
+When discovery fails (endpoint unreachable, `/v1/models` unsupported, or an empty
+listing) the control MUST degrade to a **disabled select** with an explanatory
+banner and a retry, never to a text input; the saved value MUST remain displayed
+and MUST NOT be cleared by saving the form.
+
+Client-side control choice is not validation: the handler MUST reject a submitted
+model identifier that is neither in the discovered listing nor the currently-saved
+value, rather than writing an arbitrary string into the config file.
+
+> **Why.** A typed model name is only discovered to be wrong at the next LLM call.
+> For the journal that means a multi-thousand-call build that fails hours in, and
+> for semantic search it means an index that silently never builds.
+
+#### Scenario: Discovery unavailable still yields a dropdown
+- **Given** an endpoint whose `/v1/models` returns 404
+- **When** the LLM settings page renders
+- **Then** the model fields render as disabled `<select>` controls showing the currently-saved model, with an explanatory banner and a refresh control, and no text input is present.
+
+#### Scenario: A configured model absent from the listing survives a save
+- **Given** a chat model set by environment variable that the endpoint does not list
+- **When** the user saves the LLM settings form without changing the model
+- **Then** the configured model is retained, and it is shown as the selected option marked as not currently offered.
