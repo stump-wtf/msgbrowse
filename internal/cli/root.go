@@ -14,8 +14,8 @@ import (
 	"os"
 
 	"charm.land/fang/v2"
+	charmlog "charm.land/log/v2"
 	"github.com/charmbracelet/colorprofile"
-	charmlog "github.com/charmbracelet/log"
 	"github.com/joestump/msgbrowse/internal/config"
 	"github.com/joestump/msgbrowse/internal/imessage"
 	"github.com/joestump/msgbrowse/internal/ingest"

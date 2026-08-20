@@ -1,6 +1,6 @@
 module github.com/joestump/msgbrowse/cmd/msgbrowse-desktop
 
-go 1.25.0
+go 1.25.8
 
 toolchain go1.27.0
 
