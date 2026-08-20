@@ -45,15 +45,17 @@
     {{- else if eq .TestResult "unreachable"}}
     {{template "status_banner" dict "variant" "error" "title" "Connection failed." "body" "The endpoint could not be reached. Check the base URL and try again. See Logs for details."}}
     {{- else if eq .TestResult "no-model"}}
-    {{template "status_banner" dict "variant" "warning" "title" "Nothing to test." "body" "Neither an embed model nor a chat model is configured. Enter a model name and try again."}}
+    {{template "status_banner" dict "variant" "warning" "title" "Nothing to test." "body" "Both model menus are set to Off, so there is nothing to probe. Choose a model and try again."}}
     {{- else if eq .TestResult "unavailable"}}
     {{template "status_banner" dict "variant" "warning" "title" "Testing is not available here." "body" "This server was started without a live LLM client to probe with."}}
     {{- else if eq .ModelsResult "ok"}}
     {{template "status_banner" dict "variant" "success" "title" "Models refreshed." "body" (printf "%d model(s) discovered from the endpoint. Select one from the dropdowns below." (len .Models))}}
     {{- else if eq .ModelsResult "unsupported"}}
-    {{template "status_banner" dict "variant" "warning" "title" "Model listing not supported." "body" "This endpoint does not serve a /v1/models listing. You can type a model name manually."}}
+    {{template "status_banner" dict "variant" "warning" "title" "Model listing not supported." "body" "This endpoint serves no <code class=\"font-mono\">/v1/models</code> listing, so the model menus stay locked to what is already configured. Point the base URL at an endpoint that lists its models, then refresh."}}
     {{- else if eq .ModelsResult "unreachable"}}
-    {{template "status_banner" dict "variant" "error" "title" "Could not reach the endpoint." "body" "Check the base URL and API key, then try again. See Logs for details."}}
+    {{template "status_banner" dict "variant" "error" "title" "Could not reach the endpoint." "body" "The model menus stay locked to what is already configured. Check the base URL and API key, then try again. See Logs for details."}}
+    {{- else if eq .ModelsResult "empty"}}
+    {{template "status_banner" dict "variant" "warning" "title" "The endpoint offers no models." "body" "Its <code class=\"font-mono\">/v1/models</code> listing came back empty, so the model menus stay locked to what is already configured. Check that the proxy has models configured, then refresh."}}
     {{- else if eq .ModelsResult "unavailable"}}
     {{template "status_banner" dict "variant" "warning" "title" "Model listing is not available here." "body" "This server was started without a live LLM client to probe with."}}
     {{- else if .HasErrors}}
@@ -62,6 +64,24 @@
 
     <section class="status-card space-y-4" aria-labelledby="settings-llm-heading">
       <h2 id="settings-llm-heading" class="status-card-title">AI endpoint</h2>
+
+      {{/* Discovery-down banner (SPEC-0004 REQ-0004-011). Distinct from the
+           top-of-page banners: those report what the last CLICK did and one of
+           them is always winning the slot, while this one has to stay visible
+           for as long as the model controls are disabled — otherwise a save
+           result hides the only explanation of why the dropdowns are dead.
+           "Refresh models" at the bottom of the form is the retry. */}}
+      {{- if and (not .ModelsAvailable) (eq .ModelsResult "")}}
+      {{- if eq .ModelsUnavailable "unsupported"}}
+      {{template "status_banner" dict "variant" "warning" "title" "This endpoint does not list its models." "body" "It answered no <code class=\"font-mono\">/v1/models</code> listing, so the model menus below are locked to what is already configured. Point the base URL at an endpoint that serves a listing — a LiteLLM or Ollama proxy does — then click Refresh models."}}
+      {{- else if eq .ModelsUnavailable "unreachable"}}
+      {{template "status_banner" dict "variant" "error" "title" "Could not reach the endpoint to list its models." "body" "The model menus below are locked to what is already configured, and saving leaves those values alone. Check the base URL and API key, then click Refresh models. See Logs for details."}}
+      {{- else if eq .ModelsUnavailable "empty"}}
+      {{template "status_banner" dict "variant" "warning" "title" "The endpoint offers no models." "body" "Its <code class=\"font-mono\">/v1/models</code> listing came back empty, so there is nothing to choose from. Check that the proxy has models configured, then click Refresh models."}}
+      {{- else if eq .ModelsUnavailable "unavailable"}}
+      {{template "status_banner" dict "variant" "warning" "title" "Model discovery is not available here." "body" "This server was started without a live LLM client to probe with, so the model menus show the configured values only."}}
+      {{- end}}
+      {{- end}}
 
       <form method="post" action="/settings/llm" class="space-y-4"
             hx-boost="true" hx-target="#main-content" hx-select="#main-content" hx-swap="outerHTML">
@@ -86,25 +106,15 @@
 
         <div class="space-y-1">
           <label class="eyebrow block" for="llm-embed-model">Embed model</label>
-          <input id="llm-embed-model" name="embed_model" type="text" list="llm-model-options"
-                 class="filter-input w-full font-mono"
-                 value="{{.EmbedModel}}" autocomplete="off" spellcheck="false"
-                 placeholder="{{if .Models}}select or type a model name{{else}}local-embed{{end}}"
-                 {{if .ErrEmbedModel}}aria-invalid="true" aria-describedby="llm-embed-model-error"{{else}}aria-describedby="llm-embed-model-hint"{{end}}>
-          {{- if .Models}}
-          <datalist id="llm-model-options">
-            {{- range .Models}}
-            <option value="{{.}}">
-            {{- end}}
-          </datalist>
-          {{- end}}
+          {{template "llm_model_select" dict "id" "llm-embed-model" "name" "embed_model" "options" .EmbedOptions "available" .ModelsAvailable "err" .ErrEmbedModel}}
           {{- if .ErrEmbedModel}}
           <p id="llm-embed-model-error" class="setup-note setup-note-warn">
             {{- if eq .ErrEmbedModel "toolong"}}That model name is too long.
+            {{- else if eq .ErrEmbedModel "notoffered"}}That model is not offered by this endpoint. Pick one from the list, or refresh the listing.
             {{- else}}That model name contains characters that are not allowed.{{end}}</p>
           {{- end}}
           <p id="llm-embed-model-hint" class="status-note">The embedding model behind semantic search.
-            Leave empty to turn semantic search off.</p>
+            Choose “Off” to turn semantic search off.</p>
           {{- if .EmbedModelChanged}}
           <p class="setup-note setup-note-warn">The embed model changed. The existing semantic index was built with a
             different model — <a href="/status" class="underline">reset and rebuild the index</a>.</p>
@@ -113,14 +123,11 @@
 
         <div class="space-y-1">
           <label class="eyebrow block" for="llm-facts-model">Chat model</label>
-          <input id="llm-facts-model" name="facts_model" type="text" list="llm-model-options"
-                 class="filter-input w-full font-mono"
-                 value="{{.FactsModel}}" autocomplete="off" spellcheck="false"
-                 placeholder="{{if .Models}}select or type a model name{{else}}local-chat{{end}}"
-                 {{if .ErrFactsModel}}aria-invalid="true" aria-describedby="llm-facts-model-error"{{else}}aria-describedby="llm-facts-model-hint"{{end}}>
+          {{template "llm_model_select" dict "id" "llm-facts-model" "name" "facts_model" "options" .FactsOptions "available" .ModelsAvailable "err" .ErrFactsModel}}
           {{- if .ErrFactsModel}}
           <p id="llm-facts-model-error" class="setup-note setup-note-warn">
             {{- if eq .ErrFactsModel "toolong"}}That model name is too long.
+            {{- else if eq .ErrFactsModel "notoffered"}}That model is not offered by this endpoint. Pick one from the list, or refresh the listing.
             {{- else}}That model name contains characters that are not allowed.{{end}}</p>
           {{- end}}
           <p id="llm-facts-model-hint" class="status-note">The chat model behind the facts feature and journal digests;
@@ -189,4 +196,30 @@
     </section>
   </div>
     </main>
+{{end}}
+
+{{/* llm_model_select renders one model field as a <select>, never as a text
+     input (SPEC-0004 REQ-0004-011). Both model fields use it, so they cannot
+     drift into different affordances.
+
+     Two things here are load-bearing rather than stylistic:
+
+     1. DISABLED, not free text, when discovery is down. A disabled select
+        submits no key at all, and the save handler reads an absent key as
+        "keep what is saved" — so the round-trip through a broken endpoint
+        cannot clear a model the user never got to see a listing for.
+     2. The unlisted current value is still an option. A model set in the
+        config file or by MSGBROWSE_LLM_* that the endpoint does not offer is
+        marked, not dropped; dropping it would make the browser submit the
+        first option in the list and silently rewrite the configuration.
+
+     Takes: id, name, options ([]llmModelOption), available (bool), err. */}}
+{{define "llm_model_select"}}
+          <select id="{{.id}}" name="{{.name}}" class="filter-input w-full font-mono"
+                  {{- if not .available}} disabled{{end}}
+                  {{if .err}}aria-invalid="true" aria-describedby="{{.id}}-error"{{else}}aria-describedby="{{.id}}-hint"{{end}}>
+            {{- range .options}}
+            <option value="{{.Value}}"{{if .Selected}} selected{{end}}>{{.Label}}{{if .Unlisted}} — not currently offered{{end}}</option>
+            {{- end}}
+          </select>
 {{end}}

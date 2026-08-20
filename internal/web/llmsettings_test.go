@@ -2,6 +2,7 @@ package web
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -54,8 +55,30 @@ func (f *fakeLLMConfigurator) ListModels(_ context.Context) ([]string, error) {
 	return nil, llm.ErrModelsNotSupported
 }
 
+// modelsStub serves an OpenAI-compatible /v1/models listing, for the tests that
+// drive a real llm.Applier instead of the fake configurator.
+func modelsStub(t *testing.T, models []string) *httptest.Server {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !strings.HasSuffix(r.URL.Path, "/models") {
+			http.NotFound(w, r)
+			return
+		}
+		data := make([]map[string]string, 0, len(models))
+		for _, m := range models {
+			data = append(data, map[string]string{"id": m})
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{"object": "list", "data": data})
+	}))
+	t.Cleanup(srv.Close)
+	return srv
+}
+
 // llmPOST builds a POST /settings/llm with the given origin, token, and form
-// values (empty entries omitted), mirroring enablePOST.
+// values, mirroring enablePOST. An empty value is SENT as an empty field (the
+// explicit "off" choice); to model an absent field — what a disabled select
+// posts — leave the key out of the map entirely.
 func llmPOST(t *testing.T, srv *Server, origin, token string, fields map[string]string) *httptest.ResponseRecorder {
 	return llmPOSTTo(t, srv, "/settings/llm", origin, token, fields)
 }
@@ -92,6 +115,15 @@ func validLLMForm() map[string]string {
 		"embed_model": "nomic-embed-text",
 		"facts_model": "llama3",
 	}
+}
+
+// validLLMModels is the listing an endpoint must offer for validLLMForm() to
+// save. Under SPEC-0004 REQ-0004-011 a save may only name a model the endpoint
+// actually lists, so a test about persistence or secret handling has to hand
+// the accept-list its inputs — otherwise it is really a test of the rejection
+// path wearing the wrong name.
+func validLLMModels() []string {
+	return []string{"llama3", "local-chat", "local-embed", "nomic-embed-text"}
 }
 
 // TestLLMTabRenders is the template acceptance (#191): the tab renders with
@@ -309,8 +341,14 @@ func TestLLMSaveHappyPathWritesKeys(t *testing.T) {
 	if err := os.WriteFile(path, []byte("data_dir: /custom/data\nllm:\n  max_concurrency: 9\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	holder := llm.NewHolder(llm.New(llm.Options{BaseURL: "http://old.test/v1"}), llm.Settings{
-		BaseURL: "http://old.test/v1", EmbedModel: "old-embed", ChatModel: "old-chat",
+	// The live client's endpoint, not the submitted one, is what discovery
+	// asks — so the stub stands in for the CURRENT endpoint and must list the
+	// models the form is about to save (REQ-0004-011: a save may only name a
+	// discovered model). Without it this test would exercise the rejection
+	// path while claiming to test persistence.
+	models := modelsStub(t, validLLMModels())
+	holder := llm.NewHolder(llm.New(llm.Options{BaseURL: models.URL + "/v1"}), llm.Settings{
+		BaseURL: models.URL + "/v1", EmbedModel: "old-embed", ChatModel: "old-chat",
 	})
 	srv.SetLLMConfig(llm.NewApplier(holder, 0, func(s llm.Settings) error {
 		return config.SaveLLM(path, s.BaseURL, s.EmbedModel, s.ChatModel, s.APIKey)
@@ -368,7 +406,7 @@ func TestLLMSaveHappyPathWritesKeys(t *testing.T) {
 // semantic search off.
 func TestLLMSaveEmptyEmbedModelAllowed(t *testing.T) {
 	srv, _, _ := newTestServer(t)
-	fc := &fakeLLMConfigurator{}
+	fc := &fakeLLMConfigurator{models: validLLMModels()}
 	srv.SetLLMConfig(fc)
 
 	tok := mintToken(t, srv)
@@ -409,7 +447,7 @@ func TestLLMSaveUnavailableWithoutConfigurator(t *testing.T) {
 // banner and the running config stays visible as submitted (no fake success).
 func TestLLMSaveApplyErrorReported(t *testing.T) {
 	srv, _, _ := newTestServer(t)
-	fc := &fakeLLMConfigurator{applyErr: errors.New("disk full")}
+	fc := &fakeLLMConfigurator{applyErr: errors.New("disk full"), models: validLLMModels()}
 	srv.SetLLMConfig(fc)
 
 	tok := mintToken(t, srv)
@@ -596,7 +634,7 @@ func TestLLMTestMissingTokenRejected(t *testing.T) {
 // legitimately stored in config, Option A).
 func TestLLMSaveBlankKeepsConfigKey(t *testing.T) {
 	srv, _, _ := newTestServer(t)
-	fc := &fakeLLMConfigurator{cur: llm.Settings{
+	fc := &fakeLLMConfigurator{models: validLLMModels(), cur: llm.Settings{
 		BaseURL: "http://old/v1", APIKey: "sk-in-config", APIKeyFromEnv: false,
 	}}
 	srv.SetLLMConfig(fc)
@@ -620,7 +658,7 @@ func TestLLMSaveBlankKeepsConfigKey(t *testing.T) {
 // never writes the env secret to the config file.
 func TestLLMSaveBlankKeepsEnvKeyUnpersisted(t *testing.T) {
 	srv, _, _ := newTestServer(t)
-	fc := &fakeLLMConfigurator{cur: llm.Settings{
+	fc := &fakeLLMConfigurator{models: validLLMModels(), cur: llm.Settings{
 		BaseURL: "http://old/v1", APIKey: "sk-from-env", APIKeyFromEnv: true,
 	}}
 	srv.SetLLMConfig(fc)
@@ -647,7 +685,7 @@ func TestLLMSaveBlankKeepsEnvKeyUnpersisted(t *testing.T) {
 // so it must now persist.
 func TestLLMSaveTypedKeyOverridesEnv(t *testing.T) {
 	srv, _, _ := newTestServer(t)
-	fc := &fakeLLMConfigurator{cur: llm.Settings{APIKey: "sk-from-env", APIKeyFromEnv: true}}
+	fc := &fakeLLMConfigurator{models: validLLMModels(), cur: llm.Settings{APIKey: "sk-from-env", APIKeyFromEnv: true}}
 	srv.SetLLMConfig(fc)
 
 	tok := mintToken(t, srv)
@@ -667,7 +705,7 @@ func TestLLMSaveTypedKeyOverridesEnv(t *testing.T) {
 // persisted (clearing the config copy).
 func TestLLMSaveClearKeyWipes(t *testing.T) {
 	srv, _, _ := newTestServer(t)
-	fc := &fakeLLMConfigurator{cur: llm.Settings{APIKey: "sk-old", APIKeyFromEnv: false}}
+	fc := &fakeLLMConfigurator{models: validLLMModels(), cur: llm.Settings{APIKey: "sk-old", APIKeyFromEnv: false}}
 	srv.SetLLMConfig(fc)
 
 	tok := mintToken(t, srv)
@@ -761,36 +799,41 @@ func TestLLMModelsRefreshValidationRejected(t *testing.T) {
 	}
 }
 
-// TestLLMTabAutoLoadsModels (#271): GET /settings/llm populates .Models from
-// the live configurator and the embed/facts fields render with a <datalist>
-// for autocomplete suggestions on first paint — no button click required.
+// TestLLMTabAutoLoadsModels (#271, tightened by REQ-0004-011): GET
+// /settings/llm probes the endpoint on first paint and renders both model
+// fields as live <select>s — no button click required, and no text input
+// anywhere on the page.
 func TestLLMTabAutoLoadsModels(t *testing.T) {
 	srv, _, _ := newTestServer(t)
 	fc := &fakeLLMConfigurator{
-		cur:    llm.Settings{BaseURL: "http://llm.test:4000/v1", EmbedModel: "test-embed", ChatModel: "test-chat"},
+		cur:    llm.Settings{BaseURL: "http://llm.test:4000/v1", EmbedModel: "beta", ChatModel: "gamma"},
 		models: []string{"alpha", "beta", "gamma"},
 	}
 	srv.SetLLMConfig(fc)
 
-	rec := httptest.NewRecorder()
-	req := httptest.NewRequest("GET", "/settings/llm", nil)
-	srv.Handler().ServeHTTP(rec, req)
-
-	if rec.Code != http.StatusOK {
-		t.Fatalf("status = %d", rec.Code)
+	body := llmTabBody(t, srv)
+	for _, id := range []string{"llm-embed-model", "llm-facts-model"} {
+		if !contains(body, `<select id="`+id+`"`) {
+			t.Errorf("%s must render as a <select>", id)
+		}
 	}
-	body := rec.Body.String()
-	if !contains(body, `<datalist id="llm-model-options">`) {
-		t.Error("model fields should render with a <datalist> when models are loaded")
+	assertNoModelTextInput(t, body)
+	if contains(body, "<datalist") || contains(body, `list="llm-model-options"`) {
+		t.Error("a datalist-backed input is a text input — REQ-0004-011 rules it out explicitly")
 	}
-	if !contains(body, `list="llm-model-options"`) {
-		t.Error("model inputs should reference the datalist via list attribute")
-	}
-	// The auto-loaded models must appear as options in the datalist.
 	for _, m := range []string{"alpha", "beta", "gamma"} {
 		if !contains(body, `<option value="`+m+`"`) {
 			t.Errorf("missing option for model %q", m)
 		}
+	}
+	// The saved values are the selected ones, not merely present.
+	if !contains(body, `<option value="beta" selected>`) || !contains(body, `<option value="gamma" selected>`) {
+		t.Error("the saved models must be the selected options")
+	}
+	// Both fields are optional, so each carries an explicit off entry — an
+	// optional <select> has no empty-text-box equivalent.
+	if !contains(body, "Off — semantic search disabled") || !contains(body, "Off — AI features disabled") {
+		t.Error("both model fields must offer an explicit off option")
 	}
 	// No ModelsResult banner on initial load — the dropdowns are the signal.
 	if contains(body, "Models refreshed.") {
@@ -798,36 +841,231 @@ func TestLLMTabAutoLoadsModels(t *testing.T) {
 	}
 }
 
-// TestLLMTabAutoLoadSilentOnError (#271): when the endpoint doesn't serve
-// /v1/models (or the probe fails for any reason), the GET falls back to
-// free-text inputs without a banner — the dropdowns simply aren't there,
-// and the Refresh button remains as the explicit retry.
-func TestLLMTabAutoLoadSilentOnError(t *testing.T) {
-	srv, _, _ := newTestServer(t)
-	fc := &fakeLLMConfigurator{
-		cur: llm.Settings{BaseURL: "http://llm.test:4000/v1", EmbedModel: "test-embed", ChatModel: "test-chat"},
-		// models nil → ListModels returns ErrModelsNotSupported.
+// TestLLMTabDiscoveryFailureDisablesSelects is the heart of REQ-0004-011's
+// failure clause, and it replaces the old "silently fall back to a text input"
+// test. That fallback is what a mistyped model name is made of — an index that
+// never builds, a journal build that dies hours in.
+//
+// Every failure mode gets the same shape: a disabled <select> still showing
+// the saved value, an explanation, and a retry.
+func TestLLMTabDiscoveryFailureDisablesSelects(t *testing.T) {
+	cases := []struct {
+		name   string
+		fc     *fakeLLMConfigurator
+		banner string
+	}{
+		{
+			// models nil → ListModels returns ErrModelsNotSupported.
+			"listing unsupported",
+			&fakeLLMConfigurator{cur: llm.Settings{BaseURL: "http://llm.test:4000/v1", EmbedModel: "test-embed", ChatModel: "test-chat"}},
+			"This endpoint does not list its models.",
+		},
+		{
+			"listing empty",
+			&fakeLLMConfigurator{
+				cur:    llm.Settings{BaseURL: "http://llm.test:4000/v1", EmbedModel: "test-embed", ChatModel: "test-chat"},
+				models: []string{},
+			},
+			"The endpoint offers no models.",
+		},
 	}
-	srv.SetLLMConfig(fc)
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			srv, _, _ := newTestServer(t)
+			srv.SetLLMConfig(tc.fc)
 
+			body := llmTabBody(t, srv)
+			assertNoModelTextInput(t, body)
+			for _, id := range []string{"llm-embed-model", "llm-facts-model"} {
+				if !contains(body, `<select id="`+id+`"`) {
+					t.Errorf("%s must still be a <select>, never a text input", id)
+				}
+			}
+			if n := strings.Count(body, `class="filter-input w-full font-mono" disabled`); n != 2 {
+				t.Errorf("disabled model selects = %d, want 2 when discovery fails", n)
+			}
+			// The saved values survive on screen — the user must be able to
+			// see what is configured even when it cannot be changed here —
+			// and are NOT accused of being unoffered by an endpoint that
+			// never answered.
+			for _, m := range []string{"test-embed", "test-chat"} {
+				if !contains(body, `<option value="`+m+`" selected>`+m+`</option>`) {
+					t.Errorf("saved model %q must remain displayed, selected, and unannotated", m)
+				}
+			}
+			if !contains(body, tc.banner) {
+				t.Errorf("missing the explanatory banner %q", tc.banner)
+			}
+			// The retry the requirement asks for.
+			if !contains(body, "Refresh models") {
+				t.Error("missing the retry control")
+			}
+		})
+	}
+}
+
+// TestLLMTabUnlistedModelSurvives: a model set by config file or
+// MSGBROWSE_LLM_* that the endpoint does not list is still rendered, still
+// selected, and marked — dropping it would make the browser submit whatever
+// option happened to be first and silently rewrite the configuration.
+func TestLLMTabUnlistedModelSurvives(t *testing.T) {
+	srv, _, _ := newTestServer(t)
+	srv.SetLLMConfig(&fakeLLMConfigurator{
+		cur:    llm.Settings{BaseURL: "http://llm.test:4000/v1", EmbedModel: "alpha", ChatModel: "env-only-model"},
+		models: []string{"alpha", "beta"},
+	})
+
+	body := llmTabBody(t, srv)
+	if !contains(body, `<option value="env-only-model" selected>env-only-model — not currently offered</option>`) {
+		t.Error("an unlisted configured model must render, stay selected, and be marked as unlisted")
+	}
+	// It is NOT confused with the off state.
+	if contains(body, `<option value="" selected>Off — AI features disabled</option>`) {
+		t.Error("an unlisted model must not fall through to the off option")
+	}
+}
+
+// llmTabBody GETs the LLM tab and returns the rendered body.
+func llmTabBody(t *testing.T, srv *Server) string {
+	t.Helper()
 	rec := httptest.NewRecorder()
-	req := httptest.NewRequest("GET", "/settings/llm", nil)
-	srv.Handler().ServeHTTP(rec, req)
-
+	srv.Handler().ServeHTTP(rec, httptest.NewRequest("GET", "/settings/llm", nil))
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d", rec.Code)
 	}
-	body := rec.Body.String()
-	if !contains(body, `<input id="llm-embed-model"`) {
-		t.Error("embed_model should fall back to <input> when the listing probe fails")
-	}
-	if !contains(body, `<input id="llm-facts-model"`) {
-		t.Error("facts_model should fall back to <input> when the listing probe fails")
-	}
-	// No error banner on initial GET — the failure is silent.
-	for _, banner := range []string{"Model listing not supported.", "Could not reach the endpoint.", "Model listing is not available here."} {
-		if contains(body, banner) {
-			t.Errorf("initial GET must not render the %q banner (silent fallback)", banner)
+	return rec.Body.String()
+}
+
+// assertNoModelTextInput is the prohibition itself: no rendering path, in any
+// state, may put a model behind a text input.
+func assertNoModelTextInput(t *testing.T, body string) {
+	t.Helper()
+	for _, forbidden := range []string{
+		`<input id="llm-embed-model"`,
+		`<input id="llm-facts-model"`,
+		`name="embed_model" type="text"`,
+		`name="facts_model" type="text"`,
+	} {
+		if contains(body, forbidden) {
+			t.Errorf("model field rendered as free text (%q) — REQ-0004-011 forbids it", forbidden)
 		}
+	}
+}
+
+// TestLLMSaveRejectsUndiscoveredModel is REQ-0004-011's server-side clause: a
+// <select> is a client-side hint, and the same POST is one curl away. A model
+// the endpoint does not offer must be refused rather than written into the
+// config file, where it would be discovered wrong at the next LLM call — for
+// the journal, hours into a multi-thousand-call build.
+func TestLLMSaveRejectsUndiscoveredModel(t *testing.T) {
+	srv, _, _ := newTestServer(t)
+	fc := &fakeLLMConfigurator{
+		cur:    llm.Settings{BaseURL: "http://llm.test:4000/v1", EmbedModel: "alpha", ChatModel: "beta"},
+		models: []string{"alpha", "beta"},
+	}
+	srv.SetLLMConfig(fc)
+
+	tok := mintToken(t, srv)
+	rec := llmPOST(t, srv, selfOrigin, tok, map[string]string{
+		"base_url":    "http://llm.test:4000/v1",
+		"embed_model": "typo-embed-3-large",
+		"facts_model": "beta",
+	})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d", rec.Code)
+	}
+	if len(fc.applied) != 0 {
+		t.Fatalf("applied %d settings, want 0 — an unoffered model must not reach the config file", len(fc.applied))
+	}
+	if !contains(rec.Body.String(), "That model is not offered by this endpoint.") {
+		t.Error("missing the not-offered field error")
+	}
+}
+
+// TestLLMSaveKeepsCurrentModelWhenAbsent is the disabled-select round trip: a
+// disabled control submits no key at all, so an absent field means "keep what
+// is saved". Reading it as an empty choice would let saving the API key
+// silently turn semantic search off, on exactly the broken-endpoint page where
+// the user could not see a listing to re-pick from.
+func TestLLMSaveKeepsCurrentModelWhenAbsent(t *testing.T) {
+	srv, _, _ := newTestServer(t)
+	fc := &fakeLLMConfigurator{
+		// models nil → discovery fails → the selects render disabled.
+		cur: llm.Settings{BaseURL: "http://llm.test:4000/v1", EmbedModel: "kept-embed", ChatModel: "kept-chat"},
+	}
+	srv.SetLLMConfig(fc)
+
+	tok := mintToken(t, srv)
+	// No embed_model / facts_model keys at all — what a disabled select posts.
+	rec := llmPOST(t, srv, selfOrigin, tok, map[string]string{
+		"base_url": "http://llm.test:4000/v1",
+		"api_key":  "sk-new-key",
+	})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d", rec.Code)
+	}
+	if len(fc.applied) != 1 {
+		t.Fatalf("applied %d, want 1", len(fc.applied))
+	}
+	if got := fc.applied[0]; got.EmbedModel != "kept-embed" || got.ChatModel != "kept-chat" {
+		t.Errorf("applied = %+v, want both models kept", got)
+	}
+}
+
+// TestLLMSaveUnlistedCurrentModelSurvivesSave is the second scenario the
+// requirement spells out: an env-set model the endpoint does not list is
+// submitted back unchanged and must be accepted, not rejected as unoffered.
+func TestLLMSaveUnlistedCurrentModelSurvivesSave(t *testing.T) {
+	srv, _, _ := newTestServer(t)
+	fc := &fakeLLMConfigurator{
+		cur:    llm.Settings{BaseURL: "http://llm.test:4000/v1", EmbedModel: "alpha", ChatModel: "env-only-model"},
+		models: []string{"alpha", "beta"},
+	}
+	srv.SetLLMConfig(fc)
+
+	tok := mintToken(t, srv)
+	rec := llmPOST(t, srv, selfOrigin, tok, map[string]string{
+		"base_url":    "http://llm.test:4000/v1",
+		"embed_model": "alpha",
+		"facts_model": "env-only-model", // what the rendered form posts back
+	})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d", rec.Code)
+	}
+	if len(fc.applied) != 1 {
+		t.Fatalf("applied %d, want 1 — the configured model must survive a save", len(fc.applied))
+	}
+	if got := fc.applied[0]; got.ChatModel != "env-only-model" {
+		t.Errorf("applied chat model = %q, want the retained env-set model", got.ChatModel)
+	}
+	if !contains(rec.Body.String(), "not currently offered") {
+		t.Error("the retained model should still be marked as unlisted after the save")
+	}
+}
+
+// TestLLMSaveOffIsAlwaysAllowed: the explicit off option is a legitimate
+// choice, not an undiscovered model.
+func TestLLMSaveOffIsAlwaysAllowed(t *testing.T) {
+	srv, _, _ := newTestServer(t)
+	fc := &fakeLLMConfigurator{
+		cur:    llm.Settings{BaseURL: "http://llm.test:4000/v1", EmbedModel: "alpha", ChatModel: "beta"},
+		models: []string{"alpha", "beta"},
+	}
+	srv.SetLLMConfig(fc)
+
+	tok := mintToken(t, srv)
+	rec := llmPOST(t, srv, selfOrigin, tok, map[string]string{
+		"base_url":    "http://llm.test:4000/v1",
+		"embed_model": "",
+		"facts_model": "beta",
+	})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d", rec.Code)
+	}
+	if len(fc.applied) != 1 {
+		t.Fatalf("applied %d, want 1", len(fc.applied))
+	}
+	if got := fc.applied[0]; got.EmbedModel != "" {
+		t.Errorf("applied embed model = %q, want off", got.EmbedModel)
 	}
 }

@@ -108,8 +108,30 @@ type llmSettingsData struct {
 	// Models is the list of model ids returned by the last successful listing,
 	// used to populate the embed and facts model dropdowns.
 	Models []string
+	// ModelsAvailable reports that discovery produced a usable listing, so the
+	// model <select>s are live. False disables them (SPEC-0004 REQ-0004-011:
+	// degrade to a disabled select, never to a text input).
+	ModelsAvailable bool
+	// ModelsUnavailable explains WHY the selects are disabled, as its own
+	// fixed enum ("unsupported", "unreachable", "unavailable"), rendered as a
+	// banner beside the fields. It is deliberately separate from ModelsResult:
+	// that one reports the outcome of an explicit "Refresh models" click and
+	// loses the top-banner slot to a save or test result, while this one must
+	// stay on screen for as long as the controls are disabled.
+	ModelsUnavailable string
+	// EmbedOptions / FactsOptions are the rendered <option> sets, built once in
+	// renderLLMSettings so no response can reach the template with a model
+	// field and no options behind it.
+	EmbedOptions []llmModelOption
+	FactsOptions []llmModelOption
+	// modelsResolved records that a handler already ran discovery, so
+	// renderLLMSettings does not probe the endpoint a second time on the same
+	// response. Unexported: it is bookkeeping, not template data.
+	modelsResolved bool
 	// Per-field validation errors: "" (valid), "required", "scheme",
-	// "invalid", or "toolong".
+	// "invalid", "toolong", or — for the model fields — "notoffered" (a
+	// submitted id that is neither in the discovered listing nor the value
+	// already saved).
 	ErrBaseURL    string
 	ErrEmbedModel string
 	ErrFactsModel string
@@ -118,6 +140,94 @@ type llmSettingsData struct {
 	// model that was last used by the index, signalling that the index needs
 	// a rebuild.
 	EmbedModelChanged bool
+}
+
+// llmModelOption is one <option> in a model select.
+//
+// Unlisted marks the awkward case the requirement is mostly about: a model set
+// by config file or MSGBROWSE_LLM_* that the endpoint does not currently offer.
+// It is still rendered, still selected, and still saveable — dropping it would
+// silently rewrite the user's configuration on the next save — but it is
+// labelled so the discrepancy is visible rather than mysterious.
+type llmModelOption struct {
+	Value    string
+	Label    string
+	Selected bool
+	Unlisted bool
+}
+
+// llmModelOptions builds the option set for one model field: an explicit "off"
+// entry, every discovered model, and — when the saved value is absent from the
+// listing — the saved value itself, marked unlisted.
+//
+// The "off" entry exists because both model fields are optional, and an
+// optional <select> has no equivalent of an empty text box: without a value to
+// select, "no embed model" would be indistinguishable from "the first model in
+// the list", and the browser would submit that first model on save. So the
+// absence is a choice the user can see and make (SPEC-0004 REQ-0004-011: the
+// off state MUST be an explicit option rather than an empty field).
+func llmModelOptions(models []string, current, offLabel string) []llmModelOption {
+	opts := []llmModelOption{{Value: "", Label: offLabel, Selected: current == ""}}
+	listed := false
+	for _, m := range models {
+		if m == current {
+			listed = true
+		}
+		opts = append(opts, llmModelOption{Value: m, Label: m, Selected: m == current})
+	}
+	if current != "" && !listed {
+		// Second position, not last: it is the selected value, and burying it
+		// under a long listing makes the "why does this say something the
+		// endpoint has never heard of" question harder to answer, not easier.
+		//
+		// Marked unlisted only when there WAS a listing to be absent from.
+		// With discovery down the endpoint has said nothing either way, and
+		// "not currently offered" would be an accusation the page cannot
+		// support — the disabled control and its banner already explain why
+		// nothing else is selectable.
+		opts = append(opts[:1], append([]llmModelOption{{
+			Value: current, Label: current, Selected: true, Unlisted: len(models) > 0,
+		}}, opts[1:]...)...)
+	}
+	return opts
+}
+
+// llmModelAllowed reports whether a submitted model id may be written to the
+// config file: the empty "off" choice, the value already saved, or one the
+// endpoint actually offers.
+//
+// A <select> is a client-side hint and nothing more — the same POST is one
+// curl away, and a disabled select submits nothing at all — so the handler
+// re-decides rather than trusting the shape of the control it rendered
+// (SPEC-0004 REQ-0004-011: client-side control choice is not validation).
+func llmModelAllowed(submitted, current string, models []string) bool {
+	if submitted == "" || submitted == current {
+		return true
+	}
+	for _, m := range models {
+		if m == submitted {
+			return true
+		}
+	}
+	return false
+}
+
+// llmModelFromForm reads one model field, falling back to the currently-saved
+// value when the field is ABSENT from the submission.
+//
+// Absent is not the same as empty. A disabled <select> — what discovery
+// failure degrades to — submits no key at all, so treating a missing key as
+// "the user chose off" would let the act of saving the API key silently clear
+// the model the user could not even see a listing for (SPEC-0004 REQ-0004-011:
+// the saved value MUST NOT be cleared by saving the form). An explicitly
+// submitted empty value still means off.
+func llmModelFromForm(r *http.Request, field, current string) string {
+	// Idempotent, and cheap once the gate has already parsed the body.
+	_ = r.ParseForm()
+	if _, ok := r.PostForm[field]; !ok {
+		return current
+	}
+	return strings.TrimSpace(r.PostFormValue(field))
 }
 
 // HasErrors reports whether any field failed validation, for the template's
@@ -139,12 +249,10 @@ func (s *Server) currentLLM() llm.Settings {
 // effective values. Safe GET: no mutation; the minted token arms the save
 // form.
 //
-// When a live configurator is wired, the handler also probes the endpoint's
-// /v1/models listing with a short timeout so the embed/facts fields render
-// as dropdowns on first paint (#271) — the user shouldn't have to know the
-// "Refresh models" button exists. A failed probe is silent (no banner): the
-// fields fall back to free-text inputs, and the button remains as the
-// explicit retry once the URL or key has been adjusted.
+// Model discovery runs on every render, not just on an explicit "Refresh
+// models" click (#271) — the model fields are dropdowns now, and a dropdown
+// with nothing behind it is not a control (SPEC-0004 REQ-0004-011). It happens
+// in renderLLMSettings so no response path can skip it.
 func (s *Server) handleSettingsLLM(w http.ResponseWriter, r *http.Request) {
 	cur := s.currentLLM()
 	data := llmSettingsData{
@@ -154,19 +262,48 @@ func (s *Server) handleSettingsLLM(w http.ResponseWriter, r *http.Request) {
 		HasAPIKey:     cur.APIKey != "",
 		APIKeyFromEnv: cur.APIKeyFromEnv,
 	}
-	if s.llmConfig != nil {
-		ctx, cancel := context.WithTimeout(r.Context(), 3*time.Second)
-		models, err := s.listLLMModels(ctx)
-		cancel()
-		if err == nil {
-			data.Models = models
-		} else {
-			s.log.Debug("LLM auto-load model listing skipped",
-				"base_url", cur.BaseURL, "error", err)
-		}
-	}
 	data.EmbedModelChanged = s.embedModelChanged(r.Context(), cur.EmbedModel)
 	s.renderLLMSettings(w, r, data)
+}
+
+// llmModelsTimeout bounds the discovery probe. It is short on purpose: the
+// listing decorates a settings page, and a slow endpoint must not hold the
+// page hostage — a timed-out probe degrades to a disabled select with a
+// banner, which is a usable page.
+const llmModelsTimeout = 3 * time.Second
+
+// resolveModels runs model discovery and records the outcome on data: the
+// listing itself, whether the selects are live, and — when they are not — the
+// fixed-enum reason the banner explains.
+//
+// An EMPTY listing counts as a failure, not as success with nothing in it. An
+// endpoint that answers /v1/models with zero models cannot furnish a choice,
+// and a select holding only "off" would quietly offer to turn the user's
+// features off (SPEC-0004 REQ-0004-011 names the empty listing alongside
+// unreachable and unsupported).
+func (s *Server) resolveModels(ctx context.Context, data *llmSettingsData) {
+	data.modelsResolved = true
+	if s.llmConfig == nil {
+		data.ModelsUnavailable = "unavailable"
+		return
+	}
+	ctx, cancel := context.WithTimeout(ctx, llmModelsTimeout)
+	defer cancel()
+	models, err := s.listLLMModels(ctx)
+	switch {
+	case err == llm.ErrModelsNotSupported:
+		s.log.Debug("LLM model listing unsupported", "base_url", data.BaseURL)
+		data.ModelsUnavailable = "unsupported"
+	case err != nil:
+		s.log.Debug("LLM model listing failed", "base_url", data.BaseURL, "error", err)
+		data.ModelsUnavailable = "unreachable"
+	case len(models) == 0:
+		s.log.Debug("LLM model listing empty", "base_url", data.BaseURL)
+		data.ModelsUnavailable = "empty"
+	default:
+		data.Models = models
+		data.ModelsAvailable = true
+	}
 }
 
 // listLLMModels fetches, filters, and sorts the endpoint's /v1/models listing
@@ -226,15 +363,32 @@ func (s *Server) handleSettingsLLMSave(w http.ResponseWriter, r *http.Request) {
 
 	data := llmSettingsData{
 		BaseURL:       strings.TrimSpace(r.PostFormValue("base_url")),
-		EmbedModel:    strings.TrimSpace(r.PostFormValue("embed_model")),
-		FactsModel:    strings.TrimSpace(r.PostFormValue("facts_model")),
+		EmbedModel:    llmModelFromForm(r, "embed_model", cur.EmbedModel),
+		FactsModel:    llmModelFromForm(r, "facts_model", cur.ChatModel),
 		HasAPIKey:     apiKey != "",
 		APIKeyFromEnv: fromEnv,
 	}
+	// Discovery before validation: the listing IS the accept-list, so the save
+	// cannot decide whether a model is legitimate without it. Resolving here
+	// also means the re-render below reuses this probe instead of making a
+	// second call to the same endpoint.
+	s.resolveModels(r.Context(), &data)
 	data.ErrBaseURL = validateLLMBaseURL(data.BaseURL)
 	data.ErrEmbedModel = validateLLMModel(data.EmbedModel)
 	data.ErrFactsModel = validateLLMModel(data.FactsModel)
 	data.ErrAPIKey = validateLLMAPIKey(apiKey)
+	// Only when a configurator is wired. Without one there is no endpoint that
+	// could have offered anything and no config file to write into, so "that
+	// model is not offered" would be a verdict on a question never asked — the
+	// honest answer is the unavailable banner a few lines down.
+	if s.llmConfig != nil {
+		if data.ErrEmbedModel == "" && !llmModelAllowed(data.EmbedModel, cur.EmbedModel, data.Models) {
+			data.ErrEmbedModel = "notoffered"
+		}
+		if data.ErrFactsModel == "" && !llmModelAllowed(data.FactsModel, cur.ChatModel, data.Models) {
+			data.ErrFactsModel = "notoffered"
+		}
+	}
 	if data.HasErrors() {
 		s.renderLLMSettings(w, r, data)
 		return
@@ -273,6 +427,12 @@ func (s *Server) handleSettingsLLMSave(w http.ResponseWriter, r *http.Request) {
 		APIKeyFromEnv:     applied.APIKeyFromEnv,
 		SaveResult:        "ok",
 		EmbedModelChanged: s.embedModelChanged(r.Context(), applied.EmbedModel),
+		// Carry this response's discovery forward rather than probing the
+		// endpoint again for the same answer.
+		Models:            data.Models,
+		ModelsAvailable:   data.ModelsAvailable,
+		ModelsUnavailable: data.ModelsUnavailable,
+		modelsResolved:    true,
 	})
 }
 
@@ -292,15 +452,16 @@ func (s *Server) handleSettingsLLMTest(w http.ResponseWriter, r *http.Request) {
 
 	// Same secret-field resolution as save: a blank api_key means "use the
 	// current key", so the probe verifies the endpoint the user would save.
+	cur := s.currentLLM()
 	apiKey := strings.TrimSpace(r.PostFormValue("api_key"))
 	if apiKey == "" {
-		apiKey = s.currentLLM().APIKey
+		apiKey = cur.APIKey
 	}
 
 	data := llmSettingsData{
 		BaseURL:    strings.TrimSpace(r.PostFormValue("base_url")),
-		EmbedModel: strings.TrimSpace(r.PostFormValue("embed_model")),
-		FactsModel: strings.TrimSpace(r.PostFormValue("facts_model")),
+		EmbedModel: llmModelFromForm(r, "embed_model", cur.EmbedModel),
+		FactsModel: llmModelFromForm(r, "facts_model", cur.ChatModel),
 		HasAPIKey:  apiKey != "",
 	}
 	data.ErrBaseURL = validateLLMBaseURL(data.BaseURL)
@@ -337,10 +498,22 @@ func (s *Server) handleSettingsLLMTest(w http.ResponseWriter, r *http.Request) {
 	s.renderLLMSettings(w, r, data)
 }
 
-// renderLLMSettings finishes any LLM-tab response: shell (full or boosted
+// renderLLMSettings finishes any LLM-tab response: model discovery (unless a
+// handler already ran it), the two option sets, shell (full or boosted
 // partial), fresh per-session token, render.
+//
+// Discovery and option-building live HERE rather than in each handler because
+// every response — first paint, a save, a failed validation, a test probe —
+// renders the same two model fields, and a handler that forgot to fill them
+// would ship a select with nothing in it. One choke point makes that
+// unrepresentable.
 func (s *Server) renderLLMSettings(w http.ResponseWriter, r *http.Request, data llmSettingsData) {
 	const title = "LLM · msgbrowse"
+	if !data.modelsResolved {
+		s.resolveModels(r.Context(), &data)
+	}
+	data.EmbedOptions = llmModelOptions(data.Models, data.EmbedModel, "Off — semantic search disabled")
+	data.FactsOptions = llmModelOptions(data.Models, data.FactsModel, "Off — AI features disabled")
 	if isPartialRequest(r) {
 		data.baseData = partialBase(title, 0)
 	} else {
@@ -432,15 +605,16 @@ func (s *Server) handleSettingsLLMModels(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
+	cur := s.currentLLM()
 	apiKey := strings.TrimSpace(r.PostFormValue("api_key"))
 	if apiKey == "" {
-		apiKey = s.currentLLM().APIKey
+		apiKey = cur.APIKey
 	}
 
 	data := llmSettingsData{
 		BaseURL:    strings.TrimSpace(r.PostFormValue("base_url")),
-		EmbedModel: strings.TrimSpace(r.PostFormValue("embed_model")),
-		FactsModel: strings.TrimSpace(r.PostFormValue("facts_model")),
+		EmbedModel: llmModelFromForm(r, "embed_model", cur.EmbedModel),
+		FactsModel: llmModelFromForm(r, "facts_model", cur.ChatModel),
 		HasAPIKey:  apiKey != "",
 	}
 	data.ErrBaseURL = validateLLMBaseURL(data.BaseURL)
@@ -454,29 +628,19 @@ func (s *Server) handleSettingsLLMModels(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	if s.llmConfig == nil {
-		data.ModelsResult = "unavailable"
-		s.renderLLMSettings(w, r, data)
-		return
-	}
-
-	models, err := s.listLLMModels(r.Context())
-	if err != nil {
+	// One discovery path for every surface: resolveModels decides live-vs-
+	// disabled and why. The button's own banner is the same verdict said out
+	// loud, because this render is the one the user asked for.
+	s.resolveModels(r.Context(), &data)
+	if data.ModelsAvailable {
+		s.log.Info("LLM model listing succeeded",
+			"base_url", data.BaseURL, "models", len(data.Models))
+		data.ModelsResult = "ok"
+	} else {
 		s.log.Warn("LLM model listing failed",
-			"base_url", data.BaseURL, "error", err)
-		if err == llm.ErrModelsNotSupported {
-			data.ModelsResult = "unsupported"
-		} else {
-			data.ModelsResult = "unreachable"
-		}
-		s.renderLLMSettings(w, r, data)
-		return
+			"base_url", data.BaseURL, "reason", data.ModelsUnavailable)
+		data.ModelsResult = data.ModelsUnavailable
 	}
-
-	s.log.Info("LLM model listing succeeded",
-		"base_url", data.BaseURL, "models", len(models))
-	data.Models = models
-	data.ModelsResult = "ok"
 	s.renderLLMSettings(w, r, data)
 }
 
