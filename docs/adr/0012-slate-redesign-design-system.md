@@ -45,7 +45,32 @@ off daisyUI, and (2) keep a light theme even though the brief is dark-only.
    (`ui-monospace, …`) for timestamps, filenames, and counts; `tabular-nums` on
    all counts. No web fonts (preserves [ADR-0010](0010-security-privacy-posture.md)'s no-CDN posture).
 
-5. **Constraints unchanged.** No Node at runtime (Tailwind standalone CLI + the
+5. **Spacing scale and one surface primitive (added 2026-08-20, issue #372).**
+   Spacing is tokenised the way colour already was. `--space-1`…`--space-7`
+   (4/8/12/16/20/24/32px) are the only spacing values; every padding, gap and
+   radius on a bordered surface derives from them via three named tiers —
+   `--surface-pad-dense` (list rows), `--surface-pad` (ordinary cards), and
+   `--surface-pad-roomy` (the journal day card) — each paired with a matching
+   radius token. Vertical rhythm comes from `--stack-gap` (between sibling
+   cards) and `--section-gap` (between page sections).
+
+   A single rule, the `.surface` primitive, carries border + radius +
+   background + padding for every bordered surface; individual card classes
+   compose from it and override only what genuinely differs. A surface needing
+   a value off the scale means the scale is wrong: widen it rather than adding
+   a bespoke number.
+
+   **Why this became a decision.** The original ADR tokenised colour but not
+   spacing, so each card class was written independently and drifted — eight
+   card classes carried eight different paddings, and three of them
+   (`.stat-cell` 1/1.1rem, `.home-card` 1.15/1.25rem, `.status-card`
+   1.1/1.2rem) stacked directly on top of each other on Home. Differences of
+   0.05–0.15rem are too small to read as hierarchy and large enough to make a
+   column of cards look crooked. The scale's steps were chosen to match the
+   rhythm the templates already used (`space-y-5`, `mb-8`), so adopting it is a
+   de-duplication rather than a restyle.
+
+6. **Constraints unchanged.** No Node at runtime (Tailwind standalone CLI + the
    committed `app.css`), server-rendered `html/template` + HTMX, strict CSP, and
    Heroicons (outline) inline SVG — all carry over from
    [ADR-0006](0006-web-stack-htmx.md)/[ADR-0007](0007-frontend-styling-tailwind-daisyui.md)/[ADR-0010](0010-security-privacy-posture.md).
@@ -63,5 +88,10 @@ off daisyUI, and (2) keep a light theme even though the brief is dark-only.
   assert bubble markup (`chat-bubble`) will be updated per slice.
 - The CSS drift guard still applies: rebuild `app.css` from a clean `.tools`
   cache before committing (see project memory / [ADR-0007](0007-frontend-styling-tailwind-daisyui.md)).
+- Spacing is now a decision rather than a per-class convention. The guard tests
+  in `internal/web/spacing_test.go` fail if a card class regrows a hand-rolled
+  `rem` padding, if the scale is deleted, or if `app.css` is committed stale.
+  Pills, badges, tabs and inputs keep their own small paddings — the scale
+  governs bordered *surfaces*, not every element in the stylesheet.
 - Several screens need small backend additions (pinned conversations, "on this
   day", search-elapsed timing); these are called out per issue in the epic.

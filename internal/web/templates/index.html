@@ -16,7 +16,7 @@
        nothing; device pairing and snapshots deliberately stay off it. */}}
   <div class="px-6 lg:px-10 py-10">
     <div class="screen-col">
-      <header class="mb-8">
+      <header class="page-section-gap-after">
         <h1 class="home-hero-title">msgbrowse</h1>
         <p class="home-hero-tagline">A calm, private reading room for everything you've ever said. Local-only — nothing leaves this machine.</p>
       </header>
@@ -37,7 +37,7 @@
            empty column. Boost attributes ride the wrapper, matching the
            quick-link grid, so every link inside swaps only #main-content. */}}
       {{if or .OnThisDay.Show .JumpBack}}
-      <div class="grid grid-cols-1 {{if and .OnThisDay.Show .JumpBack}}md:grid-cols-2 {{end}}gap-4 mb-4"
+      <div class="grid grid-cols-1 {{if and .OnThisDay.Show .JumpBack}}md:grid-cols-2 {{end}}card-grid stack-gap-after"
            hx-boost="true" hx-target="#main-content" hx-select="#main-content" hx-swap="outerHTML" hx-push-url="true">
         {{if .OnThisDay.Show}}
         {{/* Every field here is server-derived and server-truncated; the body is
@@ -89,9 +89,9 @@
            ingest run, in canonical source order. "Last synced" is the source's
            most recent completed ingest; "—" means none was ever recorded (e.g.
            data synced in from another device). */}}
-      <div class="mt-8">
+      <div class="page-section-gap-before">
       {{if .Providers}}
-      <div class="status-card mb-4">
+      <div class="status-card stack-gap-after">
         <div class="status-card-title">By source</div>
         <div class="overflow-x-auto">
           <table class="status-table">

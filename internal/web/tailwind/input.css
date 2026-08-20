@@ -139,6 +139,118 @@
   --color-whatsapp: #128c7e;
 }
 
+/* Spacing Scale And The Surface Primitive
+ *
+ * ADR-0012 defined colour tokens but no spacing tokens, so every bordered
+ * surface picked its own padding by hand and they drifted: eight card classes
+ * carried eight different values, three of which (.stat-cell 1/1.1rem,
+ * .home-card 1.15/1.25rem, .status-card 1.1/1.2rem) stack directly on top of
+ * each other on Home. Differences of 0.05-0.15rem are too small to read as
+ * hierarchy and large enough to make a column of cards look crooked.
+ *
+ * Every padding, gap and radius on a bordered surface now comes from this
+ * scale. Three tiers, and they are the only ones: dense for list rows, base for
+ * ordinary cards, roomy for the journal day card. A surface that wants a value
+ * off the scale means the scale is wrong — widen it here rather than
+ * hand-rolling a ninth number.
+ *
+ * The steps MATCH the rhythm already in the templates rather than impose a new
+ * one: --stack-gap is 1.25rem, the `space-y-5` the settings pages already use
+ * between sibling cards, and --section-gap is 2rem, the `mb-8` / `mt-8` the
+ * page sections already use. Normalising onto values the design was already
+ * reaching for keeps this a de-duplication rather than a restyle, so the diff
+ * is legible and the visual delta is confined to the cards that were wrong.
+ *
+ * @joestump-agent 08/20/2026 - Added with the spacing-scale work (#372). */
+:root {
+  --space-1: 0.25rem; /*  4px */
+  --space-2: 0.5rem; /*   8px */
+  --space-3: 0.75rem; /* 12px */
+  --space-4: 1rem; /*    16px */
+  --space-5: 1.25rem; /* 20px */
+  --space-6: 1.5rem; /*  24px */
+  --space-7: 2rem; /*    32px */
+
+  /* Surface tiers: padding + the radius that goes with it. Radius tracks
+     padding so a dense row does not wear a card-sized corner. */
+  --surface-pad-dense: var(--space-3);
+  --surface-pad: var(--space-4);
+  --surface-pad-roomy: var(--space-6);
+  --surface-radius-dense: 0.625rem;
+  --surface-radius: 0.875rem;
+  --surface-radius-roomy: 1rem;
+
+  /* Vertical rhythm: one gap between sibling cards, one larger gap between
+     page sections. Replaces the ad-hoc mb-8 / mb-4 / mt-8 mix. */
+  --stack-gap: var(--space-5);
+  --section-gap: var(--space-7);
+}
+
+/* The single bordered-surface primitive. Every card composes from this rule and
+   overrides only what genuinely differs; .surface itself is available to
+   templates that want the plain shape with no extra semantics. */
+.surface,
+.notice-card,
+.home-card,
+.status-card,
+.setup-card,
+.stat-strip,
+.journal-day-card,
+.journal-day,
+.journal-cal,
+.result-card,
+.media-list-card,
+.setup-guide-panel {
+  border: 1px solid var(--color-neutral);
+  border-radius: var(--surface-radius);
+  background: var(--color-base-200);
+  padding: var(--surface-pad);
+}
+
+/* Dense tier: list rows, which sit many-to-a-screen and would swamp the page at
+   card padding. */
+.surface--dense,
+.result-card,
+.media-list-card {
+  padding: var(--surface-pad-dense);
+  border-radius: var(--surface-radius-dense);
+}
+
+/* Roomy tier: the journal day card is the reading surface's centrepiece and is
+   the one card that earns more air. */
+.surface--roomy,
+.journal-day-card {
+  padding: var(--surface-pad-roomy);
+  border-radius: var(--surface-radius-roomy);
+}
+
+/* Vertical rhythm helpers, all driven by the scale. Templates reach for these
+   instead of picking a Tailwind margin utility per call site — the mb-8 / mb-4
+   / mt-8 mix on Home had no rule behind which gap was which.
+
+   .stack sets the gap between sibling cards for a whole column; the *-gap-after
+   / *-gap-before pair is for the one-off case where a single element needs the
+   gap and its siblings are laid out by something else (a grid, a conditional
+   block). .card-grid is the gap BETWEEN cards laid out side by side. */
+.stack > * + * {
+  margin-top: var(--stack-gap);
+}
+.stack-gap-after {
+  margin-bottom: var(--stack-gap);
+}
+.card-grid {
+  gap: var(--stack-gap);
+}
+.page-section + .page-section {
+  margin-top: var(--section-gap);
+}
+.page-section-gap-after {
+  margin-bottom: var(--section-gap);
+}
+.page-section-gap-before {
+  margin-top: var(--section-gap);
+}
+
 /* --- typography: system fonts only (no web fonts; CSP/ADR-0010 holds) --- */
 
 /* System sans for UI, antialiased per the handoff; system mono for numerals. */
@@ -1187,10 +1299,6 @@ a.meta-chip:hover {
    not a flex row. Kept class-based because the strict CSP forbids inline styles. */
 .notice-card {
   display: block;
-  padding: 0.95rem 1rem;
-  border: 1px solid var(--color-neutral);
-  border-radius: 0.75rem;
-  background: var(--color-base-200);
 }
 /* Status-banner variants (#227, governing: ADR-0012, ADR-0007, SPEC-0013
    §Accessibility). Four visually distinct variants derived from the
@@ -1305,14 +1413,13 @@ a.meta-chip:hover {
 .stat-strip {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  border: 1px solid var(--color-neutral);
-  border-radius: 0.875rem;
-  background: var(--color-base-200);
   overflow: hidden;
+  /* The cells carry the padding; the strip is only the frame around them. */
+  padding: 0;
 }
 /* Hairline dividers between cells (not on the first). */
 .stat-cell {
-  padding: 1rem 1.1rem;
+  padding: var(--surface-pad);
 }
 .stat-cell + .stat-cell {
   border-left: 1px solid color-mix(in oklab, var(--color-neutral) 70%, transparent);
@@ -1411,10 +1518,7 @@ a.meta-chip:hover {
    diagnostics. Every colour is a theme token or a color-mix over one, so both
    the slate and slate-light themes track automatically; no literal hex here. */
 .home-card {
-  border: 1px solid var(--color-neutral);
-  border-radius: 0.875rem;
-  background: var(--color-base-200);
-  padding: 1.15rem 1.25rem;
+  /* Shape comes from the surface primitive; nothing to add. */
 }
 /* Accent eyebrow ("ON THIS DAY · 6 YEARS AGO"), tracked small caps. */
 .home-card-eyebrow {
@@ -1556,10 +1660,7 @@ a.meta-chip:hover {
 
 /* --- Journal (day-by-day digests, ADR-0023) ------------------------------ */
 .journal-day {
-  padding: 1rem 1.1rem;
-  border: 1px solid var(--color-neutral);
-  border-radius: 0.75rem;
-  background: var(--color-base-200);
+  /* Shape comes from the surface primitive. */
 }
 .journal-day-head {
   display: flex;
@@ -1620,10 +1721,7 @@ a.meta-chip:hover {
   background: color-mix(in oklab, var(--color-primary) 8%, transparent);
 }
 .journal-cal {
-  border: 1px solid var(--color-neutral);
-  border-radius: 0.875rem;
-  background: var(--color-base-200);
-  padding: 1rem 1.1rem 1.1rem;
+  /* Shape comes from the surface primitive. */
 }
 .journal-cal-head {
   display: flex;
@@ -1759,10 +1857,7 @@ a.cal-day:hover {
   color: color-mix(in oklab, var(--color-base-content) 42%, transparent);
 }
 .journal-day-card {
-  border: 1px solid var(--color-neutral);
-  border-radius: 1rem;
-  background: var(--color-base-200);
-  padding: 1.3rem 1.4rem;
+  /* Roomy tier; see the surface primitive. */
 }
 .journal-eyebrow {
   display: inline-flex;
@@ -2081,10 +2176,6 @@ a.cal-day:hover {
 /* Result card. */
 .result-card {
   display: block;
-  padding: 0.8rem 0.9rem;
-  border: 1px solid var(--color-neutral);
-  border-radius: 0.625rem;
-  background: var(--color-base-200);
   @media (prefers-reduced-motion: no-preference) {
     transition: background-color 0.12s ease, border-color 0.12s ease;
   }
@@ -2416,10 +2507,6 @@ a.cal-day:hover {
   gap: 0.5rem;
 }
 .media-list-card {
-  padding: 0.7rem 0.85rem;
-  border: 1px solid var(--color-neutral);
-  border-radius: 0.625rem;
-  background: var(--color-base-200);
   @media (prefers-reduced-motion: no-preference) {
     transition: border-color 0.12s ease;
   }
@@ -2532,10 +2619,7 @@ a.cal-day:hover {
 
 /* --- Status & backups --------------------------------------------------- */
 .status-card {
-  padding: 1.1rem 1.2rem;
-  border: 1px solid var(--color-neutral);
-  border-radius: 0.875rem;
-  background: var(--color-base-200);
+  /* Shape comes from the surface primitive; nothing to add. */
 }
 .status-card-title {
   font-size: 14px;
@@ -2752,11 +2836,7 @@ a.cal-day:hover {
 .setup-card {
   display: flex;
   align-items: flex-start;
-  gap: 0.85rem;
-  padding: 1rem 1.1rem;
-  border: 1px solid var(--color-neutral);
-  border-radius: 0.875rem;
-  background: var(--color-base-200);
+  gap: var(--space-3);
 }
 /* Not-detected cards read as dimmed/inactive so the actionable ones stand out;
    the dim is reinforced by the badge text, not carried by color alone. */
@@ -3100,10 +3180,6 @@ a.cal-day:hover {
   width: min(30rem, 100%);
   max-height: calc(100vh - 2.5rem);
   overflow-y: auto;
-  padding: 1.15rem 1.25rem 1.25rem;
-  border: 1px solid var(--color-neutral);
-  border-radius: 0.9rem;
-  background: var(--color-base-200);
   box-shadow: 0 18px 48px -12px color-mix(in oklab, black 55%, transparent);
 }
 .setup-guide-head {
