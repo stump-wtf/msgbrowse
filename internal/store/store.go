@@ -15,6 +15,7 @@ import (
 	"net/url"
 	"time"
 
+	"github.com/joestump/msgbrowse/internal/contacts"
 	"github.com/joestump/msgbrowse/internal/signal"
 	_ "modernc.org/sqlite" // pure-Go SQLite driver (no cgo; FTS5 built in)
 )
@@ -129,15 +130,38 @@ type IngestRun struct {
 }
 
 // UpsertConversation returns the id of the (source, name) conversation,
-// creating it if absent. It also ensures a contact and contact_identifier exist
-// for the source-side identity and that conversations.contact_id points at it.
-//
-// First-time identities get an auto-created contact whose display_name equals
-// the conversation name. The Slice 4.5 contacts page lets the user merge those
-// auto-contacts together (e.g. signal:MJ + imessage:+15551234567 → one person).
-// Auto-creation is intentionally cheap and never silently merges across
-// identifiers — see ADR-0003.
+// creating it if absent, deriving the counterparty identity from the name
+// alone. Importers that parsed a real handle or know the thread is a group
+// should call UpsertConversationIdentity instead.
 func (s *Store) UpsertConversation(ctx context.Context, source, name string) (int64, error) {
+	return s.UpsertConversationIdentity(ctx, source, name, contacts.SourceIdentity{})
+}
+
+// UpsertConversationIdentity is UpsertConversation with whatever extra the
+// importer knows about the counterparty: a real handle parsed out of the export
+// (WhatsApp's JID local part is the phone number) and whether the thread is a
+// group.
+//
+// It ensures a contact and contact_identifier exist for the source-side
+// identity and that conversations.contact_id points at it. The stored
+// identifier is the DERIVED handle, not the conversation name: writing the name
+// into contact_identifiers is what made cross-source merging structurally
+// impossible (issue #363) — a Signal profile name is not a handle, so phone and
+// email matching had nothing to compare and never once fired on a real archive.
+// When a source has no real handle the display name is still used as the
+// identifier, so the conversation resolves to a stable contact; it is matched
+// weakly (ReasonDisplayName) and can only ever suggest a merge.
+//
+// GROUP THREADS GET NO CONTACT. A multi-recipient thread has no single person
+// behind it, and minting one invents someone who does not exist — the archive
+// had contacts named "me@…, chelsea@…" for exactly this reason. The
+// conversation is marked is_group instead.
+//
+// First-time identities get an auto-created contact. Auto-creation is
+// intentionally cheap and never silently merges across identifiers — see
+// ADR-0003.
+func (s *Store) UpsertConversationIdentity(ctx context.Context, source, name string, hint contacts.SourceIdentity) (int64, error) {
+	identity := contacts.DeriveIdentity(name, hint)
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return 0, err
@@ -159,7 +183,8 @@ func (s *Store) UpsertConversation(ctx context.Context, source, name string) (in
 	switch {
 	case err == sql.ErrNoRows:
 		res, err := tx.ExecContext(ctx,
-			`INSERT INTO conversations(source, name) VALUES(?, ?)`, source, name)
+			`INSERT INTO conversations(source, name, is_group) VALUES(?, ?, ?)`,
+			source, name, boolToInt(identity.IsGroup))
 		if err != nil {
 			return 0, fmt.Errorf("insert conversation %s/%s: %w", source, name, err)
 		}
@@ -171,18 +196,33 @@ func (s *Store) UpsertConversation(ctx context.Context, source, name string) (in
 		return 0, fmt.Errorf("lookup conversation %s/%s: %w", source, name, err)
 	}
 
-	if !contactID.Valid {
+	// A group thread never gets a synthesized contact; make sure a thread that
+	// was previously mis-imported as a person stops claiming to be one.
+	if identity.IsGroup {
+		if _, err := tx.ExecContext(ctx,
+			`UPDATE conversations SET is_group = 1, contact_id = NULL WHERE id = ?`,
+			convID); err != nil {
+			return 0, fmt.Errorf("mark group conversation: %w", err)
+		}
+		if err := tx.Commit(); err != nil {
+			return 0, err
+		}
+		rollback = false
+		return convID, nil
+	}
+
+	if !contactID.Valid && identity.Identifier != "" {
 		// Try to find an existing contact via the (source, identifier) tuple
 		// first — handles the case where a conversation was deleted and re-
 		// ingested under the same identifier.
 		var existingCID sql.NullInt64
 		err = tx.QueryRowContext(ctx,
 			`SELECT contact_id FROM contact_identifiers WHERE source = ? AND identifier = ?`,
-			source, name).Scan(&existingCID)
+			source, identity.Identifier).Scan(&existingCID)
 		switch {
 		case err == sql.ErrNoRows:
 			res, err := tx.ExecContext(ctx,
-				`INSERT INTO contacts(display_name) VALUES(?)`, name)
+				`INSERT INTO contacts(display_name) VALUES(?)`, identity.DisplayName)
 			if err != nil {
 				return 0, fmt.Errorf("create contact: %w", err)
 			}
@@ -192,7 +232,7 @@ func (s *Store) UpsertConversation(ctx context.Context, source, name string) (in
 			}
 			if _, err := tx.ExecContext(ctx,
 				`INSERT INTO contact_identifiers(contact_id, source, identifier) VALUES(?, ?, ?)`,
-				newCID, source, name); err != nil {
+				newCID, source, identity.Identifier); err != nil {
 				return 0, fmt.Errorf("create contact_identifier: %w", err)
 			}
 			existingCID = sql.NullInt64{Int64: newCID, Valid: true}

@@ -1,0 +1,290 @@
+package store
+
+import (
+	"context"
+	"path/filepath"
+	"testing"
+
+	"github.com/joestump/msgbrowse/internal/contacts"
+	"github.com/joestump/msgbrowse/internal/source"
+)
+
+func repairTestStore(t *testing.T) *Store {
+	t.Helper()
+	st, err := Open(filepath.Join(t.TempDir(), "repair.sqlite"))
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+	return st
+}
+
+func identifiersOf(t *testing.T, st *Store, contactID int64) []string {
+	t.Helper()
+	rows, err := st.db.Query(`SELECT identifier FROM contact_identifiers WHERE contact_id = ? ORDER BY identifier`, contactID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rows.Close()
+	var out []string
+	for rows.Next() {
+		var s string
+		if err := rows.Scan(&s); err != nil {
+			t.Fatal(err)
+		}
+		out = append(out, s)
+	}
+	return out
+}
+
+// TestWhatsAppJIDBecomesTheIdentifier: the importer's parsed handle wins over
+// the display name. This is the fix that lets a WhatsApp contact meet the same
+// person on another source — before #363 the identifier was "Chelsea Stump".
+func TestWhatsAppJIDBecomesTheIdentifier(t *testing.T) {
+	st := repairTestStore(t)
+	ctx := context.Background()
+
+	convID, err := st.UpsertConversationIdentity(ctx, source.WhatsApp, "Chelsea Stump",
+		contacts.SourceIdentity{Identifier: "15551234567"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var contactID int64
+	if err := st.db.QueryRow(`SELECT contact_id FROM conversations WHERE id = ?`, convID).Scan(&contactID); err != nil {
+		t.Fatal(err)
+	}
+	if got := identifiersOf(t, st, contactID); len(got) != 1 || got[0] != "15551234567" {
+		t.Errorf("identifiers = %v, want [15551234567]", got)
+	}
+	var name string
+	if err := st.db.QueryRow(`SELECT display_name FROM contacts WHERE id = ?`, contactID).Scan(&name); err != nil {
+		t.Fatal(err)
+	}
+	if name != "Chelsea Stump" {
+		t.Errorf("display_name = %q, want the profile name", name)
+	}
+}
+
+// TestGroupThreadMintsNoContact: a multi-recipient thread name is a list of
+// people, so no contact is invented for it. The reported archive had a contact
+// whose identifier was "me@…, chelsea…@gmail.com".
+func TestGroupThreadMintsNoContact(t *testing.T) {
+	st := repairTestStore(t)
+	ctx := context.Background()
+
+	convID, err := st.UpsertConversation(ctx, source.IMessage, "me@example.com, chelsea@example.com")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var isGroup int
+	var contactID *int64
+	if err := st.db.QueryRow(`SELECT is_group, contact_id FROM conversations WHERE id = ?`, convID).
+		Scan(&isGroup, &contactID); err != nil {
+		t.Fatal(err)
+	}
+	if isGroup != 1 {
+		t.Error("comma-joined conversation not marked is_group")
+	}
+	if contactID != nil {
+		t.Errorf("group thread synthesized contact %d", *contactID)
+	}
+	var contactCount int
+	if err := st.db.QueryRow(`SELECT COUNT(*) FROM contacts`).Scan(&contactCount); err != nil {
+		t.Fatal(err)
+	}
+	if contactCount != 0 {
+		t.Errorf("contacts = %d, want 0 for a group-only archive", contactCount)
+	}
+}
+
+// TestCrossSourceAutoMergeOnSharedPhone is the issue's headline acceptance:
+// with real handles stored, a Signal-side and an iMessage-side contact for the
+// same number auto-merge, and the decision is recorded with origin='auto'. On
+// the reported archive contact_links held 9 rows, every one of them manual.
+func TestCrossSourceAutoMergeOnSharedPhone(t *testing.T) {
+	st := repairTestStore(t)
+	ctx := context.Background()
+
+	if err := st.SetMergeRules(ctx, MergeRules{
+		AutoMerge: true, MatchPhone: true, MatchEmail: true,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	// Two sources that BOTH carry the number, in different shapes: an
+	// international form on one side and a national one on the other.
+	if _, err := st.UpsertConversationIdentity(ctx, source.WhatsApp, "Chelsea Stump",
+		contacts.SourceIdentity{Identifier: "+15551234567"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.UpsertConversation(ctx, source.IMessage, "15551234567"); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.ReconcileContacts(ctx, nil); err != nil {
+		t.Fatal(err)
+	}
+
+	var autoLinks int
+	if err := st.db.QueryRow(
+		`SELECT COUNT(*) FROM contact_links WHERE kind = 'merge' AND origin = 'auto'`).Scan(&autoLinks); err != nil {
+		t.Fatal(err)
+	}
+	if autoLinks == 0 {
+		t.Fatal("no auto merge recorded — cross-source matching still cannot fire")
+	}
+	var contactCount int
+	if err := st.db.QueryRow(`SELECT COUNT(DISTINCT contact_id) FROM conversations WHERE contact_id IS NOT NULL`).
+		Scan(&contactCount); err != nil {
+		t.Fatal(err)
+	}
+	if contactCount != 1 {
+		t.Errorf("conversations resolve to %d contacts, want 1 merged person", contactCount)
+	}
+}
+
+// TestDisplayNameNeverAutoMerges is the safety counterpart: the same two people
+// matched ONLY by name stay apart, no matter how permissive the rules are. This
+// mirrors the address-book guarantee in ADR-0024.
+func TestDisplayNameNeverAutoMerges(t *testing.T) {
+	st := repairTestStore(t)
+	ctx := context.Background()
+
+	if err := st.SetMergeRules(ctx, MergeRules{
+		AutoMerge: true, MatchPhone: true, MatchEmail: true, MatchDisplayName: true,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	// Signal has only a profile name; iMessage has an email. Nothing but the
+	// name connects them.
+	if _, err := st.UpsertConversation(ctx, source.Signal, "ChelseaStump"); err != nil {
+		t.Fatal(err)
+	}
+	iid, err := st.UpsertConversation(ctx, source.IMessage, "chelsea@example.com")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Give the iMessage contact the matching display name.
+	var iContact int64
+	if err := st.db.QueryRow(`SELECT contact_id FROM conversations WHERE id = ?`, iid).Scan(&iContact); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.db.Exec(`UPDATE contacts SET display_name = ? WHERE id = ?`, "Chelsea Stump", iContact); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := st.ReconcileContacts(ctx, nil); err != nil {
+		t.Fatal(err)
+	}
+	var autoLinks int
+	if err := st.db.QueryRow(
+		`SELECT COUNT(*) FROM contact_links WHERE kind = 'merge' AND origin = 'auto'`).Scan(&autoLinks); err != nil {
+		t.Fatal(err)
+	}
+	if autoLinks != 0 {
+		t.Fatalf("a display-name match auto-merged %d pair(s) — it must only ever suggest", autoLinks)
+	}
+
+	// It must still SUGGEST, or the Signal contact is unreachable forever.
+	cands, err := st.MergeCandidates(ctx, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var found bool
+	for _, c := range cands {
+		if c.Reason == string(contacts.ReasonDisplayName) {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("no display-name suggestion offered; candidates = %+v", cands)
+	}
+}
+
+// TestRepairHealsLegacyRowsAndIsIdempotent: an archive written under the old
+// rule fixes itself on the next import, and a second pass writes nothing.
+func TestRepairHealsLegacyRowsAndIsIdempotent(t *testing.T) {
+	st := repairTestStore(t)
+	ctx := context.Background()
+
+	// Simulate the legacy shape directly: a group thread that minted a contact,
+	// with the thread name stored as that contact's identifier.
+	if _, err := st.db.Exec(
+		`INSERT INTO contacts(id, display_name) VALUES (1, 'me@example.com, chelsea@example.com')`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.db.Exec(
+		`INSERT INTO contact_identifiers(contact_id, source, identifier)
+		 VALUES (1, 'imessage', 'me@example.com, chelsea@example.com')`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.db.Exec(
+		`INSERT INTO conversations(id, source, name, contact_id, is_group)
+		 VALUES (1, 'imessage', 'me@example.com, chelsea@example.com', 1, 0)`); err != nil {
+		t.Fatal(err)
+	}
+
+	rep, err := st.RepairContactIdentities(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rep.GroupsMarked != 1 {
+		t.Errorf("GroupsMarked = %d, want 1", rep.GroupsMarked)
+	}
+	if rep.ContactsOrphaned != 1 {
+		t.Errorf("ContactsOrphaned = %d, want 1 (the invented person)", rep.ContactsOrphaned)
+	}
+	var contactCount, isGroup int
+	if err := st.db.QueryRow(`SELECT COUNT(*) FROM contacts`).Scan(&contactCount); err != nil {
+		t.Fatal(err)
+	}
+	if contactCount != 0 {
+		t.Errorf("contacts = %d, want 0 — the group's contact should be gone", contactCount)
+	}
+	if err := st.db.QueryRow(`SELECT is_group FROM conversations WHERE id = 1`).Scan(&isGroup); err != nil {
+		t.Fatal(err)
+	}
+	if isGroup != 1 {
+		t.Error("conversation not marked is_group by the repair")
+	}
+
+	// Idempotence: the second pass must be a no-op, or the repair would churn
+	// the database on every import forever.
+	again, err := st.RepairContactIdentities(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if again.Changed() {
+		t.Errorf("second repair pass wrote changes: %+v", again)
+	}
+}
+
+// TestContactDiagnosticCounts: the counters that make "merging is silently
+// doing nothing" visible instead of inferred.
+func TestContactDiagnosticCounts(t *testing.T) {
+	st := repairTestStore(t)
+	ctx := context.Background()
+
+	if _, err := st.UpsertConversationIdentity(ctx, source.WhatsApp, "Chelsea Stump",
+		contacts.SourceIdentity{Identifier: "+15551234567"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.UpsertConversation(ctx, source.Signal, "ChelseaStump"); err != nil {
+		t.Fatal(err)
+	}
+
+	d, err := st.ContactDiagnosticCounts(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if d.Contacts != 2 {
+		t.Errorf("Contacts = %d, want 2", d.Contacts)
+	}
+	if d.RealHandles != 1 {
+		t.Errorf("RealHandles = %d, want 1 — only WhatsApp supplied a phone", d.RealHandles)
+	}
+	if d.MultiSource != 0 {
+		t.Errorf("MultiSource = %d, want 0 before any merge", d.MultiSource)
+	}
+	if d.AutoMerged != 0 || d.ManualMerged != 0 {
+		t.Errorf("merge counts = auto %d / manual %d, want 0/0", d.AutoMerged, d.ManualMerged)
+	}
+}

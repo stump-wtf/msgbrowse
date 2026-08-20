@@ -6,7 +6,7 @@ import "context"
 // `user_version` pragma. On Open, the migrations runner brings any older
 // database forward to this version. Bump it and append a migration whenever the
 // schema changes.
-const schemaVersion = 18
+const schemaVersion = 19
 
 // SchemaVersion returns the schema revision this binary expects (and migrates a
 // database forward to on Open). Read-only callers — notably `msgbrowse doctor` —
@@ -57,6 +57,7 @@ var migrations = []string{
 	16: schemaV16,
 	17: schemaV17,
 	18: schemaV18,
+	19: schemaV19,
 }
 
 // schemaV1 is the initial Signal-only schema. It is preserved verbatim so a
@@ -882,4 +883,30 @@ CREATE TABLE IF NOT EXISTS spam_state (
     ruleset_version   TEXT    NOT NULL,
     updated_at        TEXT    NOT NULL
 );
+`
+
+// schemaV19 adds the display-name merge rule (issue #363).
+//
+// Some sources carry no real handle at all: a signal-export archive identifies
+// a conversation only by the directory it lives in, which is the counterparty's
+// profile name, and nothing in chat.md carries a phone number or an account
+// UUID. On a real archive that left 0 of 115 Signal identifiers phone- or
+// email-shaped, so ReasonPhone and ReasonEmail could never fire and not one
+// automatic merge had ever happened. Display-name equivalence is the only
+// evidence available for those contacts.
+//
+// It defaults ON because it is suggest-only — the reconcile pass filters
+// ReasonDisplayName out of auto-merge exactly as it filters address-book hints,
+// so turning it on adds review-queue entries and can never merge anyone by
+// itself. Merging two people who happen to share a name would silently blend
+// two archives, which is the one failure this feature must not have.
+//
+// The identifier REPAIR is deliberately not here. Re-deriving an identifier
+// needs the same Normalize/DeriveIdentity logic the importers use, which is Go,
+// not SQL; expressing it as a SQL heuristic would be a second, subtly different
+// implementation of the rule. RepairContactIdentities does it instead and runs
+// idempotently on every import, so an existing 2,429-contact archive heals on
+// its next sync rather than needing a reimport.
+const schemaV19 = `
+ALTER TABLE contact_merge_rules ADD COLUMN match_display_name INTEGER NOT NULL DEFAULT 1;
 `

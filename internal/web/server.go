@@ -98,6 +98,7 @@ type Store interface {
 	GetMergeRules(ctx context.Context) (store.MergeRules, error)
 	SetMergeRules(ctx context.Context, r store.MergeRules) error
 	MergeCandidates(ctx context.Context, resolver contacts.Resolver) ([]store.MergeCandidate, error)
+	ContactDiagnosticCounts(ctx context.Context) (store.ContactDiagnostics, error)
 	MergedContacts(ctx context.Context) ([]store.MergedContact, error)
 	MergeContacts(ctx context.Context, a, b int64) (int64, error)
 	SplitContact(ctx context.Context, contactID int64, moved []store.ContactIdentifier) (int64, error)

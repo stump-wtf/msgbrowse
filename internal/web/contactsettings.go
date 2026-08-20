@@ -56,6 +56,12 @@ type contactSettingsData struct {
 	AddressBookState string
 	// Candidates are the suggested cross-source merges under the current rules.
 	Candidates []contactCandidateRow
+	// Diagnostics are the counters that make an inert merge engine visible
+	// (issue #363). The reported archive had 2,429 contacts, 9 of them
+	// multi-source, and every one of its 9 merge links manual — nothing in the
+	// UI said so, so "merging is silently doing nothing" had to be inferred
+	// from the database.
+	Diagnostics store.ContactDiagnostics
 	// Merged are the multi-identifier contacts the split control can act on.
 	Merged []contactMergedRow
 	// SetupToken arms every form through the same checkSetupPOST gate as the
@@ -123,9 +129,10 @@ func (s *Server) handleSettingsMergeRules(w http.ResponseWriter, r *http.Request
 		return // 403 already written; nothing was persisted
 	}
 	rules := store.MergeRules{
-		AutoMerge:  r.PostFormValue("auto_merge") == "1",
-		MatchPhone: r.PostFormValue("match_phone") == "1",
-		MatchEmail: r.PostFormValue("match_email") == "1",
+		AutoMerge:        r.PostFormValue("auto_merge") == "1",
+		MatchPhone:       r.PostFormValue("match_phone") == "1",
+		MatchEmail:       r.PostFormValue("match_email") == "1",
+		MatchDisplayName: r.PostFormValue("match_display_name") == "1",
 	}
 	if s.contactResolver().Availability(r.Context()) == contacts.Available {
 		rules.UseAddressBook = r.PostFormValue("use_address_book") == "1"
@@ -149,7 +156,8 @@ func (s *Server) handleSettingsMergeRules(w http.ResponseWriter, r *http.Request
 	}
 	s.log.Info("merge rules saved",
 		"auto_merge", rules.AutoMerge, "match_phone", rules.MatchPhone,
-		"match_email", rules.MatchEmail, "use_address_book", rules.UseAddressBook)
+		"match_email", rules.MatchEmail, "use_address_book", rules.UseAddressBook,
+		"match_display_name", rules.MatchDisplayName)
 	s.renderContactSettings(w, r, contactSettingsData{RulesResult: "ok"})
 }
 
@@ -258,6 +266,13 @@ func (s *Server) renderContactSettings(w http.ResponseWriter, r *http.Request, d
 		return
 	}
 	data.Rules = rules
+
+	diag, err := s.store.ContactDiagnosticCounts(r.Context())
+	if err != nil {
+		s.serverError(w, err)
+		return
+	}
+	data.Diagnostics = diag
 
 	cands, err := s.store.MergeCandidates(r.Context(), resolver)
 	if err != nil {

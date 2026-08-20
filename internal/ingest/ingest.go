@@ -143,6 +143,19 @@ func Run(ctx context.Context, st *store.Store, opts Options) (store.IngestRun, e
 	// Folding is best-effort: the import is already committed and hash-idempotent,
 	// and reconcile re-runs on the next import, so a reconcile failure is logged
 	// rather than failing an otherwise-successful (and needlessly retried) import.
+	// Heal rows written under the old name-as-identifier rule before matching
+	// runs, so an existing archive fixes itself on its next import rather than
+	// needing a reimport (issue #363). Best-effort for the same reason
+	// reconcile is: the import is already committed and idempotent.
+	if rep, rerr := st.RepairContactIdentities(ctx); rerr != nil {
+		log.Error("contact identity repair failed (import committed; will retry next run)", "error", rerr)
+		run.Errors++
+	} else if rep.Changed() {
+		log.Info("repaired contact identities",
+			"groups_marked", rep.GroupsMarked,
+			"identifiers_rewritten", rep.IdentifiersRewritten,
+			"contacts_orphaned", rep.ContactsOrphaned)
+	}
 	if err := st.ReconcileContacts(ctx, nil); err != nil {
 		log.Error("contact reconcile failed (import committed; will retry next run)", "error", err)
 		run.Errors++

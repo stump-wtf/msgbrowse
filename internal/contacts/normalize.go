@@ -151,3 +151,42 @@ func Normalize(raw string) Identifier {
 	}
 	return Identifier{Kind: KindHandle, Value: s}
 }
+
+// displayNameMinFolded is the shortest folded display name that counts as
+// evidence of identity. Real Signal profile names in the wild include "AT",
+// "Alex" and "40UnitRehab"; folding a two- or four-character name to a match
+// would group strangers, and a wrong merge silently blends two people's
+// archives. Six characters is long enough that a collision is usually a real
+// shared name rather than an abbreviation.
+const displayNameMinFolded = 6
+
+// FoldDisplayName canonicalizes a display name for weak identity matching:
+// lowercased with every non-alphanumeric character removed, so "ChelseaStump",
+// "Chelsea Stump" and "chelsea-stump" all fold together.
+//
+// It returns "" for anything that must not participate in matching: a name
+// shorter than displayNameMinFolded once folded, and any name that is itself a
+// phone number or email (those are matched precisely by the strong reasons, and
+// folding a phone number would strip the very punctuation that makes it a
+// phone number).
+func FoldDisplayName(raw string) string {
+	s := strings.TrimSpace(raw)
+	if s == "" {
+		return ""
+	}
+	if id := Normalize(s); id.Kind == KindPhone || id.Kind == KindEmail {
+		return ""
+	}
+	var b strings.Builder
+	b.Grow(len(s))
+	for _, r := range strings.ToLower(s) {
+		if unicode.IsLetter(r) || unicode.IsDigit(r) {
+			b.WriteRune(r)
+		}
+	}
+	folded := b.String()
+	if len([]rune(folded)) < displayNameMinFolded {
+		return ""
+	}
+	return folded
+}

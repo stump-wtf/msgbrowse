@@ -61,6 +61,13 @@
         <div class="flex flex-wrap gap-2">
           <label class="toggle-chip"><input type="checkbox" name="match_phone" value="1" {{if .Rules.MatchPhone}}checked{{end}}> Match phone numbers</label>
           <label class="toggle-chip"><input type="checkbox" name="match_email" value="1" {{if .Rules.MatchEmail}}checked{{end}}> Match email addresses</label>
+          {{/* Display-name matching (#363): the ONLY evidence available for a
+               source that carries no real handle — a Signal export identifies a
+               conversation by profile name and nothing else, so phone and email
+               matching can never fire for it. Suggest-only, enforced in the
+               store beside the address-book filter, because two people who share
+               a name are not the same person. */}}
+          <label class="toggle-chip"><input type="checkbox" name="match_display_name" value="1" {{if .Rules.MatchDisplayName}}checked{{end}}> Match similar names (suggest only)</label>
           {{/* The address-book hint toggle mirrors the resolver's tri-state
                (issue #9 seam): live only when a readable address book is
                present, disabled with the matching absent/needs-permission note
@@ -90,6 +97,36 @@
       </form>
     </section>
 
+    {{/* DIAGNOSTICS (#363): merging used to be able to fail completely and
+         silently — the reported archive had 2,429 contacts, 9 of them
+         multi-source, and all 9 of its merge links manual, with nothing on this
+         page saying so. These counters make an inert engine visible: a
+         "real handles" count far below the contact count explains an empty
+         suggestion list, because phone and email matching have almost nothing
+         to compare. */}}
+    <section class="status-card" aria-labelledby="contacts-diagnostics-heading">
+      <h2 id="contacts-diagnostics-heading" class="status-card-title">Merge coverage</h2>
+      <div class="status-grid">
+        <div><div class="status-metric-label">Contacts</div>
+          <div class="status-metric-value">{{num .Diagnostics.Contacts}}</div></div>
+        <div><div class="status-metric-label">With a phone or email</div>
+          <div class="status-metric-value">{{num .Diagnostics.RealHandles}} of {{num .Diagnostics.Contacts}}</div></div>
+        <div><div class="status-metric-label">Joined across sources</div>
+          <div class="status-metric-value">{{num .Diagnostics.MultiSource}}</div></div>
+        <div><div class="status-metric-label">Merges recorded</div>
+          <div class="status-metric-value">{{num .Diagnostics.ManualMerged}} by you · {{num .Diagnostics.AutoMerged}} automatic</div></div>
+      </div>
+      {{- if and (gt .Diagnostics.Contacts 0) (eq .Diagnostics.RealHandles 0)}}
+      <p class="status-note mt-4"><span class="sync-badge sync-badge-warn">Nothing to match on</span>
+        No contact carries a phone number or email address, so phone and email matching cannot suggest
+        anything. Sources that export only a display name — Signal archives in particular — rely on
+        name matching above.</p>
+      {{- end}}
+      {{- if .Candidates}}
+      <p class="status-note mt-4">{{num (len .Candidates)}} suggestion(s) waiting for review below.</p>
+      {{- end}}
+    </section>
+
     {{/* CANDIDATE review: the suggested cross-source merges under the current
          rules, each with a one-click Merge (a form POST carrying the two ids). */}}
     <section class="status-card space-y-4" aria-labelledby="contacts-candidates-heading">
@@ -105,6 +142,8 @@
             {{- if eq .Reason "phone"}}Share the phone number <span class="font-mono">{{.Value}}</span>.
             {{- else if eq .Reason "email"}}Share the email <span class="font-mono">{{.Value}}</span>.
             {{- else if eq .Reason "address-book"}}Your address book lists both under <strong>{{.Value}}</strong>.
+            {{- else if eq .Reason "display-name"}}Have matching names (<strong>{{.Value}}</strong>) on different sources.
+              This is a weaker match than a shared phone or email, so check it before merging.
             {{- else}}Look like the same person.{{end}}
           </p>
           <div class="setup-card-actions">

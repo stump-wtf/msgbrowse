@@ -19,6 +19,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -42,13 +43,19 @@ type MergeRules struct {
 	// UseAddressBook lets an available resolver's people contribute candidate
 	// suggestions. Address-book hints NEVER auto-merge regardless of AutoMerge.
 	UseAddressBook bool
+	// MatchDisplayName lets equivalent display names contribute candidate
+	// suggestions — the only evidence available for a source that carries no
+	// real handle (issue #363). Like address-book hints, these NEVER auto-merge
+	// regardless of AutoMerge.
+	MatchDisplayName bool
 }
 
 func (r MergeRules) match() contacts.MatchRules {
 	return contacts.MatchRules{
-		MatchPhone:     r.MatchPhone,
-		MatchEmail:     r.MatchEmail,
-		UseAddressBook: r.UseAddressBook,
+		MatchPhone:       r.MatchPhone,
+		MatchEmail:       r.MatchEmail,
+		UseAddressBook:   r.UseAddressBook,
+		MatchDisplayName: r.MatchDisplayName,
 	}
 }
 
@@ -70,21 +77,22 @@ func (s *Store) GetMergeRules(ctx context.Context) (MergeRules, error) {
 
 func getMergeRules(ctx context.Context, q querier) (MergeRules, error) {
 	var r MergeRules
-	var auto, phone, email, book int
+	var auto, phone, email, book, dispName int
 	err := q.QueryRowContext(ctx,
-		`SELECT auto_merge, match_phone, match_email, use_address_book
-		   FROM contact_merge_rules WHERE id = 1`).Scan(&auto, &phone, &email, &book)
+		`SELECT auto_merge, match_phone, match_email, use_address_book, match_display_name
+		   FROM contact_merge_rules WHERE id = 1`).Scan(&auto, &phone, &email, &book, &dispName)
 	if err == sql.ErrNoRows {
-		return MergeRules{MatchPhone: true, MatchEmail: true, UseAddressBook: true}, nil
+		return MergeRules{MatchPhone: true, MatchEmail: true, UseAddressBook: true, MatchDisplayName: true}, nil
 	}
 	if err != nil {
 		return r, fmt.Errorf("get merge rules: %w", err)
 	}
 	return MergeRules{
-		AutoMerge:      auto != 0,
-		MatchPhone:     phone != 0,
-		MatchEmail:     email != 0,
-		UseAddressBook: book != 0,
+		AutoMerge:        auto != 0,
+		MatchPhone:       phone != 0,
+		MatchEmail:       email != 0,
+		UseAddressBook:   book != 0,
+		MatchDisplayName: dispName != 0,
 	}, nil
 }
 
@@ -93,16 +101,17 @@ func getMergeRules(ctx context.Context, q querier) (MergeRules, error) {
 func (s *Store) SetMergeRules(ctx context.Context, r MergeRules) error {
 	now := time.Now().UTC().Format(time.RFC3339)
 	_, err := s.db.ExecContext(ctx, `
-INSERT INTO contact_merge_rules (id, auto_merge, match_phone, match_email, use_address_book, updated_at)
-VALUES (1, ?, ?, ?, ?, ?)
+INSERT INTO contact_merge_rules (id, auto_merge, match_phone, match_email, use_address_book, match_display_name, updated_at)
+VALUES (1, ?, ?, ?, ?, ?, ?)
 ON CONFLICT(id) DO UPDATE SET
     auto_merge=excluded.auto_merge,
     match_phone=excluded.match_phone,
     match_email=excluded.match_email,
     use_address_book=excluded.use_address_book,
+    match_display_name=excluded.match_display_name,
     updated_at=excluded.updated_at`,
 		boolToInt(r.AutoMerge), boolToInt(r.MatchPhone), boolToInt(r.MatchEmail),
-		boolToInt(r.UseAddressBook), now)
+		boolToInt(r.UseAddressBook), boolToInt(r.MatchDisplayName), now)
 	if err != nil {
 		return fmt.Errorf("set merge rules: %w", err)
 	}
@@ -163,15 +172,15 @@ func (s *Store) MergeCandidates(ctx context.Context, resolver contacts.Resolver)
 		return nil, err
 	}
 	people := addressBookPeople(ctx, resolver, rules)
-	cands := contacts.Candidates(stored, people, rules.match())
+	names, err := loadContactNames(ctx, s.db)
+	if err != nil {
+		return nil, err
+	}
+	cands := contacts.CandidatesWithNames(stored, people, displayNamed(names), rules.match())
 	if len(cands) == 0 {
 		return nil, nil
 	}
 	splitSet, err := loadSplitSet(ctx, s.db)
-	if err != nil {
-		return nil, err
-	}
-	names, err := loadContactNames(ctx, s.db)
 	if err != nil {
 		return nil, err
 	}
@@ -494,8 +503,14 @@ func (s *Store) ReconcileContacts(ctx context.Context, resolver contacts.Resolve
 			}
 		}
 		for _, c := range cands {
-			if c.Reason == contacts.ReasonAddressBook {
-				continue // hints never auto-merge
+			// Hints never auto-merge (ADR-0024). Both filtered reasons are
+			// suggestions a human confirms: an address-book grouping, and a
+			// display-name equivalence, which is the only evidence available
+			// for a source with no real handle (issue #363) and is far too weak
+			// to blend two archives on. They surface in the Contacts review
+			// queue instead.
+			if c.Reason == contacts.ReasonAddressBook || c.Reason == contacts.ReasonDisplayName {
+				continue
 			}
 			a, b := resolve(c.ContactA), resolve(c.ContactB)
 			if a == b {
@@ -818,4 +833,15 @@ func isMeaningfulName(name string, ids []idPair) bool {
 		}
 	}
 	return true
+}
+
+// displayNamed adapts the id→name map to the matcher's slice input, sorted by
+// contact id so candidate output stays deterministic.
+func displayNamed(names map[int64]string) []contacts.DisplayNamed {
+	out := make([]contacts.DisplayNamed, 0, len(names))
+	for id, n := range names {
+		out = append(out, contacts.DisplayNamed{ContactID: id, Name: n})
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].ContactID < out[j].ContactID })
+	return out
 }

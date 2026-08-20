@@ -51,12 +51,17 @@ func TestMergeRulesDefaultsAndRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := MergeRules{AutoMerge: false, MatchPhone: true, MatchEmail: true, UseAddressBook: true}
+	// MatchDisplayName defaults ON (#363): it is suggest-only — reconcile
+	// filters ReasonDisplayName out of auto-merge exactly as it filters
+	// address-book hints — and it is the ONLY evidence available for a source
+	// that carries no real handle, so defaulting it off would leave Signal
+	// contacts permanently unmergeable.
+	want := MergeRules{AutoMerge: false, MatchPhone: true, MatchEmail: true, UseAddressBook: true, MatchDisplayName: true}
 	if got != want {
 		t.Fatalf("default rules = %+v, want %+v", got, want)
 	}
 
-	set := MergeRules{AutoMerge: true, MatchPhone: true, MatchEmail: false, UseAddressBook: false}
+	set := MergeRules{AutoMerge: true, MatchPhone: true, MatchEmail: false, UseAddressBook: false, MatchDisplayName: false}
 	if err := st.SetMergeRules(ctx, set); err != nil {
 		t.Fatal(err)
 	}

@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/joestump/msgbrowse/internal/contacts"
 	"github.com/joestump/msgbrowse/internal/signal"
 	"github.com/joestump/msgbrowse/internal/source"
 	"github.com/joestump/msgbrowse/internal/store"
@@ -111,6 +112,19 @@ func Run(ctx context.Context, st *store.Store, opts Options) (store.IngestRun, e
 	// SPEC-0018). Idempotent, local-only; nil resolver = no address book.
 	// Best-effort: the import is committed and hash-idempotent, and reconcile
 	// re-runs next import, so a failure is logged rather than failing the import.
+	// Heal rows written under the old name-as-identifier rule before matching
+	// runs, so an existing archive fixes itself on its next import rather than
+	// needing a reimport (issue #363). Best-effort for the same reason
+	// reconcile is: the import is already committed and idempotent.
+	if rep, rerr := st.RepairContactIdentities(ctx); rerr != nil {
+		log.Error("contact identity repair failed (import committed; will retry next run)", "error", rerr)
+		run.Errors++
+	} else if rep.Changed() {
+		log.Info("repaired contact identities",
+			"groups_marked", rep.GroupsMarked,
+			"identifiers_rewritten", rep.IdentifiersRewritten,
+			"contacts_orphaned", rep.ContactsOrphaned)
+	}
 	if err := st.ReconcileContacts(ctx, nil); err != nil {
 		log.Error("contact reconcile failed (import committed; will retry next run)", "error", err)
 		run.Errors++
@@ -131,7 +145,16 @@ func importConversation(
 	ctx context.Context, st *store.Store, opts Options,
 	conv Conversation, mtime, size int64, at time.Time,
 ) (changed bool, added int, err error) {
-	convID, err := st.UpsertConversation(ctx, source.WhatsApp, conv.Name)
+	// The JID carries the real handle the display name does not: for a 1:1 chat
+	// its local part IS the phone number ("15551234567@s.whatsapp.net"). Both
+	// it and IsGroup used to be parsed and then thrown away at this call, which
+	// is why WhatsApp contacts were keyed by display name and could never merge
+	// with the same person on another source (issue #363).
+	hint := contacts.SourceIdentity{IsGroup: conv.IsGroup}
+	if !conv.IsGroup {
+		hint.Identifier = jidLocal(conv.JID)
+	}
+	convID, err := st.UpsertConversationIdentity(ctx, source.WhatsApp, conv.Name, hint)
 	if err != nil {
 		return false, 0, err
 	}

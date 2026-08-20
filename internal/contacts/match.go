@@ -40,6 +40,10 @@ type MatchRules struct {
 	// archive's identifiers contribute a candidate. Ignored when no people are
 	// supplied.
 	UseAddressBook bool
+	// MatchDisplayName lets equivalent display names contribute a candidate —
+	// the only evidence available for a source that carries no real handle
+	// (issue #363). Suggest-only: the store never auto-merges this reason.
+	MatchDisplayName bool
 }
 
 // ReasonKind is the machine-readable explanation for a candidate — which kind
@@ -54,6 +58,19 @@ const (
 	// ReasonAddressBook: an address-book person carries an identifier of each
 	// contact, so the book groups them.
 	ReasonAddressBook ReasonKind = "address-book"
+	// ReasonDisplayName: the two contacts have equivalent display names after
+	// case- and separator-folding ("ChelseaStump" ~ "Chelsea Stump").
+	//
+	// This is the WEAKEST reason and exists because some sources have no real
+	// handle to offer at all — a Signal export identifies a conversation only
+	// by profile name (issue #363), so phone and email matching can never fire
+	// for it. Name equivalence is the only remaining evidence.
+	//
+	// It MUST NOT auto-merge, and the store enforces that alongside
+	// ReasonAddressBook. Two people who share a common name are not the same
+	// person, and silently blending two archives is unrecoverable for the
+	// reader in a way that a missed suggestion is not.
+	ReasonDisplayName ReasonKind = "display-name"
 )
 
 // priority orders reasons when one pair is grouped by several kinds; the
@@ -66,9 +83,19 @@ func (r ReasonKind) priority() int {
 		return 1
 	case ReasonAddressBook:
 		return 2
-	default:
+	case ReasonDisplayName:
 		return 3
+	default:
+		return 4
 	}
+}
+
+// DisplayNamed is one contact's display name — the input to display-name
+// matching, supplied alongside StoredIdentifier because a display name lives on
+// contacts, not contact_identifiers.
+type DisplayNamed struct {
+	ContactID int64
+	Name      string
 }
 
 // Candidate is one suggested merge: two distinct contacts that the matcher
@@ -95,6 +122,13 @@ type Candidate struct {
 // matching runs on stored identifiers alone, exactly as SPEC-0018 REQ-0018-001
 // requires.
 func Candidates(stored []StoredIdentifier, people []Person, rules MatchRules) []Candidate {
+	return CandidatesWithNames(stored, people, nil, rules)
+}
+
+// CandidatesWithNames is Candidates plus display-name evidence. names supplies
+// each contact's display name; it is only consulted when rules.MatchDisplayName
+// is set, so callers that cannot cheaply load names may pass nil.
+func CandidatesWithNames(stored []StoredIdentifier, people []Person, names []DisplayNamed, rules MatchRules) []Candidate {
 	// Canonicalize every stored identifier once; drop anything that is not an
 	// identifier (blank / junk).
 	type normStored struct {
@@ -190,6 +224,58 @@ func Candidates(stored []StoredIdentifier, people []Person, rules MatchRules) []
 		}
 	}
 
+	// Display name: the weakest evidence, and the only evidence that exists for
+	// a source carrying no real handle (issue #363 — a Signal export names a
+	// conversation by profile name and nothing else).
+	//
+	// Two guards keep this from inventing merges:
+	//
+	//  1. Only pairs whose SOURCES ARE DISJOINT are considered. The purpose is
+	//     bridging a person across sources; two same-source contacts sharing a
+	//     name are far more likely to be two different people, and merging them
+	//     blends two archives with no way for the reader to tell.
+	//  2. A folded name must be long enough to be evidence at all. Signal
+	//     profile names in the wild include "AT" and "Alex"; folding those to a
+	//     match would group strangers.
+	//
+	// It never auto-merges — the store filters this reason exactly as it
+	// filters ReasonAddressBook.
+	if rules.MatchDisplayName && len(names) > 0 {
+		sources := map[int64]map[string]bool{}
+		for _, sid := range stored {
+			if sources[sid.ContactID] == nil {
+				sources[sid.ContactID] = map[string]bool{}
+			}
+			sources[sid.ContactID][sid.Source] = true
+		}
+		disjoint := func(a, b int64) bool {
+			for src := range sources[a] {
+				if sources[b][src] {
+					return false
+				}
+			}
+			return true
+		}
+		byName := map[string][]int64{}
+		for _, n := range names {
+			folded := FoldDisplayName(n.Name)
+			if folded == "" {
+				continue
+			}
+			byName[folded] = appendDistinct(byName[folded], n.ContactID)
+		}
+		for _, ids := range byName {
+			for i := 0; i < len(ids); i++ {
+				for j := i + 1; j < len(ids); j++ {
+					if !disjoint(ids[i], ids[j]) {
+						continue
+					}
+					record(ids[i], ids[j], ReasonDisplayName, displayNameOf(names, ids[i]))
+				}
+			}
+		}
+	}
+
 	out := make([]Candidate, 0, len(best))
 	for _, c := range best {
 		out = append(out, c)
@@ -276,4 +362,15 @@ func appendDistinct(ids []int64, v int64) []int64 {
 		}
 	}
 	return append(ids, v)
+}
+
+// displayNameOf returns a contact's display name for reporting on a candidate,
+// so the review queue shows the name that matched rather than its folded form.
+func displayNameOf(names []DisplayNamed, id int64) string {
+	for _, n := range names {
+		if n.ContactID == id {
+			return n.Name
+		}
+	}
+	return ""
 }
