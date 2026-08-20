@@ -6,8 +6,10 @@ package embedded
 
 import (
 	"context"
+	"encoding/json"
 	"io"
 	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -27,6 +29,12 @@ var setupTokenRe = regexp.MustCompile(`name="setup_token" value="([0-9a-f]{64})"
 func TestLLMSettingsSaveEndToEnd(t *testing.T) {
 	cfg := testConfig(t)
 	cfg.SourceFile = filepath.Join(t.TempDir(), "config.yaml")
+	// The LLM tab's model fields are dropdowns discovered from the endpoint's
+	// /v1/models listing, and a save may only name a discovered model
+	// (SPEC-0004 REQ-0004-011). Point the process's boot endpoint at a stub
+	// that lists them, or this test exercises the rejection path while
+	// claiming to test desktop-mode persistence.
+	cfg.LLM.BaseURL = modelsStub(t, "nomic-embed-text", "llama3") + "/v1"
 
 	ctx, cancel := context.WithCancel(context.Background())
 	es, err := Start(ctx, cfg, testLogger())
@@ -53,6 +61,13 @@ func TestLLMSettingsSaveEndToEnd(t *testing.T) {
 	for _, want := range []string{`name="base_url"`, `name="embed_model"`, `name="facts_model"`, `name="api_key"`, "MSGBROWSE_LLM_API_KEY"} {
 		if !strings.Contains(string(page), want) {
 			t.Errorf("LLM tab missing %q", want)
+		}
+	}
+	// The model fields are selects in desktop mode too — the prohibition is on
+	// the surface, not on one server's wiring of it (REQ-0004-011).
+	for _, want := range []string{`<select id="llm-embed-model"`, `<select id="llm-facts-model"`} {
+		if !strings.Contains(string(page), want) {
+			t.Errorf("LLM tab missing %q — model fields must never be text inputs", want)
 		}
 	}
 	m := setupTokenRe.FindSubmatch(page)
@@ -136,4 +151,25 @@ func TestLLMSettingsSaveEndToEnd(t *testing.T) {
 	if saved2, _ := os.ReadFile(cfg.SourceFile); strings.Contains(string(saved2), "evil.example") {
 		t.Error("cross-origin save mutated the config file")
 	}
+}
+
+// modelsStub serves an OpenAI-compatible /v1/models listing and returns its
+// base URL. The desktop stack builds a real llm.Client from config, so the
+// LLM tab's model discovery is a real HTTP call and needs a real endpoint.
+func modelsStub(t *testing.T, models ...string) string {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !strings.HasSuffix(r.URL.Path, "/models") {
+			http.NotFound(w, r)
+			return
+		}
+		data := make([]map[string]string, 0, len(models))
+		for _, m := range models {
+			data = append(data, map[string]string{"id": m})
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{"object": "list", "data": data})
+	}))
+	t.Cleanup(srv.Close)
+	return srv.URL
 }
