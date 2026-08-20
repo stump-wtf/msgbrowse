@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -938,16 +939,31 @@ func llmTabBody(t *testing.T, srv *Server) string {
 
 // assertNoModelTextInput is the prohibition itself: no rendering path, in any
 // state, may put a model behind a text input.
+//
+// It scans every <input> tag and rejects any whose name is a model field,
+// rather than matching attribute substrings. The substring form missed the
+// ordering a developer is most likely to write by hand — `<input type="text"
+// name="embed_model">` matches neither `<input id="llm-embed-model"` nor
+// `name="embed_model" type="text"`, so the prohibition passed with a free-text
+// model field rendered on the page. Any <input> carrying these names defeats
+// the select, hidden ones included, so the name alone is the test.
+//
+// @joestump-agent 08/20/2026 - Made order-insensitive while reviewing #375.
+var (
+	inputTagRe  = regexp.MustCompile(`(?is)<input\b[^>]*>`)
+	inputNameRe = regexp.MustCompile(`(?is)\bname\s*=\s*["']([^"']*)["']`)
+)
+
 func assertNoModelTextInput(t *testing.T, body string) {
 	t.Helper()
-	for _, forbidden := range []string{
-		`<input id="llm-embed-model"`,
-		`<input id="llm-facts-model"`,
-		`name="embed_model" type="text"`,
-		`name="facts_model" type="text"`,
-	} {
-		if contains(body, forbidden) {
-			t.Errorf("model field rendered as free text (%q) — REQ-0004-011 forbids it", forbidden)
+	for _, tag := range inputTagRe.FindAllString(body, -1) {
+		m := inputNameRe.FindStringSubmatch(tag)
+		if m == nil {
+			continue
+		}
+		switch strings.TrimSpace(m[1]) {
+		case "embed_model", "facts_model":
+			t.Errorf("model field rendered as an <input> — REQ-0004-011 requires a <select>.\ntag: %s", tag)
 		}
 	}
 }
