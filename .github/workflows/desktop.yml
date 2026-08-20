@@ -567,6 +567,9 @@ jobs:
     # Scoped to this job so the build jobs keep the read-only token.
     permissions:
       contents: write
+    # Job-level so the tap-bump step's `if:` guard can see it (see that step).
+    env:
+      GITEA_PAT: ${{ secrets.GITEA_PAT }}
     steps:
       - uses: actions/download-artifact@v4
         with:
@@ -597,6 +600,27 @@ jobs:
           # every release stays a prerelease rather than implying notarized
           # bits. Flip this once the signing secrets in the darwin job go live.
           prerelease: true
+          body: |
+            ## Install
+
+            **macOS** — download `msgbrowse-desktop_darwin_universal.zip`, unzip, then:
+
+            ```
+            xattr -dr com.apple.quarantine msgbrowse.app
+            ```
+
+            The bundle is ad-hoc signed (Developer ID notarization pending), so
+            Gatekeeper blocks the first launch until the quarantine attribute is
+            stripped. That strip is also what lets the embedded Python and
+            exporter binaries run as subprocesses.
+
+            **Linux** — download `msgbrowse-desktop_linux_amd64.tar.gz` and extract.
+            The execute bit is preserved. Needs the WebKit2GTK runtime:
+
+            ```
+            sudo apt-get install libgtk-3-0 libwebkit2gtk-4.1-0
+            ```
+
 
       # --- Canonical-host asset mirror + Homebrew tap bump ----------------------
       # The tap (stump.wtf/homebrew-tap, canonical on Gitea) installs from
@@ -611,14 +635,33 @@ jobs:
       #      main on Gitea.
       # Gated on GITEA_PAT (scoped write:repository token) so the job stays
       # green if the secret is ever absent.
-      # The tag object is needed for the deterministic source tarball below.
+      #
+      # @joestump-agent 08/20/2026 - Review fixes. The block originally landed
+      # BETWEEN `prerelease:` and `body:` inside the Publish release step's
+      # `with:` mapping. Because `body:` sits at the same indent as the new
+      # step's `run: |` content, YAML folded the whole release-notes markdown
+      # into the shell script: Publish release silently lost its install
+      # instructions, and this step would have run `body: |` under `set -e`.
+      # Gitea never caught it — pipeline.yaml shadows .github/workflows, so
+      # nothing on a PR parses this file. Also moved the checkout into repo/
+      # (it was wiping dist/), hoisted GITEA_PAT to job env, and made a
+      # no-change tap re-run a no-op instead of a failure.
+      # Checked out into repo/ rather than the workspace root: this job's
+      # earlier steps have already populated artifacts/ and dist/, and
+      # actions/checkout defaults to clean: true (`git clean -ffdx`), which
+      # would delete the very zip this step uploads. fetch-depth: 0 brings
+      # the tag object `git archive` needs.
       - uses: actions/checkout@v4
         with:
+          path: repo
           fetch-depth: 0
 
       - name: Mirror release assets to Gitea + bump Homebrew tap
+        # GITEA_PAT comes from the job-level env above, not a step-level one:
+        # a step's own `env:` is not reliably visible to that step's `if:`, and
+        # the failure mode is a silent skip — the release publishes, the tap
+        # never moves, and nothing is red.
         env:
-          GITEA_PAT: ${{ secrets.GITEA_PAT }}
           GITEA_URL: https://gitea.stump.rocks
         if: ${{ env.GITEA_PAT != '' }}
         run: |
@@ -632,7 +675,8 @@ jobs:
 
           # Deterministic source tarball — same bytes every run for a tag, so
           # the formula sha256 is stable (on-the-fly archive endpoints are not).
-          git archive --format=tar.gz --prefix="msgbrowse/" -o "dist/$SRC_ASSET" "$TAG"
+          git -C repo archive --format=tar.gz --prefix="msgbrowse/" \
+            -o "$PWD/dist/$SRC_ASSET" "$TAG"
 
           # The release object is created on Gitea by the release flow; require it.
           RID=$(curl -sf -H "$AUTH" "$API/repos/stump.wtf/msgbrowse/releases/tags/$TAG" | jq -r '.id')
@@ -666,25 +710,12 @@ jobs:
             && grep -q "version \"$VER\"" "$C" && grep -q "$SHA_ZIP" "$C"
           git config user.name "joestump-agent"
           git config user.email "joestump-agent@noreply.stump.rocks"
-          git commit -aqm "msgbrowse + msgbrowse-desktop v${VER} (automated tap bump)"
-          git -c http.extraheader="$AUTH" push -q origin main
-          body: |
-            ## Install
-
-            **macOS** — download `msgbrowse-desktop_darwin_universal.zip`, unzip, then:
-
-            ```
-            xattr -dr com.apple.quarantine msgbrowse.app
-            ```
-
-            The bundle is ad-hoc signed (Developer ID notarization pending), so
-            Gatekeeper blocks the first launch until the quarantine attribute is
-            stripped. That strip is also what lets the embedded Python and
-            exporter binaries run as subprocesses.
-
-            **Linux** — download `msgbrowse-desktop_linux_amd64.tar.gz` and extract.
-            The execute bit is preserved. Needs the WebKit2GTK runtime:
-
-            ```
-            sudo apt-get install libgtk-3-0 libwebkit2gtk-4.1-0
-            ```
+          # A re-run of the same tag leaves the tap already correct; committing
+          # nothing exits 1 under `set -e` and would fail an otherwise fine release.
+          if git diff --quiet; then
+            echo "tap already at v${VER} — nothing to push"
+          else
+            git commit -aqm "msgbrowse + msgbrowse-desktop v${VER} (automated tap bump)"
+            git -c http.extraheader="$AUTH" push -q origin main
+            echo "tap bumped to v${VER}"
+          fi
