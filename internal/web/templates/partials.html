@@ -432,3 +432,54 @@
   {{- if .body}}<p class="link-card-sub">{{.body | safe}}</p>{{end}}
 </div>
 {{- end}}
+
+{{/* Pipeline Run History — One Table For Every Pipeline
+     
+     The recent-runs table shared by every derived-data pipeline: semantic
+     embeddings, journal digests, and the facts/sentiment passes to come.
+     SPEC-0004 REQ-0004-010 requires exactly one shared define parameterised per
+     pipeline, because the two hand-maintained copies this replaces had already
+     drifted apart by a column.
+     
+     Dot: "rows" is []pipelineRunView, "unit" labels the count column
+     ("Embedded", "Digested"). The Scope column renders only when the pipeline
+     sets a scope, so a pipeline without one is not forced to carry a dead
+     column. Run error strings stay html/template-escaped — they are endpoint
+     output, not trusted markup.
+     
+     @joestump-agent 08/20/2026 - Extracted from status.html's two copies (#368). */}}
+{{define "pipeline_run_history"}}
+{{- if .rows}}
+{{- $scoped := false}}{{range .rows}}{{if .Scope}}{{$scoped = true}}{{end}}{{end}}
+        <div class="status-subtable mt-5">
+          <div class="status-metric-label mb-2">Recent runs</div>
+          <div class="overflow-x-auto">
+            <table class="w-full text-sm">
+              <thead>
+                <tr class="text-left opacity-60">
+                  <th class="pb-2 pr-4 font-medium">Started</th>
+                  {{- if $scoped}}<th class="pb-2 pr-4 font-medium">Scope</th>{{end}}
+                  <th class="pb-2 pr-4 font-medium">Status</th>
+                  <th class="pb-2 pr-4 font-medium">{{.unit}}</th>
+                  <th class="pb-2 pr-4 font-medium">Duration</th>
+                  <th class="pb-2 font-medium">Model</th>
+                </tr>
+              </thead>
+              <tbody>
+                {{- range .rows}}
+                <tr class="border-t border-base-300/40">
+                  <td class="whitespace-nowrap py-2 pr-4 mono">{{.Started}}</td>
+                  {{- if $scoped}}<td class="whitespace-nowrap py-2 pr-4">{{.Scope}}</td>{{end}}
+                  <td class="whitespace-nowrap py-2 pr-4"><span class="sync-badge sync-badge-{{.Badge}}">{{.Status}}</span>
+                    {{- if .Error}} <span class="opacity-60 font-mono">{{.Error}}</span>{{end}}</td>
+                  <td class="whitespace-nowrap py-2 pr-4 mono">{{num .Count}}</td>
+                  <td class="whitespace-nowrap py-2 pr-4 mono">{{.Duration}}</td>
+                  <td class="whitespace-nowrap py-2 mono opacity-70">{{.Model}}</td>
+                </tr>
+                {{- end}}
+              </tbody>
+            </table>
+          </div>
+        </div>
+{{- end}}
+{{- end}}

@@ -81,7 +81,7 @@ func (s *Server) handleStatusIndexProgress(w http.ResponseWriter, r *http.Reques
 		s.serverError(w, err)
 		return
 	}
-	data := statusData{
+	data := searchIndexData{
 		Embedding:      embedding,
 		History:        history,
 		IndexAvailable: s.indexer != nil,
@@ -99,7 +99,7 @@ func (s *Server) handleStatusIndexProgress(w http.ResponseWriter, r *http.Reques
 }
 
 // Fixed-enum result of a Build / Reset-&-rebuild request, mapped to a banner by
-// status.html. Never request-derived.
+// search_index.html. Never request-derived.
 const (
 	indexResultStarted     = "started"     // a build job was started
 	indexResultReset       = "reset"       // a reset-and-rebuild job was started

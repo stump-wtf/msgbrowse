@@ -12,49 +12,28 @@ import (
 	"time"
 )
 
-// embedRunView is one row of the Status page's index run-history table: a
-// completed / running / interrupted / failed pass, with its display strings
-// precomputed (the logic-free-template rule). Badge is the sync-badge modifier
-// suffix ("info" / "ok" / "warn" / "err").
-type embedRunView struct {
-	Started  string // local "2006-01-02 15:04"
-	Status   string // "Completed" | "Running" | "Interrupted" | "Failed"
-	Badge    string // sync-badge-<Badge>
-	Embedded int
-	Duration string // "3.2s" for a finished run, "—" otherwise
-	Model    string
-	Error    string // abort reason on a failed run, else ""
-}
-
 // embedRunHistory returns the most recent index runs classified for display
 // (newest first, capped at n) — the same heartbeat reasoning overviewEmbedding
 // applies to the single latest run, so the table and the line above it can
 // never disagree about whether a run is live.
-func (s *Server) embedRunHistory(ctx context.Context, n int) ([]embedRunView, error) {
+//
+// Rows are [pipelineRunView], the shape every pipeline's recent-runs table
+// shares; Count carries the embedded-message count, which the Search index tab
+// labels "Embedded". Embeddings have no per-run scope, so Scope stays empty and
+// the shared table drops the column.
+func (s *Server) embedRunHistory(ctx context.Context, n int) ([]pipelineRunView, error) {
 	runs, err := s.store.RecentEmbedRuns(ctx, n)
 	if err != nil {
 		return nil, err
 	}
-	out := make([]embedRunView, 0, len(runs))
+	out := make([]pipelineRunView, 0, len(runs))
 	for _, r := range runs {
-		v := embedRunView{
-			Started:  r.StartedAt.Local().Format(overviewTimeFormat),
-			Embedded: r.Embedded,
-			Model:    r.Model,
-			Duration: "—",
+		v := pipelineRunView{
+			Started: r.StartedAt.Local().Format(overviewTimeFormat),
+			Count:   r.Embedded,
+			Model:   r.Model,
 		}
-		switch {
-		case r.InFlight() && time.Since(r.UpdatedAt) <= embedRunStaleAfter:
-			v.Status, v.Badge = "Running", "info"
-		case r.InFlight():
-			v.Status, v.Badge = "Interrupted", "warn"
-		case r.Error != "":
-			v.Status, v.Badge, v.Error = "Failed", "err", r.Error
-			v.Duration = formatDurationMS(r.DurationMS)
-		default:
-			v.Status, v.Badge = "Completed", "ok"
-			v.Duration = formatDurationMS(r.DurationMS)
-		}
+		v.classify(r.InFlight(), time.Since(r.UpdatedAt) > embedRunStaleAfter, r.Error, r.DurationMS)
 		out = append(out, v)
 	}
 	return out, nil

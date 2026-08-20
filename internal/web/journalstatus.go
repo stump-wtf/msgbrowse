@@ -43,24 +43,12 @@ type journalBuildData struct {
 	LastDurationMS int64
 	LastError      string
 
-	History []journalRunView
+	History []pipelineRunView
 }
 
 // Busy reports whether anything is running right now, from either signal. The
 // template disables every control on it.
 func (d journalBuildData) Busy() bool { return d.InProgress || d.Running }
-
-// journalRunView is one row of the run-history table, classified for display.
-type journalRunView struct {
-	Started  string // local "2006-01-02 15:04"
-	Scope    string // "Whole archive" or the single day
-	Status   string // "Completed" | "Running" | "Interrupted" | "Failed"
-	Badge    string // sync-badge-<Badge>
-	Digested int
-	Duration string // "3.2s" for a finished run, "—" otherwise
-	Model    string
-	Error    string
-}
 
 // journalBuildStatus assembles the build card.
 //
@@ -119,35 +107,28 @@ func (s *Server) journalBuildStatus(ctx context.Context) (journalBuildData, erro
 
 // journalRunHistory returns the most recent journal passes classified for
 // display, newest first, capped at n.
-func (s *Server) journalRunHistory(ctx context.Context, n int) ([]journalRunView, error) {
+//
+// Rows are [pipelineRunView], shared with the semantic index; Count carries the
+// digested-day count, which the Journal tab labels "Digested". Unlike
+// embeddings, a journal pass has a scope (the whole archive or one day), so the
+// shared table renders its Scope column.
+func (s *Server) journalRunHistory(ctx context.Context, n int) ([]pipelineRunView, error) {
 	runs, err := s.store.RecentJournalRuns(ctx, n)
 	if err != nil {
 		return nil, err
 	}
-	out := make([]journalRunView, 0, len(runs))
+	out := make([]pipelineRunView, 0, len(runs))
 	for _, r := range runs {
-		v := journalRunView{
-			Started:  r.StartedAt.Local().Format(overviewTimeFormat),
-			Scope:    "Whole archive",
-			Digested: r.Digested,
-			Model:    r.Model,
-			Duration: "—",
+		v := pipelineRunView{
+			Started: r.StartedAt.Local().Format(overviewTimeFormat),
+			Scope:   "Whole archive",
+			Count:   r.Digested,
+			Model:   r.Model,
 		}
 		if r.Scope != "" {
 			v.Scope = r.Scope
 		}
-		switch {
-		case r.InFlight() && time.Since(r.UpdatedAt) <= journalRunStaleAfter:
-			v.Status, v.Badge = "Running", "info"
-		case r.InFlight():
-			v.Status, v.Badge = "Interrupted", "warn"
-		case r.Error != "":
-			v.Status, v.Badge, v.Error = "Failed", "err", r.Error
-			v.Duration = formatDurationMS(r.DurationMS)
-		default:
-			v.Status, v.Badge = "Completed", "ok"
-			v.Duration = formatDurationMS(r.DurationMS)
-		}
+		v.classify(r.InFlight(), time.Since(r.UpdatedAt) > journalRunStaleAfter, r.Error, r.DurationMS)
 		out = append(out, v)
 	}
 	return out, nil

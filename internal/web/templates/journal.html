@@ -46,7 +46,7 @@
       {{/* Empty state (#238): the Journal is now a header tab, so this is a
            destination a user lands on deliberately — it has to say what the
            surface is and how to fill it. Build controls live on the
-           Settings → Status tab, so this points there. */}}
+           Settings → Journal tab, so this points there (#368). */}}
       {{- if .Empty}}
       <div class="notice-card">
         <p class="link-card-title">No journal yet.</p>
@@ -56,7 +56,7 @@
           <a href="/settings/llm" class="link link-hover">LLM settings</a> tab; without one you still get the
           calendar and its day counts.</p>
         <p class="link-card-sub">Start a build from
-          <a href="/status" class="link link-hover">Settings → Status</a>, or run
+          <a href="/settings/journal" class="link link-hover">Settings → Journal</a>, or run
           <code class="font-mono">msgbrowse journal</code> from the command line.</p>
       </div>
       {{- else}}
@@ -120,7 +120,7 @@
         <p class="status-note"><span class="sync-badge sync-badge-warn">Out of date</span>
           {{if gt .NewMessages 0}}{{num .NewMessages}} more messages have landed on this day since its
           digest was written.{{else}}This day&rsquo;s messages have changed since its digest was
-          written.{{end}} Rebuild it from <a href="/status" class="link link-hover">Settings → Status</a>.</p>
+          written.{{end}} Rebuild it from <a href="/settings/journal" class="link link-hover">Settings → Journal</a>.</p>
         {{- end}}
         {{- if .Digest}}
         <p class="journal-summary">{{.Digest.Summary}}</p>
@@ -144,7 +144,7 @@
           {{- if .TopSenders}}Most with {{range $i, $s := .TopSenders}}{{if $i}}, {{end}}{{humanName $s.Name}}{{end}}.
           {{- else}}A quiet day.{{end}}
           <span class="opacity-50">Build the journal from
-            <a href="/status" class="link link-hover">Settings → Status</a> to editorialize this day.</span>
+            <a href="/settings/journal" class="link link-hover">Settings → Journal</a> to editorialize this day.</span>
         </p>
         {{- end}}
       </section>

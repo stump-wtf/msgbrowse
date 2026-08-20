@@ -111,11 +111,19 @@
       </div>
       {{end}}
 
-      {{/* Semantic-index status card removed from Home (consolidation: the
-           LLM/semantic/pipeline surfaces live on Settings → Status). Home is
-           the reading room; one pointer keeps them findable. */}}
-      <p class="status-note mt-2">Semantic search index and journal builds are managed on the
-        <a href="/status" class="link link-hover">Settings → Status</a> tab.</p>
+      {{/* Home is a reading surface: SPEC-0004 REQ-0004-010 forbids it from
+           rendering the semantic-index card or any build control, because the
+           Home and Status copies of that card drifted apart while both claimed
+           to be authoritative. Each pipeline now owns one Settings tab; a
+           pointer keeps them findable without duplicating a single figure.
+           The wording deliberately avoids the card titles ("Semantic search
+           index", "Journal build"): the REQ-0016-017 regression guard asserts
+           those exact strings never appear on a reading surface, and a pointer
+           that borrows the title would make the guard unable to tell a link
+           from the card coming back. */}}
+      <p class="status-note mt-2">Search indexing and journal digests are built and monitored in
+        Settings — see <a href="/settings/search-index" class="link link-hover">Search index</a>
+        and <a href="/settings/journal" class="link link-hover">Journal</a>.</p>
       </div>{{/* end diagnostics block */}}
       {{else}}
       <div class="notice-card">

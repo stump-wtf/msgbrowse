@@ -311,7 +311,7 @@ func TestJournalRebuildDayStartsForKnownDay(t *testing.T) {
 // renders no build machinery at all.
 func TestJournalBuildUnavailableRendersNoControls(t *testing.T) {
 	srv, _, _ := newTestServer(t) // no SetJournalBuilder
-	body := get(t, srv, "/status").Body.String()
+	body := get(t, srv, "/settings/journal").Body.String()
 
 	if !contains(body, "unavailable in this mode") {
 		t.Error("expected the unavailable explanation")
@@ -348,7 +348,7 @@ func TestJournalBuildUnavailablePOSTStartsNothing(t *testing.T) {
 func TestStatusPageOptsOutOfHistory(t *testing.T) {
 	srv, _, _ := newTestServer(t)
 	srv.SetJournalBuilder(newFakeJournalBuilder("test-chat", true))
-	if !contains(get(t, srv, "/status").Body.String(), `hx-history="false"`) {
+	if !contains(get(t, srv, "/settings/journal").Body.String(), `hx-history="false"`) {
 		t.Error("a page rendering a live setup token must opt out of the htmx history cache")
 	}
 	if contains(get(t, srv, "/journal").Body.String(), setupTokenField) {
@@ -373,8 +373,8 @@ func TestJournalStaleDayCard(t *testing.T) {
 	if contains(body, `action="/journal/rebuild/day"`) {
 		t.Error("the journal day card no longer carries a rebuild form (controls live on Status)")
 	}
-	if !contains(body, "/status") {
-		t.Error("the stale note should point at the Status build surface")
+	if !contains(body, "/settings/journal") {
+		t.Error("the stale note should point at the Settings → Journal build surface")
 	}
 }
 
@@ -437,7 +437,7 @@ func TestJournalRebuildAllStatesTheCount(t *testing.T) {
 	for _, d := range []string{"2026-06-06", "2026-06-07", "2026-06-08"} {
 		seedJournalDay(t, st, d, 5, 5)
 	}
-	body := get(t, srv, "/status").Body.String()
+	body := get(t, srv, "/settings/journal").Body.String()
 	if !contains(body, "Rebuild all 3 digests") {
 		t.Errorf("the rebuild control should state how many digests it will regenerate:\n%s", body)
 	}

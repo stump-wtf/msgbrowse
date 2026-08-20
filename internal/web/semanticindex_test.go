@@ -258,7 +258,7 @@ func TestStatusIndexMissingTokenRejected(t *testing.T) {
 // Build / Reset controls with a live token.
 func TestStatusCardNeverState(t *testing.T) {
 	srv, _ := newStatusServer(t, "test-embed", true)
-	body := get(t, srv, "/status").Body.String()
+	body := get(t, srv, "/settings/search-index").Body.String()
 	for _, want := range []string{
 		"Semantic search index",
 		"of", "messages (0%)", // coverage line, 0% before any embedding
@@ -292,7 +292,7 @@ func TestStatusCardCompleteState(t *testing.T) {
 	if err := st.FinishEmbedRun(ctx, store.EmbedRun{ID: id, FinishedAt: fin, DurationMS: 1200, Embedded: 3, Batches: 1}); err != nil {
 		t.Fatal(err)
 	}
-	body := get(t, srv, "/status").Body.String()
+	body := get(t, srv, "/settings/search-index").Body.String()
 	if !contains(body, fin.Local().Format("2006-01-02 15:04")) {
 		t.Error("complete-state Status missing the finished-run stamp")
 	}
@@ -314,7 +314,7 @@ func TestStatusCardInProgressState(t *testing.T) {
 	if err := st.UpdateEmbedRunProgress(ctx, id, 42, 1, time.Now()); err != nil {
 		t.Fatal(err)
 	}
-	body := get(t, srv, "/status").Body.String()
+	body := get(t, srv, "/settings/search-index").Body.String()
 	if !contains(body, "Indexing…") || !contains(body, "42 messages embedded so far") {
 		t.Error("in-progress Status missing the live indexing marker")
 	}
@@ -327,7 +327,7 @@ func TestStatusCardInProgressState(t *testing.T) {
 // LLM and renders no Build controls (even with an Indexer wired).
 func TestStatusCardNotConfigured(t *testing.T) {
 	srv, _ := newStatusServer(t, "", true)
-	body := get(t, srv, "/status").Body.String()
+	body := get(t, srv, "/settings/search-index").Body.String()
 	if !contains(body, "Semantic search is not configured") || !contains(body, "/settings/llm") {
 		t.Error("not-configured Status missing the LLM-settings pointer")
 	}
@@ -340,7 +340,7 @@ func TestStatusCardNotConfigured(t *testing.T) {
 // renders the unavailable note and no Build controls.
 func TestStatusCardUnavailable(t *testing.T) {
 	srv, _ := newStatusServer(t, "test-embed", false)
-	body := get(t, srv, "/status").Body.String()
+	body := get(t, srv, "/settings/search-index").Body.String()
 	if !contains(body, "Index management is unavailable in this mode") {
 		t.Error("no-indexer Status missing the unavailable note")
 	}
@@ -349,28 +349,30 @@ func TestStatusCardUnavailable(t *testing.T) {
 	}
 }
 
-// TestOverviewSharesIndexCard: the Overview renders the shared
-// semantic_index_card define (#224) — the same card Status uses, including
-// the Build form when an indexer is wired.
+// TestOverviewSharesIndexCard: the Search index tab renders the shared
+// semantic_index_card define (#224), including the Build form when an indexer
+// is wired, and Home renders no copy of it. Home carrying its own copy is what
+// SPEC-0004 REQ-0004-010 forbids — the two drifted while both claimed to be
+// authoritative — so the pointer is the only thing Home may show (#368).
 func TestOverviewSharesIndexCard(t *testing.T) {
 	srv, _ := newStatusServer(t, "test-embed", true)
-	body := get(t, srv, "/status").Body.String()
+	body := get(t, srv, "/settings/search-index").Body.String()
 	// The shared card renders (not the old inline copy).
 	if !contains(body, "semantic-index-card") {
-		t.Error("Status missing the shared semantic_index_card")
+		t.Error("Search index tab missing the shared semantic_index_card")
 	}
-	// With an indexer wired, Status shows the Build form.
+	// With an indexer wired, the tab shows the Build form. The POST route is
+	// unchanged by the move (#368) — only the surface rendering it moved.
 	if !contains(body, `action="/status/index"`) {
-		t.Error("Status should render the Build form via the shared card")
+		t.Error("Search index tab should render the Build form via the shared card")
 	}
-	// Home no longer renders the card (consolidation into Settings): it
-	// carries a pointer instead.
+	// Home renders no copy of the card: it carries a pointer instead.
 	home := get(t, srv, "/").Body.String()
 	if contains(home, "semantic-index-card") {
 		t.Error("Home must not render the semantic-index card")
 	}
-	if !contains(home, `href="/status"`) {
-		t.Error("Home should point at Settings → Status for index management")
+	if !contains(home, `href="/settings/search-index"`) {
+		t.Error("Home should point at Settings → Search index for index management")
 	}
 }
 
@@ -414,7 +416,7 @@ func TestStatusIndexRunHistory(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	body := get(t, srv, "/status").Body.String()
+	body := get(t, srv, "/settings/search-index").Body.String()
 	if !contains(body, "Recent runs") {
 		t.Errorf("Status missing the run-history section")
 	}

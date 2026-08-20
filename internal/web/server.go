@@ -536,6 +536,8 @@ func (s *Server) routes() http.Handler {
 	// plus three privileged POSTs (save rules / merge / split), each gated by
 	// the same checkSetupPOST contract and re-rendering the tab with a
 	// fixed-enum result banner.
+	mux.HandleFunc("GET /settings/search-index", s.handleSettingsSearchIndex)
+	mux.HandleFunc("GET /settings/journal", s.handleSettingsJournal)
 	mux.HandleFunc("GET /settings/contacts", s.handleSettingsContacts)
 	mux.HandleFunc("POST /settings/contacts/rules", s.handleSettingsMergeRules)
 	mux.HandleFunc("POST /settings/contacts/merge", s.handleSettingsMerge)

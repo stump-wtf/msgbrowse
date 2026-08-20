@@ -1,12 +1,22 @@
 {{define "settings"}}{{template "page_start" .}}{{template "settings_content" .}}{{template "page_end" .}}{{end}}
 
 {{/* settings_subnav is the Settings shell's sub-navigation (issue #163,
-     reordered in #223): Providers · MCP · LLM · Contacts · Status · Backups ·
-     Logs — user-facing surfaces first, diagnostics last. The gear button lands
-     on Providers (#223). The tab previously called "Settings" is now "MCP"
-     and lives at /settings/mcp; /settings redirects to /providers following the
-     /setup → /providers precedent. The dot is the active tab's token
-     ("providers" / "mcp" / "llm" / "contacts" / "status" / "backups" /
+     reordered in #223): Providers · MCP · LLM · Contacts · Search index ·
+     Journal · Status · Backups · Logs — user-facing surfaces first,
+     diagnostics last. The gear button lands on Providers (#223). The tab
+     previously called "Settings" is now "MCP" and lives at /settings/mcp;
+     /settings redirects to /providers following the /setup → /providers
+     precedent.
+
+     Search index and Journal joined in #368 — one tab per derived-data
+     pipeline, as SPEC-0004 REQ-0004-010 requires. They had been stacked on
+     Status, whose unrelated coverage figures, models, run histories and costs
+     read as one machine-room dump; Status is once again ingest/source health.
+     Pipeline status renders on exactly one tab and is never duplicated across
+     surfaces, which is how the old Home and Status copies drifted apart.
+
+     The dot is the active tab's token ("providers" / "mcp" / "llm" /
+     "contacts" / "search-index" / "journal" / "status" / "backups" /
      "logs"); the active tab carries aria-current so the state is conveyed as
      more than color (SPEC-0013 §Accessibility spirit). Boosted like every
      in-app nav (SPEC-0008 REQ-0008-006), so switching tabs swaps only
@@ -19,6 +29,8 @@
       <a href="/settings/mcp" class="settings-tab{{if eq . "mcp"}} settings-tab-active{{end}}"{{if eq . "mcp"}} aria-current="page"{{end}}>MCP</a>
       <a href="/settings/llm" class="settings-tab{{if eq . "llm"}} settings-tab-active{{end}}"{{if eq . "llm"}} aria-current="page"{{end}}>LLM</a>
       <a href="/settings/contacts" class="settings-tab{{if eq . "contacts"}} settings-tab-active{{end}}"{{if eq . "contacts"}} aria-current="page"{{end}}>Contacts</a>
+      <a href="/settings/search-index" class="settings-tab{{if eq . "search-index"}} settings-tab-active{{end}}"{{if eq . "search-index"}} aria-current="page"{{end}}>Search index</a>
+      <a href="/settings/journal" class="settings-tab{{if eq . "journal"}} settings-tab-active{{end}}"{{if eq . "journal"}} aria-current="page"{{end}}>Journal</a>
       <a href="/status" class="settings-tab{{if eq . "status"}} settings-tab-active{{end}}"{{if eq . "status"}} aria-current="page"{{end}}>Status</a>
       <a href="/backups" class="settings-tab{{if eq . "backups"}} settings-tab-active{{end}}"{{if eq . "backups"}} aria-current="page"{{end}}>Backups</a>
       <a href="/logs" class="settings-tab{{if eq . "logs"}} settings-tab-active{{end}}"{{if eq . "logs"}} aria-current="page"{{end}}>Logs</a>

@@ -77,7 +77,7 @@ func TestOverviewProviderBreakdown(t *testing.T) {
 // semantic-index card renders a pointer to Settings → LLM — never fake zeros.
 func TestOverviewEmbeddingNotConfigured(t *testing.T) {
 	srv, _ := newStatusServer(t, "", true)
-	body := get(t, srv, "/status").Body.String()
+	body := get(t, srv, "/settings/search-index").Body.String()
 	if !contains(body, "Semantic search index") {
 		t.Fatal("status missing the semantic-index card")
 	}
@@ -106,7 +106,7 @@ func TestOverviewEmbeddingCoverageAndLastRun(t *testing.T) {
 	if err != nil || cov.Embeddable == 0 {
 		t.Fatalf("coverage = %+v, %v", cov, err)
 	}
-	body := get(t, srv, "/status").Body.String()
+	body := get(t, srv, "/settings/search-index").Body.String()
 	for _, want := range []string{
 		"Coverage",
 		"0 of " + itoa(int64(cov.Embeddable)) + " messages (0%)",
@@ -137,7 +137,7 @@ func TestOverviewEmbeddingCoverageAndLastRun(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	body = get(t, srv, "/status").Body.String()
+	body = get(t, srv, "/settings/search-index").Body.String()
 	pct := 100 / cov.Embeddable // 1 of N
 	for _, want := range []string{
 		"1 of " + itoa(int64(cov.Embeddable)) + " messages (" + itoa(int64(pct)) + "%)",
@@ -167,7 +167,7 @@ func TestOverviewEmbeddingInProgress(t *testing.T) {
 	if err := st.UpdateEmbedRunProgress(ctx, id, 42, 1, time.Now()); err != nil {
 		t.Fatal(err)
 	}
-	body := get(t, srv, "/status").Body.String()
+	body := get(t, srv, "/settings/search-index").Body.String()
 	for _, want := range []string{"Indexing…", "42 messages embedded so far", "running now"} {
 		if !contains(body, want) {
 			t.Errorf("in-progress card missing %q", want)
@@ -178,7 +178,7 @@ func TestOverviewEmbeddingInProgress(t *testing.T) {
 	if err := st.UpdateEmbedRunProgress(ctx, id, 42, 1, time.Now().Add(-embedRunStaleAfter-time.Minute)); err != nil {
 		t.Fatal(err)
 	}
-	body = get(t, srv, "/status").Body.String()
+	body = get(t, srv, "/settings/search-index").Body.String()
 	if !contains(body, "Interrupted") || !contains(body, "stopped before finishing") {
 		t.Error("stale in-flight run not rendered as interrupted")
 	}
@@ -201,7 +201,7 @@ func TestOverviewEmbeddingFailedRun(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	body := get(t, srv, "/status").Body.String()
+	body := get(t, srv, "/settings/search-index").Body.String()
 	if !contains(body, "Last run aborted") || !contains(body, "provider unreachable") {
 		t.Error("failed run's abort reason missing from the card")
 	}
@@ -253,7 +253,10 @@ func TestOverviewPartialCarriesConsolidatedCards(t *testing.T) {
 		t.Fatalf("partial status = %d", rec.Code)
 	}
 	body := rec.Body.String()
-	for _, want := range []string{"By source", "Semantic search index"} {
+	// The pointer is asserted by its destinations, not by the card titles:
+	// REQ-0016-017 forbids those titles on a reading surface, so a test that
+	// demanded them here would pull the card back onto Home (#368).
+	for _, want := range []string{"By source", `href="/settings/search-index"`, `href="/settings/journal"`} {
 		if !contains(body, want) {
 			t.Errorf("overview partial missing %q", want)
 		}

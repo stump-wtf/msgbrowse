@@ -141,7 +141,12 @@ func TestStatusBannerNoHandrolledMarkup(t *testing.T) {
 		"contact_settings.html",
 		"llm_settings.html",
 		"settings.html",
-		"status.html",
+		// status.html's enum-driven banners moved with the pipeline cards
+		// they belonged to (#368): the index banners now live on the Search
+		// index tab and the journal banners on the Journal tab. Status itself
+		// no longer has an enum-driven banner to render.
+		"search_index.html",
+		"journal_settings.html",
 		"backups.html",
 	}
 

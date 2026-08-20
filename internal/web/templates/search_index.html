@@ -1,0 +1,129 @@
+{{define "search_index"}}{{template "page_start" .}}{{template "search_index_content" .}}{{template "page_end" .}}{{end}}
+
+{{/* Settings → Search Index
+
+     The semantic-search embeddings pipeline's own tab: coverage, embed model,
+     live progress, run history, and the Build / Reset controls. It is the ONLY
+     surface that renders them — Home carries a pointer and nothing else
+     (SPEC-0004 REQ-0004-010, which forbids duplicating pipeline status across
+     surfaces, because the Home and Status copies had already drifted).
+
+     Embeddings get their own tab rather than sharing one with the journal
+     because the two pipelines' coverage figures, models, run histories and
+     costs are unrelated; reading them interleaved is what the old combined
+     Status tab produced.
+
+     search_index_content is the boosted-swap unit (SPEC-0008 REQ-0008-006):
+     <title> keeps history entries titled and the define owns
+     <main id="main-content"> so partial responses carry no shell.
+     hx-history="false": the Build / Reset forms carry a live per-session setup
+     token (the privileged-POST gate), which must not be snapshotted into
+     htmx's localStorage history cache.
+
+     @joestump-agent 08/20/2026 - Split out of status.html, which had stacked
+     this card and the journal build card on one grab-bag tab (#368). */}}
+{{define "search_index_content"}}<title>{{.Title}}</title>
+    <main id="main-content" class="flex-1" tabindex="0" hx-history="false">
+  <div class="px-6 lg:px-8 py-8 max-w-4xl space-y-5">
+    <h1 class="screen-h1">Settings</h1>
+    {{template "settings_subnav" "search-index"}}
+
+    {{template "semantic_index_card" .}}
+  </div>
+    </main>
+{{end}}
+
+{{define "semantic_index_card"}}
+    {{/* No aria-live on the CARD: it is the 2s poll's swap target, so a live
+         region here would re-announce the whole card — coverage, the entire run
+         history table, both button labels — every two seconds for the length of
+         a run. The live region is scoped to the one line that actually changes
+         (the "Indexing…" progress note) instead. */}}
+    <div id="semantic-index-card" class="status-card mb-4"
+         {{- if or .Embedding.InProgress .IndexRunning}} hx-get="/status/index/progress" hx-trigger="every 2s" hx-target="#semantic-index-card" hx-swap="outerHTML"{{end}}>
+      <div class="status-card-title">Semantic search index</div>
+
+      {{- if eq .IndexResult "started"}}
+      {{template "status_banner" dict "variant" "info" "class" "mb-4" "title" "Indexing started." "body" "Embedding the messages that still need a vector — the progress bar below updates live while it runs."}}
+      {{- else if eq .IndexResult "reset"}}
+      {{template "status_banner" dict "variant" "info" "class" "mb-4" "title" "Reset & rebuild started." "body" "The index was cleared and is rebuilding from scratch — watch the progress bar below."}}
+      {{- else if eq .IndexResult "inprogress"}}
+      {{template "status_banner" dict "variant" "info" "class" "mb-4" "title" "A run is already in progress." "body" "Nothing new was started — the running job continues."}}
+      {{- else if eq .IndexResult "nomodel"}}
+      {{template "status_banner" dict "variant" "warning" "class" "mb-4" "title" "No embedding model configured." "body" "Set an embed model on the <a href=\"/settings/llm\" class=\"link link-hover\">LLM settings</a> tab, then build the index."}}
+      {{- else if eq .IndexResult "unavailable"}}
+      {{template "status_banner" dict "variant" "warning" "class" "mb-4" "title" "Index management is not available here." "body" "This server was started without an indexer. Run <code class=\"font-mono\">msgbrowse embed</code> from the command line instead."}}
+      {{- else if eq .IndexResult "error"}}
+      {{template "status_banner" dict "variant" "error" "class" "mb-4" "title" "The index job could not start." "body" "See Logs for details and try again."}}
+      {{- end}}
+
+      {{if not .IndexAvailable}}
+      <p class="status-note">Index management is unavailable in this mode. Run
+        <code class="font-mono">msgbrowse embed</code> from the command line to build the semantic index.</p>
+      {{else if not .Embedding.Configured}}
+      <p class="status-note">Semantic search is not configured. Set an embedding model on the
+        <a href="/settings/llm" class="link link-hover">LLM settings</a> tab, then build the index.</p>
+      {{else}}
+      {{if .Embedding.InProgress}}
+      <p class="status-note mb-3" role="status" aria-live="polite"><span class="sync-badge sync-badge-info">Indexing…</span>
+        {{num .Embedding.RunEmbedded}} messages embedded so far in the current run.</p>
+      {{else if .Embedding.Stalled}}
+      <p class="status-note mb-3"><span class="sync-badge sync-badge-warn">Interrupted</span>
+        The last index run stopped before finishing — build again to resume where it left off.</p>
+      {{end}}
+
+      {{/* Live progress bar: coverage as a fraction of the embeddable corpus.
+           <progress> (not an inline-styled div) keeps it CSP-clean. */}}
+      {{if gt .Embedding.Embeddable 0}}
+      <div class="index-progress-row mb-4">
+        <progress class="index-progress" value="{{.Embedding.Embedded}}" max="{{.Embedding.Embeddable}}"></progress>
+        <span class="index-progress-pct mono">{{.Embedding.Percent}}%</span>
+      </div>
+      {{end}}
+
+      <div class="status-grid">
+        <div><div class="status-metric-label">Coverage</div>
+          <div class="status-metric-value">{{num .Embedding.Embedded}} of {{num .Embedding.Embeddable}} messages ({{.Embedding.Percent}}%)</div></div>
+        <div><div class="status-metric-label">Embedding model</div>
+          <div class="status-metric-value">{{.Embedding.Model}}</div></div>
+        <div><div class="status-metric-label">Last index run</div>
+          <div class="status-metric-value">
+            {{- if .Embedding.HasLastRun}}{{.Embedding.LastFinished}} · {{num .Embedding.LastEmbedded}} embedded in {{num .Embedding.LastDurationMS}} ms
+              {{- if and .Embedding.LastModel (ne .Embedding.LastModel .Embedding.Model)}} <span class="opacity-60">(model {{.Embedding.LastModel}})</span>{{end}}
+            {{- else if .Embedding.InProgress}}running now
+            {{- else}}never{{end -}}
+          </div></div>
+      </div>
+      {{if .Embedding.LastError}}
+      <div class="status-note mt-4">
+        <span class="sync-badge sync-badge-err">Failed</span>
+        Last run aborted: {{summarizeError .Embedding.LastError}}
+        <details class="mt-1"><summary class="status-note cursor-pointer">Show raw error</summary>
+          <pre class="font-mono text-xs mt-1 overflow-x-auto">{{.Embedding.LastError}}</pre>
+        </details>
+      </div>
+      {{end}}
+
+      {{template "pipeline_run_history" dict "rows" .History "unit" "Embedded"}}
+
+      {{/* Build / Reset controls — privileged same-origin form POSTs carrying
+           the per-session token, boosted to swap only the card (no inline JS;
+           CSP-clean). Disabled while a run is in progress so a second click
+           cannot race the guard. */}}
+      <div class="flex flex-wrap gap-3 mt-5">
+        <form method="post" action="/status/index"
+              hx-boost="true" hx-target="#semantic-index-card" hx-select="#semantic-index-card" hx-swap="outerHTML">
+          <input type="hidden" name="setup_token" value="{{.SetupToken}}">
+          <button type="submit" class="setup-btn"{{if or .Embedding.InProgress .IndexRunning}} disabled{{end}}>Build index</button>
+        </form>
+        <form method="post" action="/status/index/reset"
+              hx-boost="true" hx-target="#semantic-index-card" hx-select="#semantic-index-card" hx-swap="outerHTML">
+          <input type="hidden" name="setup_token" value="{{.SetupToken}}">
+          <button type="submit" class="setup-btn setup-btn-ghost"{{if or .Embedding.InProgress .IndexRunning}} disabled{{end}}>Reset &amp; rebuild</button>
+        </form>
+      </div>
+      <p class="status-note mt-3">Build embeds the messages that still need a vector; Reset &amp; rebuild
+        clears the whole index and re-embeds from scratch (useful after changing the embedding model).</p>
+      {{end}}
+    </div>
+{{end}}

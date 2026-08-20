@@ -177,7 +177,7 @@ type indexData struct {
 	IndexAvailable bool
 	IndexRunning   bool
 	IndexResult    string
-	History        []embedRunView
+	History        []pipelineRunView
 	SetupToken     string
 }
 
@@ -202,36 +202,6 @@ type statusData struct {
 	// release build, feature not compiled in behind the `devicesync` tag) omits
 	// it so /status carries no dead surface.
 	DeviceSyncFeature bool
-	// Embedding drives the "Semantic search index" card (#191): the same
-	// coverage + last-run + in-progress data the Overview card shows, assembled
-	// by overviewEmbedding.
-	Embedding embedStatusData
-	// History is the recent index-run table (newest first): the track record
-	// beside the single latest-run line.
-	History []embedRunView
-	// IndexAvailable reports whether an Indexer is wired: false (browser / no-op
-	// mode) hides the Build controls and shows the unavailable note.
-	IndexAvailable bool
-	// IndexRunning is the web layer's in-memory single-flight flag: true from the
-	// instant a Build / Reset starts, BEFORE the detached goroutine writes the
-	// first embed_runs row. The template ORs it with Embedding.InProgress to
-	// start the live poll (and disable the buttons) immediately after a click,
-	// bridging the gap until the heartbeat row exists. Embedding.InProgress still
-	// catches a run started by a separate `msgbrowse embed` process.
-	IndexRunning bool
-	// IndexResult is the post-POST banner state after a Build / Reset-&-rebuild:
-	// "" (no action), "started", "reset", "inprogress", "nomodel",
-	// "unavailable", or "error" — a fixed enum mapped to prose by the template.
-	IndexResult string
-	// SetupToken arms the Build / Reset forms with the same per-session token
-	// gate the other privileged POSTs use; "" when no Indexer is wired (the
-	// forms are not rendered then).
-	SetupToken string
-	// Build drives the journal build card (#240, moved to the Status tab with
-	// the rest of the LLM/pipeline surfaces); JournalResult is the fixed-enum
-	// banner from a just-completed Build / Rebuild POST, "" on a plain GET.
-	Build         journalBuildData
-	JournalResult string
 }
 
 // pageSize is the number of messages per transcript page.
@@ -565,7 +535,7 @@ func (s *Server) handleMessages(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
-	s.renderStatus(w, r, "", "")
+	s.renderStatus(w, r)
 }
 
 // handleStatusIndex is POST /status/index — the privileged "Build" control that
@@ -583,7 +553,7 @@ func (s *Server) handleStatusIndex(w http.ResponseWriter, r *http.Request) {
 		s.renderStatusCard(w, r, result)
 		return
 	}
-	s.renderStatus(w, r, result, "")
+	s.renderSearchIndex(w, r, result)
 }
 
 // handleStatusIndexReset is POST /status/index/reset — the privileged "Reset &
@@ -601,7 +571,7 @@ func (s *Server) handleStatusIndexReset(w http.ResponseWriter, r *http.Request) 
 		s.renderStatusCard(w, r, result)
 		return
 	}
-	s.renderStatus(w, r, result, "")
+	s.renderSearchIndex(w, r, result)
 }
 
 // renderStatusCard renders just the semantic-index card fragment with the
@@ -620,7 +590,7 @@ func (s *Server) renderStatusCard(w http.ResponseWriter, r *http.Request, indexR
 		s.serverError(w, err)
 		return
 	}
-	data := statusData{
+	data := searchIndexData{
 		Embedding:      embedding,
 		History:        history,
 		IndexAvailable: s.indexer != nil,
@@ -642,12 +612,13 @@ func (s *Server) renderStatusCard(w http.ResponseWriter, r *http.Request, indexR
 }
 
 // renderStatus assembles the Status page and renders it (full document or
-// boosted #main-content partial). indexResult is the fixed-enum banner from a
-// just-completed Build / Reset POST, "" on a plain GET. The semantic-index card
-// reflects coverage as of THIS render — a manual refresh shows the count climb
-// while a job runs (no hx-poll, keeping the page CSP-clean and free of a
-// background request the user did not ask for).
-func (s *Server) renderStatus(w http.ResponseWriter, r *http.Request, indexResult, journalResult string) {
+// boosted #main-content partial).
+//
+// Status is ingest/source health: archive freshness, the last ingest run, and
+// device sync. The semantic-index and journal-build cards it used to carry now
+// each own a Settings tab (#368, SPEC-0004 REQ-0004-010), so this renders no
+// pipeline status and needs no setup token.
+func (s *Server) renderStatus(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	var (
 		base      baseData
@@ -683,21 +654,6 @@ func (s *Server) renderStatus(w http.ResponseWriter, r *http.Request, indexResul
 		s.serverError(w, err)
 		return
 	}
-	embedding, err := s.overviewEmbedding(ctx)
-	if err != nil {
-		s.serverError(w, err)
-		return
-	}
-	history, err := s.embedRunHistory(ctx, embedRunHistoryLimit)
-	if err != nil {
-		s.serverError(w, err)
-		return
-	}
-	jbuild, err := s.journalBuildStatus(ctx)
-	if err != nil {
-		s.serverError(w, err)
-		return
-	}
 	data := statusData{
 		baseData:          base,
 		ConversationCount: convCount,
@@ -706,24 +662,6 @@ func (s *Server) renderStatus(w http.ResponseWriter, r *http.Request, indexResul
 		DeviceSyncEnabled: s.deviceSyncEnabled,
 		DeviceSyncFeature: s.deviceSyncFeature,
 		Sync:              s.syncStatusSnapshot(ctx),
-		Embedding:         embedding,
-		History:           history,
-		IndexAvailable:    s.indexer != nil,
-		IndexRunning:      s.indexJobRunning(),
-		IndexResult:       indexResult,
-		Build:             jbuild,
-		JournalResult:     journalResult,
-	}
-	// The Build / Reset forms are privileged POSTs: arm them with a live token,
-	// but only when there is an Indexer or journal builder to drive (browser
-	// mode renders the unavailable note, no forms).
-	if s.indexer != nil || s.journalBuilder != nil {
-		tok, err := s.setupTokens.mint()
-		if err != nil {
-			s.serverError(w, err)
-			return
-		}
-		data.SetupToken = tok
 	}
 	s.render(w, r, "status", data)
 }

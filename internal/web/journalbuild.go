@@ -163,8 +163,8 @@ func (s *Server) startJournalDay(ctx context.Context, day string) string {
 	return s.startJournal(ctx, day, true)
 }
 
-// journalCardData drives the journal build card fragment on the Status page:
-// the build status snapshot plus the token its forms submit.
+// journalCardData drives the journal build card fragment on the Settings →
+// Journal tab: the build status snapshot plus the token its forms submit.
 type journalCardData struct {
 	Build      journalBuildData
 	SetupToken string
@@ -204,14 +204,14 @@ func (s *Server) handleJournalBuildProgress(w http.ResponseWriter, r *http.Reque
 }
 
 // handleJournalBuild is POST /journal/build — fill the mechanical day layer and
-// every missing digest. The build controls live on the Settings → Status tab
-// (consolidation of the LLM/semantic surfaces), so the POST re-renders THAT
-// page with the fixed-enum banner.
+// every missing digest. The build controls live on the Settings → Journal tab
+// (#368: one tab per pipeline), so the POST re-renders THAT page with the
+// fixed-enum banner. The route itself is unchanged.
 func (s *Server) handleJournalBuild(w http.ResponseWriter, r *http.Request) {
 	if !s.checkSetupPOST(w, r) {
 		return // 403 already written; no job started, no LLM call made
 	}
-	s.renderStatus(w, r, "", s.startJournal(r.Context(), "", false))
+	s.renderJournalSettings(w, r, s.startJournal(r.Context(), "", false))
 }
 
 // handleJournalRebuildAll is POST /journal/rebuild — clear every cached digest
@@ -220,7 +220,7 @@ func (s *Server) handleJournalRebuildAll(w http.ResponseWriter, r *http.Request)
 	if !s.checkSetupPOST(w, r) {
 		return
 	}
-	s.renderStatus(w, r, "", s.startJournal(r.Context(), "", true))
+	s.renderJournalSettings(w, r, s.startJournal(r.Context(), "", true))
 }
 
 // handleJournalRebuildDay is POST /journal/rebuild/day — regenerate exactly one
@@ -230,5 +230,5 @@ func (s *Server) handleJournalRebuildDay(w http.ResponseWriter, r *http.Request)
 	if !s.checkSetupPOST(w, r) {
 		return
 	}
-	s.renderStatus(w, r, "", s.startJournalDay(r.Context(), strings.TrimSpace(r.PostFormValue("day"))))
+	s.renderJournalSettings(w, r, s.startJournalDay(r.Context(), strings.TrimSpace(r.PostFormValue("day"))))
 }
