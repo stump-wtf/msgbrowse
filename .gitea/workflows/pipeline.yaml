@@ -80,6 +80,14 @@ jobs:
       working_directory: docs-site
       source_dir: docs-site/build
       publish: "false"
+      # typecheck BEFORE build, not instead of it. `docusaurus build` runs the
+      # sources through webpack/babel, which strips TypeScript types without
+      # checking them — so a bump that breaks `tsc` builds a perfectly good
+      # site and goes green. The typescript v7 bump (#355) did exactly that:
+      # TS7 removed `baseUrl`, which @docusaurus/tsconfig still sets, so
+      # `npm run typecheck` failed while `npm run build` succeeded and every
+      # check in the repo was green. Same blind-spot shape as 4b itself.
+      build_cmd: npm run typecheck && npm run build
     secrets: inherit
 
   # ---- 4c. desktop module tests (PRs too) ----------------------------------

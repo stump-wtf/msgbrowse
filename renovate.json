@@ -8,6 +8,16 @@
   "extends": ["config:recommended"],
   "packageRules": [
     {
+      "description": [
+        "TypeScript 7 removed the baseUrl compiler option, and @docusaurus/tsconfig 3.10.2 still sets it. Because TypeScript cannot unset an inherited option, docs-site/tsconfig.json cannot work around it while it extends the Docusaurus config, and `npm run typecheck` fails outright (TS5102).",
+        "The bump is also invisible to CI on its own: docusaurus build strips types via babel without checking them, so a TS7 PR builds a green site. #355 is the one that surfaced this.",
+        "Drop this pin once Docusaurus ships a tsconfig without baseUrl; Renovate will re-propose v7 on its own."
+      ],
+      "matchDatasources": ["npm"],
+      "matchPackageNames": ["typescript"],
+      "allowedVersions": "<7"
+    },
+    {
       "description": "The toolchain directive in both go.mod files and the golang base image in the Dockerfile are one decision. Split across two PRs, a build image a minor behind the directive either downloads a second toolchain at build time or fails outright under GOTOOLCHAIN=local.",
       "groupName": "go toolchain",
       "matchDatasources": ["golang-version", "docker"],
