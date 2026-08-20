@@ -503,13 +503,7 @@ func (s *Store) ReconcileContacts(ctx context.Context, resolver contacts.Resolve
 			}
 		}
 		for _, c := range cands {
-			// Hints never auto-merge (ADR-0024). Both filtered reasons are
-			// suggestions a human confirms: an address-book grouping, and a
-			// display-name equivalence, which is the only evidence available
-			// for a source with no real handle (issue #363) and is far too weak
-			// to blend two archives on. They surface in the Contacts review
-			// queue instead.
-			if c.Reason == contacts.ReasonAddressBook || c.Reason == contacts.ReasonDisplayName {
+			if !autoMergeableReason(c.Reason) {
 				continue
 			}
 			a, b := resolve(c.ContactA), resolve(c.ContactB)
@@ -833,6 +827,27 @@ func isMeaningfulName(name string, ids []idPair) bool {
 		}
 	}
 	return true
+}
+
+// autoMergeableReason reports whether a candidate reason is strong enough to
+// merge two contacts without a human confirming it.
+//
+// Hints never auto-merge (ADR-0024). Both refused reasons are suggestions a
+// human confirms: an address-book grouping, and a display-name equivalence,
+// which is the only evidence available for a source with no real handle (issue
+// #363) and is far too weak to blend two archives on. They surface in the
+// Contacts review queue instead.
+//
+// This is the SECOND line of defence, and deliberately so. ReconcileContacts
+// calls contacts.Candidates without names, so ReasonDisplayName is not even
+// computed on the auto-merge path today — meaning this check cannot currently
+// fire, and a mutation removing it passes the whole suite unnoticed. It is a
+// named, unit-tested function rather than an inline condition precisely because
+// of that: the day someone passes names into that call to make suggestions
+// consistent, this becomes the only thing standing between a common first name
+// and two blended archives.
+func autoMergeableReason(r contacts.ReasonKind) bool {
+	return r != contacts.ReasonAddressBook && r != contacts.ReasonDisplayName
 }
 
 // displayNamed adapts the id→name map to the matcher's slice input, sorted by

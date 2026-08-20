@@ -288,3 +288,50 @@ func TestContactDiagnosticCounts(t *testing.T) {
 		t.Errorf("merge counts = auto %d / manual %d, want 0/0", d.AutoMerged, d.ManualMerged)
 	}
 }
+
+// TestAutoMergeableReasonRefusesWeakEvidence pins the auto-merge allow-list
+// directly, because the caller cannot currently exercise it:
+// ReconcileContacts builds candidates with contacts.Candidates(stored, nil, …),
+// and without names ReasonDisplayName is never produced — so deleting the guard
+// from the reconcile loop passes every other test in this package.
+//
+// The safety property today is therefore structural (reconcile does not compute
+// weak reasons), and this guard is the backstop for the day that changes. An
+// untested backstop reads as protection while providing none, so it gets a test
+// of its own.
+//
+// @joestump-agent 08/20/2026 - Added while reviewing #378.
+func TestAutoMergeableReasonRefusesWeakEvidence(t *testing.T) {
+	for _, tc := range []struct {
+		reason contacts.ReasonKind
+		want   bool
+		why    string
+	}{
+		{contacts.ReasonPhone, true, "a shared phone number is exact evidence"},
+		{contacts.ReasonEmail, true, "a shared email is exact evidence"},
+		{contacts.ReasonAddressBook, false, "an address-book grouping is a hint a human confirms (ADR-0024)"},
+		{contacts.ReasonDisplayName, false, "two people can share a name; merging blends two archives irreversibly"},
+	} {
+		if got := autoMergeableReason(tc.reason); got != tc.want {
+			t.Errorf("autoMergeableReason(%q) = %v, want %v — %s", tc.reason, got, tc.want, tc.why)
+		}
+	}
+}
+
+// TestReconcilePathNeverComputesDisplayNameCandidates pins the structural half:
+// the auto-merge path asks for candidates without names, and the matcher must
+// not invent a display-name reason from identifiers alone.
+func TestReconcilePathNeverComputesDisplayNameCandidates(t *testing.T) {
+	stored := []contacts.StoredIdentifier{
+		{ContactID: 1, Source: "signal", Raw: "ChelseaStump"},
+		{ContactID: 2, Source: "imessage", Raw: "chelsea stump"},
+	}
+	rules := contacts.MatchRules{MatchPhone: true, MatchEmail: true, MatchDisplayName: true}
+
+	for _, c := range contacts.Candidates(stored, nil, rules) {
+		if c.Reason == contacts.ReasonDisplayName {
+			t.Fatalf("the names-less Candidates call produced a display-name candidate (%+v); "+
+				"the auto-merge path relies on it not doing so", c)
+		}
+	}
+}
