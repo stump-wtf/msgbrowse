@@ -35,7 +35,15 @@ type RepairReport struct {
 	// threads. Their synthesized contact is detached.
 	GroupsMarked int
 	// IdentifiersRewritten is contact_identifiers rows whose value changed to
-	// the derived handle — the WhatsApp display-name-to-phone case.
+	// the derived handle. In practice that is the iMessage case: a conversation
+	// named by a handle in non-canonical form ("(555) 123-4567") re-derives to
+	// the normalized value.
+	//
+	// It is NOT the WhatsApp case, and cannot be: the real handle there is the
+	// JID local part, and the JID is not persisted — conversations store only
+	// source, name and is_group. A WhatsApp archive written under the old rule
+	// therefore keeps its display-name identifiers until it is re-imported,
+	// which is when the importer supplies the JID.
 	IdentifiersRewritten int
 	// ContactsOrphaned is contacts left with no identifiers and no
 	// conversations once group threads were detached; these are the invented
@@ -50,6 +58,16 @@ func (r RepairReport) Changed() bool {
 
 // RepairContactIdentities re-derives every conversation's counterparty identity
 // and repairs the rows written under the old name-as-identifier rule.
+//
+// It repairs only what the stored row can prove. Re-derivation runs from the
+// conversation NAME, because that is all the conversations table keeps — so it
+// heals group threads and normalizes handle-shaped names, but it cannot invent
+// a handle a source never wrote down. WhatsApp is the case that matters:
+// its real handle lives in the JID, which the importer parses and does not
+// persist, so a WhatsApp archive is healed by re-importing rather than by this
+// pass. Re-import is cheap for WhatsApp (it re-reads one export) and is not
+// what issue #363 was trying to avoid — that was the 320k-message iMessage and
+// Signal history.
 //
 // It deliberately does NOT rewrite an identifier that is already a real handle
 // into something else, and it never merges anything: merging stays the

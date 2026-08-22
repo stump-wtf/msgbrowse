@@ -335,3 +335,81 @@ func TestReconcilePathNeverComputesDisplayNameCandidates(t *testing.T) {
 		}
 	}
 }
+
+// TestRepairRewritesHandleShapedNamesButNotWhatsApp pins what the repair pass
+// can and cannot heal, because the difference decides whether a user has to
+// re-import.
+//
+// The pass re-derives from the conversation NAME, which is all the
+// conversations table stores. So an iMessage row named by a handle in
+// non-canonical form is normalized in place — no re-import needed. A WhatsApp
+// row named by a display name is NOT: its real handle is the JID local part,
+// the JID is never persisted, and no amount of re-deriving from "Chelsea"
+// produces a phone number. Those archives heal on their next import, when the
+// importer supplies the JID again.
+//
+// Without this test the distinction lives only in a comment, and the comment
+// was wrong before this test existed — it claimed the pass handled the
+// WhatsApp case.
+//
+// @joestump 08/22/2026 - Added while reviewing #378.
+func TestRepairRewritesHandleShapedNamesButNotWhatsApp(t *testing.T) {
+	st := repairTestStore(t)
+	ctx := context.Background()
+
+	// WhatsApp, named by display name: unhealable from the stored row alone.
+	mustExec(t, st, `INSERT INTO contacts(id, display_name) VALUES (1, 'Chelsea')`)
+	mustExec(t, st, `INSERT INTO contact_identifiers(contact_id, source, identifier)
+	                 VALUES (1, 'whatsapp', 'Chelsea')`)
+	mustExec(t, st, `INSERT INTO conversations(id, source, name, contact_id, is_group)
+	                 VALUES (1, 'whatsapp', 'Chelsea', 1, 0)`)
+
+	// iMessage, named by a handle in non-canonical form: healable in place.
+	mustExec(t, st, `INSERT INTO contacts(id, display_name) VALUES (2, '(555) 123-4567')`)
+	mustExec(t, st, `INSERT INTO contact_identifiers(contact_id, source, identifier)
+	                 VALUES (2, 'imessage', '(555) 123-4567')`)
+	mustExec(t, st, `INSERT INTO conversations(id, source, name, contact_id, is_group)
+	                 VALUES (2, 'imessage', '(555) 123-4567', 2, 0)`)
+
+	rep, err := st.RepairContactIdentities(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rep.IdentifiersRewritten != 1 {
+		t.Errorf("IdentifiersRewritten = %d, want 1 (the iMessage row only)", rep.IdentifiersRewritten)
+	}
+
+	if got := identifierOf(t, st, 1); got != "Chelsea" {
+		t.Errorf("whatsapp identifier = %q, want %q unchanged — the JID is not persisted, "+
+			"so this archive can only be healed by re-importing", got, "Chelsea")
+	}
+	if got := identifierOf(t, st, 2); got == "(555) 123-4567" {
+		t.Errorf("imessage identifier = %q — a handle-shaped name should normalize in place", got)
+	}
+
+	// Still idempotent with a rewrite in the mix.
+	again, err := st.RepairContactIdentities(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if again.Changed() {
+		t.Errorf("second repair pass wrote changes: %+v", again)
+	}
+}
+
+func mustExec(t *testing.T, st *Store, q string) {
+	t.Helper()
+	if _, err := st.db.Exec(q); err != nil {
+		t.Fatalf("exec %s: %v", q, err)
+	}
+}
+
+func identifierOf(t *testing.T, st *Store, contactID int64) string {
+	t.Helper()
+	var id string
+	if err := st.db.QueryRow(
+		`SELECT identifier FROM contact_identifiers WHERE contact_id = ?`, contactID).Scan(&id); err != nil {
+		t.Fatalf("read identifier for contact %d: %v", contactID, err)
+	}
+	return id
+}
