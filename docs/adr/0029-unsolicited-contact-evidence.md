@@ -74,7 +74,7 @@ layer, and do **not** add carrier lookup.
 
 ### 1. It is a derivation over the existing archive, not a second ingest
 
-`msgbrowse spam scan` reads `messages` and writes four tables. It never reads
+`msgbrowse spam scan` reads `messages` and writes five tables. It never reads
 `chat.db`, never runs an exporter, and never writes to the archive. Every safety
 property spam-catcher engineered around the live database is satisfied by not
 having the problem: msgbrowse's relationship with the source of truth is
@@ -89,12 +89,20 @@ about the fidelity of the export itself, and §6 makes the record say so.
 
 ### 2. Storage: hash-keyed, FK-less, ruleset-stamped — with one non-derived table
 
-A schema migration (v18) adds:
+Migration v18 laid down the first four tables. The `scan_env` column and
+`spam_runs` below are **not** part of it: v18 has shipped, migrations are
+append-only (`scripts/check-migrations.sh`, #217), and editing one that
+databases in the wild already ran is the exact failure that guard exists to
+prevent. They land in a new migration at the next unused version, which is
+also the only way an existing install acquires them — `CREATE TABLE IF NOT
+EXISTS` adds no column to a table that already exists. Marked `[+]` below.
+
+Together the two migrations produce:
 
 ```
 spam_findings(message_hash, ruleset_version, source, identifier, direction,
               ts_unix, reasons, urls, phones, emails, names_matched, entities,
-              is_candidate, is_after_optout,
+              is_candidate, is_after_optout, scan_env [+],
               UNIQUE(message_hash, ruleset_version))
 spam_senders(source, identifier, conversation_name, status, suspected_entity,
              consent_status, consent_notes, notes, first_seen_unix,
@@ -102,7 +110,12 @@ spam_senders(source, identifier, conversation_name, status, suspected_entity,
 spam_events(source, identifier, event_type, event_at, event_at_unix, details,
             origin, message_hash, UNIQUE(source, identifier, event_type,
             event_at_unix, message_hash))
-spam_state(conversation_id, last_message_hash, ruleset_version, updated_at)
+spam_state(conversation_id, last_message_hash, ruleset_version, scan_env [+],
+           updated_at)
+spam_runs [+](id, started_at, updated_at, finished_at, duration_ms,
+          ruleset_version, scan_env, address_book, degraded,
+          conversations, messages_scanned, findings, candidates,
+          optouts_detected, senders, error)
 ```
 
 - **No foreign key to `messages`**, for the identical reason as `embeddings`
@@ -116,6 +129,46 @@ spam_state(conversation_id, last_message_hash, ruleset_version, updated_at)
   of the effective `spam:` config. Widening the watch list rescans everything,
   because a dossier that mixed two rule generations would silently mean two
   different things by "candidate".
+- **`scan_env` records the environment, not the policy.** `ruleset_version`
+  digests the *rules*; it deliberately does not digest whether an address book
+  was readable. A degraded scan is not a different ruleset — it is the same
+  rules over a weaker input. Each finding and cursor carries the resolver
+  identity and degraded flag that produced it, so a dossier can say which
+  predicate stands behind each row and flag a record assembled from both. The
+  one input that *is* policy — `spam.exclude_conversations` — belongs in the
+  version digest rather than here.
+
+  Keeping it out of the digest is what makes a mixed record *expressible*. A
+  changed ruleset makes existing rows **mean** something different, so they
+  must be re-derived; a changed environment makes them **differently sourced**,
+  which is a fact about them, not a defect in them. So a differing `scan_env`
+  does not force a rescan the way a differing `ruleset_version` does: the
+  conversation resumes from its cursor and the new rows carry the new
+  environment. One generation therefore spans both environments and states so,
+  which is precisely what §6 requires of a record whose fidelity is uneven.
+
+  Forcing the rescan instead would be actively destructive. The uniqueness key
+  is `(message_hash, ruleset_version)` and the writer upserts, so re-scanning
+  a message under a degraded predicate **overwrites** the accurate row written
+  by the desktop app. A single release-CLI run would silently downgrade the
+  whole layer, and nothing would record that it had. Making the record uniform
+  is available, but only as an explicit act (`--reset`, or the rescan control
+  in the app), never as a side effect of which binary the user happened to run.
+
+- **`spam_runs` is the durable log of scans**, the exact analogue of
+  `embed_runs` ([ADR-0002](0002-vector-backend.md)) and `ingest_runs`
+  ([ADR-0003](0003-dual-source-archive.md)), written the same way: a row at
+  start, a heartbeat per batch, a terminal write carrying the counters or the
+  error text. It exists for the same reason those do — the run-time `Summary`
+  evaporates with the process that produced it, so without it a scan that
+  aborted is indistinguishable from one that was never run, and the only
+  account of a failure is a log line in a terminal the user did not keep.
+
+  It does not make `scan_env` on the rows redundant, any more than `embed_runs`
+  makes the per-row `model` stamp redundant. The run log answers *what happened
+  during that scan*; the per-row stamp answers *what stands behind this
+  finding*, which is the question a dossier has to answer years later.
+
 - **`spam_findings` is not sparse.** Unlike `message_sentiment`, a message from
   a stranger that trips nothing still gets a row. The rolling-window counts are
   counts of *contact*, not counts of violation, and "we examined this message
@@ -192,13 +245,30 @@ formality. A dossier that silently implies a precision the pipeline does not
 have is the one failure mode worth engineering against, because the person
 relying on it is doing so in a filing.
 
-### 7. Read surfaces are CLI-first
+### 7. Read surfaces are CLI-first in v1, and the app is the operating surface after it
 
 v1 ships `spam scan | senders | violations | evidence | sender-set | event`.
 A web surface and MCP tools are deliberately out of scope for the first slice
 and land in a follow-up spec — a dossier is a legal-adjacent artifact and its
 presentation deserves its own design pass, not a table bolted onto the contacts
-page.
+page. Those passes are
+[SPEC-0029](../openspec/specs/spam-web/spec.md) (web) and
+[SPEC-0030](../openspec/specs/spam-mcp/spec.md) (MCP).
+
+**CLI-first is a shipping order, not a hierarchy.** SPEC-0029 makes the app the
+primary place this feature is operated — running and re-running the scan,
+reading why a run failed, and editing the `spam:` ruleset all belong on-screen,
+because that is where the person who owns the record actually works. The CLI
+stays complete and stays the headless and automation path, and REQ-0029-011
+requires the two to agree on everything.
+
+It is also the *better* surface here, which is the unusual part. The release CLI
+is `CGO_ENABLED=0` and links no address-book provider, so it runs §4's degraded
+predicate; the desktop shell wires a real address book through
+`SetContactResolver`. A scan started from the app is therefore the
+higher-fidelity scan on the platform most archives come from — the inverse of
+the usual "the UI is a convenience skin over the CLI" reading, and the reason
+`scan_env` has to be recorded per row rather than assumed uniform.
 
 ## Considered Options
 
@@ -302,9 +372,12 @@ page.
   from the purely-derived caches. It is confined to one table and enforced in
   one place (the upsert writes only derived columns).
 - The `spam:` config block is inert until the command is run; an existing
-  install is unaffected by the migration beyond four empty tables.
-- Web and MCP surfaces are reserved, not designed. Their requirements land in a
-  follow-up spec.
+  install is unaffected by the migration beyond five empty tables.
+- Web and MCP surfaces are reserved in v1 and designed in the follow-up pass:
+  [SPEC-0029](../openspec/specs/spam-web/spec.md) makes the app the operating
+  surface for scanning, run errors and rules, and
+  [SPEC-0030](../openspec/specs/spam-mcp/spec.md) exposes the record read-only
+  and opt-in.
 
 ## Architecture Diagram
 

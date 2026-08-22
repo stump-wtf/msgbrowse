@@ -43,15 +43,17 @@ records that the owner did those by hand, with the confirmation number.
 ## Scope
 
 In scope: the classification ruleset and its version stamp, the schema migration
-(`spam_findings`, `spam_senders`, `spam_events`, `spam_state`), the stranger
-predicate and its degraded mode, opt-out detection and wholesale recomputation,
-the rolling twelve-month window math, the dossier and its limitations section,
-and the `msgbrowse spam` command tree.
+(`spam_findings`, `spam_senders`, `spam_events`, `spam_state`, `spam_runs`),
+the stranger predicate and its degraded mode, opt-out detection and wholesale
+recomputation, the rolling twelve-month window math, the dossier and its
+limitations section, the durable scan-run log, and the `msgbrowse spam` command
+tree.
 
 Non-goals for this spec: carrier / line-type lookup (declined in ADR-0029 §3 —
-a follow-up spec may add it opt-in), a web UI surface, MCP tools, reading
-`chat.db` directly, group-thread scanning, attachment evidence, and LLM-assisted
-classification.
+a follow-up spec may add it opt-in), a web UI surface
+([SPEC-0029](../spam-web/spec.md)), MCP tools
+([SPEC-0030](../spam-mcp/spec.md)), reading `chat.db` directly, group-thread
+scanning, attachment evidence, and LLM-assisted classification.
 
 ## Requirements
 
@@ -107,8 +109,14 @@ never as an attribution.
 Every finding MUST be stamped with a `ruleset_version`: a stable digest of the
 effective `spam:` configuration (identity lists, area codes, name variants, the
 URL rule, shortener domains, entity keywords, stop keywords, the canned notice
-and its match ratio). Re-ordering any list MUST NOT change the version; changing
-any value MUST change it.
+and its match ratio, and the conversation exclusion list). Re-ordering any list
+MUST NOT change the version; changing any value MUST change it.
+
+`spam.exclude_conversations` MUST participate in the digest. It decides which
+conversations enter the record at all, so a change to it changes what a
+generation means; because the cursor is per-conversation, leaving it out would
+let an added exclusion strand already-written findings, and a removed one add
+findings later, both under an unchanged version.
 
 A conversation whose stored cursor carries a different ruleset version MUST be
 rescanned from the top. Reads MUST filter to one generation; findings from one
@@ -122,11 +130,18 @@ generation MUST NOT be visible to a query for another.
 
 ### REQ-0028-004: Schema — hash-keyed, FK-less, re-ingest-safe
 
-A schema migration MUST add `spam_findings`, `spam_senders`, `spam_events` and
-`spam_state` as specified in ADR-0029 §2. `spam_findings`, `spam_senders` and
-`spam_events` MUST have **no** foreign key to `messages`, so a re-ingest that
-rewrites message rowids leaves the evidence record intact and still joinable by
-content hash. `spam_state` MAY cascade from `conversations`.
+A schema migration MUST add `spam_findings`, `spam_senders`, `spam_events`,
+`spam_state` and `spam_runs` as specified in ADR-0029 §2. `spam_findings`,
+`spam_senders` and `spam_events` MUST have **no** foreign key to `messages`, so
+a re-ingest that rewrites message rowids leaves the evidence record intact and
+still joinable by content hash. `spam_state` MAY cascade from `conversations`.
+
+The `scan_env` columns (REQ-0028-013) and `spam_runs` (REQ-0028-014) MUST land
+in a **new** migration version, not by editing v18. v18 has shipped; migrations
+are append-only and `scripts/check-migrations.sh` fails the build on an edit to
+one (#217). An `ALTER TABLE ... ADD COLUMN` is what gives an existing install
+`scan_env`, because the `CREATE TABLE IF NOT EXISTS` in v18 is inert against a
+table that already exists.
 
 Writes MUST be idempotent upserts. A batch's findings, detected events, sender
 window and cursor advance MUST occur in one transaction, so a crash cannot leave
@@ -167,6 +182,12 @@ name is a bare phone number or email address, MUST report `Degraded = true` and
 the resolver's availability in the run summary, and the CLI MUST print a warning
 naming both failure directions (a known person named by a bare number is
 misfiled; a stranger named by a person's name is invisible).
+
+The predicate MUST be recorded, not merely reported. Every finding and every
+cursor MUST carry the resolver identity and degraded flag under which it was
+written (REQ-0028-013), because the same binary on the same archive answers
+"is this person a stranger?" differently depending on whether an address book
+was readable, and the run summary is gone once the run ends.
 
 #### Scenario: A known contact is not enrolled
 - **Given** a readable address book containing the sender
@@ -260,6 +281,13 @@ is a lead and not attribution; that `suspected_entity` and `consent_status` are
 human judgments; that group threads and attachments are excluded; and that
 nothing in it is legal advice.
 
+When any finding in the dossier was written under a degraded stranger predicate,
+the limitations section MUST say so and name both failure directions. When the
+dossier draws on findings written under more than one predicate, it MUST state
+that too — a record assembled half from an accurate scan and half from a
+degraded one is not uniform, and presenting it as uniform is the precise failure
+this section exists to prevent.
+
 Dossiers MUST be written 0600 into a 0700 directory (`spam.export_dir`, default
 `<data_dir>/spam-exports`).
 
@@ -280,3 +308,85 @@ zero-result run.
 
 Help text MUST state that the command reads and reports only, that it performs
 no network egress, and that nothing in its output is legal advice.
+
+### REQ-0028-013: Scan-environment provenance
+
+`spam_findings` and `spam_state` MUST each carry a `scan_env` value recording
+the address-book resolver identity and the degraded flag in force when the row
+was written. Reads that assemble a dossier MUST surface it (REQ-0028-011).
+
+`scan_env` MUST NOT participate in `ruleset_version`. A degraded scan runs the
+same rules over a weaker input; folding resolver availability into the version
+would re-derive the whole layer whenever the user switched between the desktop
+shell and the release CLI, which is a routine act and not a policy change.
+
+A cursor whose `scan_env` differs from the current one MUST NOT, on that basis
+alone, force a rescan. The conversation MUST resume from its cursor; rows
+written by the resumed scan carry the current `scan_env`, and the cursor's
+`scan_env` becomes that of the run that last extended it. A record may
+therefore span predicates, which is why REQ-0028-011 requires that it be
+disclosed.
+
+This is the one place `scan_env` and `ruleset_version` behave differently, and
+deliberately. A changed ruleset makes existing rows *mean* something different,
+so they must be re-derived. A changed environment makes them *differently
+sourced* — a fact about them, not a defect in them.
+
+Re-deriving on an environment change would also destroy data. The uniqueness
+key is `(message_hash, ruleset_version)` and the writer upserts, so a rescan
+under a degraded predicate overwrites the accurate row the desktop app wrote,
+in place and unrecoverably. One run of the release CLI would silently downgrade
+the whole layer and leave nothing recording that it had.
+
+Making the record uniform MUST remain available as an explicit act — `--reset`,
+or the rescan control of REQ-0029-007 — and MUST NOT happen as a side effect of
+which binary was run.
+
+#### Scenario: A desktop scan and a CLI scan are distinguishable
+- **Given** an archive scanned by the desktop shell with Contacts readable, and
+  then by the release CLI with no address-book provider
+- **When** a dossier is exported
+- **Then** the findings record which predicate produced each row, and the
+  limitations section states that the record spans both.
+
+#### Scenario: A degraded run does not overwrite an accurate one
+- **Given** a conversation whose findings were written under an accurate
+  predicate
+- **When** the scan is re-run with no readable address book
+- **Then** the conversation resumes from its cursor, the existing rows keep
+  their `scan_env`, and only newly examined messages are stamped degraded.
+
+#### Scenario: The environment does not re-derive the ruleset
+- **Given** two scans differing only in address-book availability
+- **When** their findings are compared
+- **Then** both carry the same `ruleset_version` and differing `scan_env`.
+
+### REQ-0028-014: Every scan run is durably logged, including its failures
+
+Each scan MUST write a `spam_runs` row: inserted when the run starts, heartbeat
+its counters while it works, and stamped on termination with the duration and
+final totals, or with the error text when it aborted. The row MUST record the
+`ruleset_version`, the `scan_env`, the address-book availability and the
+degraded flag under which the run executed.
+
+An unfinished row whose heartbeat has gone stale MUST be reported as a crashed
+run, not as one still in progress — the same treatment `embed_runs` gives an
+indexing process that died before its terminal write.
+
+The run-time `Summary` evaporates with the process that produced it. Without a
+durable log, a scan that aborted halfway is indistinguishable from one that was
+never started, the partial record it left behind has no explanation attached,
+and the only account of the failure is a line in a terminal the user did not
+keep. This requirement is what allows REQ-0029-012 to answer "what went wrong"
+on-screen rather than in a log file.
+
+#### Scenario: A failed scan is legible afterwards
+- **Given** a scan that aborts because the address book cannot be read
+- **When** the run log is read after the process exits
+- **Then** the row is terminal, carries the error text, and records the counts
+  completed before the abort.
+
+#### Scenario: A crashed scan is not reported as running
+- **Given** an unfinished run row whose heartbeat is stale
+- **When** the run history is read
+- **Then** the run is reported as crashed rather than in progress.
