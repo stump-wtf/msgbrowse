@@ -9,13 +9,14 @@
   "packageRules": [
     {
       "description": [
-        "TypeScript 7 removed the baseUrl compiler option, and @docusaurus/tsconfig 3.10.2 still sets it. Because TypeScript cannot unset an inherited option, docs-site/tsconfig.json cannot work around it while it extends the Docusaurus config, and `npm run typecheck` fails outright (TS5102).",
-        "The bump is also invisible to CI on its own: docusaurus build strips types via babel without checking them, so a TS7 PR builds a green site. #355 is the one that surfaced this.",
-        "Drop this pin once Docusaurus ships a tsconfig without baseUrl; Renovate will re-propose v7 on its own."
+        "@docusaurus/tsconfig 3.10.2 sets the baseUrl compiler option, which TypeScript is retiring. Because TypeScript cannot unset an inherited option, docs-site/tsconfig.json cannot work around it while it extends the Docusaurus config, and `npm run typecheck` fails outright.",
+        "The retirement lands a release earlier than this pin originally assumed. TS 7 removes baseUrl (TS5102), but TS 6 already makes it a hard error (TS5101, `Option 'baseUrl' is deprecated and will stop functioning in TypeScript 7.0`), so the original `<7` boundary still let a breaking bump through — #381 is the one that surfaced it. The only in-repo workaround is `\"ignoreDeprecations\": \"6.0\"`, which suppresses the single signal telling us the config is still wrong; pinning is the honest option while we wait on upstream.",
+        "The bump is also invisible to CI on its own: docusaurus build strips types via babel without checking them, so a TypeScript PR builds a green site. #355 is the one that surfaced that half, and #380 added `npm run typecheck` ahead of the build to close it.",
+        "Drop this pin once Docusaurus ships a tsconfig without baseUrl (3.10.2 is the newest release as of 08/22/2026 and still sets it); Renovate will re-propose the majors on its own."
       ],
       "matchDatasources": ["npm"],
       "matchPackageNames": ["typescript"],
-      "allowedVersions": "<7"
+      "allowedVersions": "<6"
     },
     {
       "description": "The toolchain directive in both go.mod files and the golang base image in the Dockerfile are one decision. Split across two PRs, a build image a minor behind the directive either downloads a second toolchain at build time or fails outright under GOTOOLCHAIN=local.",
