@@ -70,7 +70,75 @@ off daisyUI, and (2) keep a light theme even though the brief is dark-only.
    rhythm the templates already used (`space-y-5`, `mb-8`), so adopting it is a
    de-duplication rather than a restyle.
 
-6. **Constraints unchanged.** No Node at runtime (Tailwind standalone CLI + the
+6. **Extend the scale past bordered surfaces — and record where it deliberately
+   stops (added 2026-08-22, issue #394).** #372 scoped the scale to the
+   `.surface` primitive and left ~56 other `padding*: …rem` literals in
+   `input.css`. #394 closed the two genuine gaps and recorded the rest as
+   deliberate exemptions rather than mechanically forcing every literal onto
+   the scale — folding pill/badge/tab padding into the surface tiers would
+   change what padding is *for* in those rules (shape and legibility, not
+   card rhythm), which is a design change, not a de-duplication.
+
+   - **`.link-card`'s radius was the "ninth value" the original ADR entry
+     warned about**: `0.75rem`, sitting exactly between
+     `--surface-radius-dense` (0.625rem) and `--surface-radius` (0.875rem).
+     Resolved onto `--surface-radius-dense` — the tile sits four-across on
+     Home, the same "many-to-a-screen" shape `--surface-radius-dense`
+     already governs for `.result-card` / `.media-list-card`. Its padding
+     (`0.95rem 0.6rem`) stays a **deliberate literal**: it is asymmetric,
+     paired with `min-height: 92px` to make a square-ish icon tile, and
+     folding it into `--surface-pad` would make it symmetric and reshape the
+     tile. Composing from `.surface` was rejected for exactly that reason.
+   - **A narrow control axis, `--control-pad-y` (1px) / `--control-pad-x`
+     (`--space-2`), was added** for the one pattern that was a genuine
+     duplicate rather than a coincidence: five unrelated pill/badge classes
+     (`.source-pill`, `.id-chip`, `.tier-pill`, `.setup-badge`,
+     `.sync-badge`) each independently hand-rolled the identical
+     `padding: 1px 0.5rem`. This is deliberately **not** a general
+     inline-control scale — it exists for that one repeated value, not as a
+     home for every pill/badge/tab padding.
+   - **Four overlay/panel selectors moved onto the existing `--space-*`
+     scale** because their padding is genuinely surface-level rhythm, not
+     content shape: the lightbox overlay gutter (`--space-6`) and its inner
+     gap (`--space-3`), the permission-guidance modal's overlay gutter
+     (`--space-5`), and the video-preview modal's header
+     (`--space-3 --space-4`) and body (`--space-4`) padding. All four values
+     already matched an existing token exactly — no visual change.
+   - **Everything else stays a literal, deliberately, in five categories**
+     (~47 remaining `padding*: …rem` declarations):
+     - *Inline chrome* — pills, badges, chips, tabs, buttons, inputs, and
+       filter/dropdown panels (e.g. `.attach-chip`, `.journal-year-tab`,
+       `.toggle-chip`, `.filter-input`, `.search-field`). Padding here is
+       sized to each control's own font-size/icon, not to page rhythm; ~26
+       selectors.
+     - *Viewport-measured responsive trims* — the narrow-toolbar media-query
+       overrides (`.app-toolbar`, `.header-tab` at two breakpoints), hand-tuned
+       to browser-measured pixel cliffs and documented inline with the exact
+       px math. These must stay literal so the comment's numbers stay
+       traceable to the value they describe.
+     - *List/row and optical micro-adjustments* — dense per-item rows sized
+       against a fixed line-height (`.conv-row`, `.msg-row`, `.sys-event`,
+       `.jumpback-row`) and sub-rem alignment nudges (`.msg-time`,
+       `.journal-stats`, `.search-mark mark`); ~8 selectors.
+     - *Shape-defining asymmetric padding* — `.link-card` (above),
+       `.msg-quote`, `.media-tile-scrim`, `.media-tile-placeholder`, and
+       `.copy-pre`/`.log-output`, where the padding's job is a specific
+       visual shape (icon tile, quote accent, gradient scrim, code-block
+       button clearance) rather than generic breathing room; 6 selectors.
+     - *Table cells and list indent* — `.status-table th`/`td` (sized to the
+       table's own row height) and `.journal-highlights`/
+       `.setup-guide-steps` (`padding-left` as list-marker indent, not
+       surface padding); 4 selectors.
+
+   `internal/web/spacing_test.go` guards the mechanical parts of this: the
+   new tokens cannot be silently deleted, the five control-axis classes
+   cannot regrow a hand-rolled `1px 0.5rem`, `.link-card`'s radius cannot
+   regrow a literal, and the four newly-tokenized overlay/modal selectors
+   cannot drift back to a literal padding. It does not — and should not —
+   try to enforce the exemption categories themselves; those are read, not
+   grep-checked.
+
+7. **Constraints unchanged.** No Node at runtime (Tailwind standalone CLI + the
    committed `app.css`), server-rendered `html/template` + HTMX, strict CSP, and
    Heroicons (outline) inline SVG — all carry over from
    [ADR-0006](0006-web-stack-htmx.md)/[ADR-0007](0007-frontend-styling-tailwind-daisyui.md)/[ADR-0010](0010-security-privacy-posture.md).
@@ -90,8 +158,11 @@ off daisyUI, and (2) keep a light theme even though the brief is dark-only.
   cache before committing (see project memory / [ADR-0007](0007-frontend-styling-tailwind-daisyui.md)).
 - Spacing is now a decision rather than a per-class convention. The guard tests
   in `internal/web/spacing_test.go` fail if a card class regrows a hand-rolled
-  `rem` padding, if the scale is deleted, or if `app.css` is committed stale.
-  Pills, badges, tabs and inputs keep their own small paddings — the scale
-  governs bordered *surfaces*, not every element in the stylesheet.
+  `rem` padding, if the scale (or the #394 control axis) is deleted, if
+  `.link-card`'s radius or a control-axis pill/badge regrows a literal, or if
+  `app.css` is committed stale. Pills, badges, tabs and inputs mostly keep
+  their own small paddings by design (item 6) — the scale governs bordered
+  *surfaces* and the one genuine duplicate pill/badge pattern, not every
+  element in the stylesheet.
 - Several screens need small backend additions (pinned conversations, "on this
   day", search-elapsed timing); these are called out per issue in the epic.

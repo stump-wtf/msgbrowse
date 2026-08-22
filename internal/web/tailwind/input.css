@@ -184,6 +184,15 @@
      page sections. Replaces the ad-hoc mb-8 / mb-4 / mt-8 mix. */
   --stack-gap: var(--space-5);
   --section-gap: var(--space-7);
+
+  /* Control axis (added 2026-08-22, issue #394): the one padding pattern that
+     repeated identically across unrelated pill/badge components (1px vertical,
+     --space-2 horizontal) rather than each hand-rolling the same two numbers.
+     This is NOT the surface scale extended to controls — it is a narrow,
+     single-value axis for the one genuine duplicate. See ADR-0012 for why the
+     rest of the pill/badge/tab/input paddings stay literal. */
+  --control-pad-y: 1px;
+  --control-pad-x: var(--space-2);
 }
 
 /* The single bordered-surface primitive. Every card composes from this rule and
@@ -288,7 +297,7 @@ html {
   display: flex;
   position: fixed; inset: 0; z-index: 50;
   align-items: center; justify-content: center; flex-direction: column;
-  gap: 0.75rem; padding: 1.5rem;
+  gap: var(--space-3); padding: var(--space-6);
   background: color-mix(in oklab, black 85%, transparent);
 }
 .lightbox img { max-width: 92vw; max-height: 80vh; border-radius: 0.5rem; }
@@ -876,7 +885,7 @@ body {
   display: inline-flex;
   align-items: center;
   gap: 0.25rem;
-  padding: 1px 0.5rem;
+  padding: var(--control-pad-y) var(--control-pad-x);
   border-radius: 6px;
   border: 1px solid transparent;
   font-size: 11px;
@@ -961,7 +970,7 @@ body {
   display: inline-flex;
   align-items: center;
   gap: 0.3rem;
-  padding: 1px 0.5rem;
+  padding: var(--control-pad-y) var(--control-pad-x);
   border-radius: 6px;
   border: 1px solid var(--color-neutral);
   font-size: 11.5px;
@@ -1456,7 +1465,18 @@ a.meta-chip:hover {
 /* --- Quick-link icon tiles (Home) ---------------------------------------- */
 /* Compact square tiles (icon + label) that sit four across in the 780px
    reading column. The .notice-card empty state still uses .link-card-title /
-   .link-card-sub, so those rules stay below. */
+   .link-card-sub, so those rules stay below.
+ *
+ * Radius/padding (#394): the radius was a hand-rolled 0.75rem, off the scale
+ * entirely — resolved onto --surface-radius-dense, the tier for surfaces that
+ * sit many-to-a-screen (this one sits four across). The padding stays a
+ * literal 0.95rem/0.6rem on purpose: it is asymmetric, tuned with min-height
+ * to make a square-ish icon tile, and folding it into --surface-pad would
+ * make it symmetric and change the tile's shape. Recorded as a deliberate
+ * exemption in ADR-0012 rather than silently reshaped.
+ *
+ * @joestump-agent 08/22/2026 - Resolved the radius onto the scale (#394);
+ * padding stays exempt, see ADR-0012. */
 .link-card {
   display: flex;
   flex-direction: column;
@@ -1464,10 +1484,10 @@ a.meta-chip:hover {
   justify-content: center;
   text-align: center;
   gap: 0.5rem;
-  padding: 0.95rem 0.6rem;
+  padding: 0.95rem 0.6rem; /* exempt: asymmetric tile shape, ADR-0012 */
   min-height: 92px;
   border: 1px solid var(--color-neutral);
-  border-radius: 0.75rem;
+  border-radius: var(--surface-radius-dense);
   background: var(--color-base-200);
   @media (prefers-reduced-motion: no-preference) {
     transition: background-color 0.12s ease, border-color 0.12s ease;
@@ -2397,7 +2417,7 @@ a.cal-day:hover {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0.75rem 1rem;
+  padding: var(--space-3) var(--space-4);
   background: var(--color-base-300);
   border-bottom: 1px solid var(--color-neutral);
 }
@@ -2431,7 +2451,7 @@ a.cal-day:hover {
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 1rem;
+  padding: var(--space-4);
   overflow: auto;
 }
 .video-modal-video {
@@ -2687,7 +2707,7 @@ a.cal-day:hover {
 .tier-pill {
   display: inline-flex;
   align-items: center;
-  padding: 1px 0.5rem;
+  padding: var(--control-pad-y) var(--control-pad-x);
   border-radius: 6px;
   border: 1px solid transparent;
   font-size: 11px;
@@ -2916,7 +2936,7 @@ a.cal-day:hover {
 .setup-badge {
   display: inline-flex;
   align-items: center;
-  padding: 1px 0.5rem;
+  padding: var(--control-pad-y) var(--control-pad-x);
   border-radius: 6px;
   border: 1px solid var(--color-neutral);
   font-size: 11px;
@@ -2962,7 +2982,7 @@ a.cal-day:hover {
 .sync-badge {
   display: inline-flex;
   align-items: center;
-  padding: 1px 0.5rem;
+  padding: var(--control-pad-y) var(--control-pad-x);
   border-radius: 6px;
   border: 1px solid var(--color-neutral);
   font-size: 11px;
@@ -3164,7 +3184,7 @@ a.cal-day:hover {
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 1.25rem;
+  padding: var(--space-5);
 }
 .setup-guide[hidden] {
   display: none;
