@@ -126,11 +126,15 @@ off daisyUI, and (2) keep a light theme even though the brief is dark-only.
        against a fixed line-height (`.conv-row`, `.msg-row`, `.sys-event`,
        `.jumpback-row`) and sub-rem alignment nudges (`.msg-time`,
        `.journal-stats`, `.search-mark mark`); ~8 selectors.
-     - *Shape-defining asymmetric padding* — `.link-card` (above),
-       `.msg-quote`, `.media-tile-scrim`, `.media-tile-placeholder`, and
+     - *Shape-defining padding* — `.link-card` (above), `.msg-quote`,
+       `.media-tile-scrim`, `.media-tile-placeholder`, and
        `.copy-pre`/`.log-output`, where the padding's job is a specific
        visual shape (icon tile, quote accent, gradient scrim, code-block
        button clearance) rather than generic breathing room; 6 selectors.
+       Five of the six are asymmetric; `.media-tile-placeholder` is the
+       exception — a symmetric `0.5rem` sizing the striped tile's interior
+       against its repeating-gradient background, kept with the group
+       because it is tile shape rather than card rhythm.
      - *Table cells and list indent* — `.status-table th`/`td` (sized to the
        table's own row height) and `.journal-highlights`/
        `.setup-guide-steps` (`padding-left` as list-marker indent, not
