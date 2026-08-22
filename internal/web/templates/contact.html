@@ -51,18 +51,10 @@
       </section>
       {{- end}}
 
-      {{/* Derivable Profile stat tiles (two slate stat-strips). Deferred tiles
+      {{/* Derivable Profile stat tiles (two hud strips, #395). Deferred tiles
            — words, median reply, streak, sentiment, vocabulary — are Phase 2+. */}}
-      <div class="stat-strip mb-3">
-        <div class="stat-cell"><div class="stat-cell-label">Messages</div><div class="stat-cell-value">{{num .Stats.TotalMessages}}</div></div>
-        <div class="stat-cell"><div class="stat-cell-label">You sent</div><div class="stat-cell-value">{{num .Stats.SentMessages}}</div></div>
-        <div class="stat-cell"><div class="stat-cell-label">Received</div><div class="stat-cell-value">{{num .Stats.ReceivedMessages}}</div></div>
-      </div>
-      <div class="stat-strip mb-8">
-        <div class="stat-cell"><div class="stat-cell-label">Messages / day</div><div class="stat-cell-value">{{num .Pace}}</div></div>
-        <div class="stat-cell"><div class="stat-cell-label">Photos shared</div><div class="stat-cell-value">{{num .Stats.Photos}}</div></div>
-        <div class="stat-cell"><div class="stat-cell-label">Most active hour</div><div class="stat-cell-value stat-cell-value-sm">{{if .ActiveHourLabel}}{{.ActiveHourLabel}}{{else}}—{{end}}</div></div>
-      </div>
+      {{template "hud" .VolumeHUD}}
+      {{template "hud" .PaceHUD}}
 
       {{/* Top reactions across all the contact's threads. */}}
       {{- if .Reactions}}

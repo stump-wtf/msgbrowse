@@ -149,9 +149,11 @@ type messageListData struct {
 
 type indexData struct {
 	baseData
-	ConversationCount int // stat-strip count; independent of the sidebar listing (REQ-0008-006)
-	NewestTS          string
-	HasArchive        bool
+	// ArchiveHUD is the 3-cell archive-freshness strip (Conversations /
+	// Messages / Newest message), rendered through the shared "hud" define
+	// (#395); independent of the sidebar listing (REQ-0008-006).
+	ArchiveHUD hudData
+	HasArchive bool
 	// OnThisDay and JumpBack are the two reading-room cards above the
 	// diagnostics (#239). Both are assembled on the boosted path as well as the
 	// full one — REQ-0008-006 exempts the expensive sidebar listing, not these
@@ -189,9 +191,11 @@ type conversationData struct {
 
 type statusData struct {
 	baseData
-	ConversationCount int // stat-strip count; independent of the sidebar listing (REQ-0008-006)
-	Run               *store.IngestRun
-	NewestTS          string
+	// ArchiveHUD is the 3-cell archive-freshness strip, rendered through the
+	// shared "hud" define (#395); independent of the sidebar listing
+	// (REQ-0008-006).
+	ArchiveHUD hudData
+	Run        *store.IngestRun
 	// DeviceSyncEnabled mirrors config device_sync.enabled for the Device
 	// sync card's disabled state; Sync is the live snapshot (nil when sync is
 	// disabled, no monitor is wired, or the registry read failed) — SPEC-0014
@@ -301,18 +305,17 @@ func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 	// Home is the Messages surface: the header's Messages tab reads active.
 	base.NavTab = navTabMessages
 	data := indexData{
-		baseData:          base,
-		ConversationCount: convCount,
-		NewestTS:          newest,
-		HasArchive:        convCount > 0,
-		OnThisDay:         onThisDay,
-		JumpBack:          jumpBack,
-		Providers:         providers,
-		Embedding:         embedding,
-		MCPEndpointURL:    endpoint,
-		MCPConfigJSON:     mcp.ClientConfigJSON(endpoint),
-		MCPAddCommand:     mcp.ClaudeMCPAddCommand(endpoint),
-		IndexAvailable:    true,
+		baseData:       base,
+		ArchiveHUD:     archiveHUD(convCount, base.TotalMessages, newest, "mb-4"),
+		HasArchive:     convCount > 0,
+		OnThisDay:      onThisDay,
+		JumpBack:       jumpBack,
+		Providers:      providers,
+		Embedding:      embedding,
+		MCPEndpointURL: endpoint,
+		MCPConfigJSON:  mcp.ClientConfigJSON(endpoint),
+		MCPAddCommand:  mcp.ClaudeMCPAddCommand(endpoint),
+		IndexAvailable: true,
 	}
 	// The Build / Reset forms inside semantic_index_card are privileged POSTs:
 	// arm them with a live token, same as the Status page (#224).
@@ -656,9 +659,8 @@ func (s *Server) renderStatus(w http.ResponseWriter, r *http.Request) {
 	}
 	data := statusData{
 		baseData:          base,
-		ConversationCount: convCount,
+		ArchiveHUD:        archiveHUD(convCount, base.TotalMessages, newest, "mb-4"),
 		Run:               run,
-		NewestTS:          newest,
 		DeviceSyncEnabled: s.deviceSyncEnabled,
 		DeviceSyncFeature: s.deviceSyncFeature,
 		Sync:              s.syncStatusSnapshot(ctx),

@@ -37,7 +37,7 @@ var surfaceClasses = []string{
 	".home-card",
 	".status-card",
 	".setup-card",
-	".stat-strip",
+	".hud",
 	".journal-day-card",
 	".journal-day",
 	".journal-cal",
@@ -152,7 +152,7 @@ func TestSpacingScaleIsDefined(t *testing.T) {
 		}
 	}
 	// The primitive must actually apply the token, not merely declare it.
-	block, ok := classBlock(t, css, ".surface,\n.notice-card,\n.home-card,\n.status-card,\n.setup-card,\n.stat-strip,\n.journal-day-card,\n.journal-day,\n.journal-cal,\n.result-card,\n.media-list-card,\n.setup-guide-panel")
+	block, ok := classBlock(t, css, ".surface,\n.notice-card,\n.home-card,\n.status-card,\n.setup-card,\n.hud,\n.journal-day-card,\n.journal-day,\n.journal-cal,\n.result-card,\n.media-list-card,\n.setup-guide-panel")
 	if !ok {
 		// Selector list may be reordered by a later edit; fall back to finding
 		// the declaration anywhere and assert it exists at least once.

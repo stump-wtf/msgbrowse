@@ -12,23 +12,57 @@ import (
 // contactData drives the /contact/{id} profile page.
 type contactData struct {
 	baseData
-	C               *store.Contact
-	PrimarySource   string // first thread's source ("" when none) — the header presence dot; empty-safe, so the template never indexes an empty slice
-	FactGroups      []factGroup
-	FactCount       int
-	Stats           store.ContactStats
-	Pace            int        // rounded messages/day, for {{num}}
-	ActiveHourLabel string     // "11 PM" ("" when unknown)
-	Bars            []sparkBar // message-volume sparkline (year-rolled), Go-normalized
-	SparkW          int
-	SparkH          int
-	Reactions       []store.EmojiCount
+	C             *store.Contact
+	PrimarySource string // first thread's source ("" when none) — the header presence dot; empty-safe, so the template never indexes an empty slice
+	FactGroups    []factGroup
+	FactCount     int
+	Stats         store.ContactStats
+	// VolumeHUD and PaceHUD are the profile's two derived-stat strips
+	// (message volume, then pace/photos/active-hour), rendered through the
+	// shared "hud" define (#395) instead of hand-rolled markup.
+	VolumeHUD hudData
+	PaceHUD   hudData
+	Bars      []sparkBar // message-volume sparkline (year-rolled), Go-normalized
+	SparkW    int
+	SparkH    int
+	Reactions []store.EmojiCount
 }
 
 // factGroup is a contact's facts under one category, in declared-category order.
 type factGroup struct {
 	Category string
 	Facts    []store.ContactFact
+}
+
+// contactVolumeHUD builds the profile's first stat strip (Messages / You
+// sent / Received) through the shared "hud" define (#395), replacing what
+// used to be a hand-rolled copy of Home/Status's stat-strip markup.
+func contactVolumeHUD(stats store.ContactStats) hudData {
+	return hudData{
+		Class: "mb-3",
+		Cells: []hudCell{
+			{Label: "Messages", Value: commaInt(int64(stats.TotalMessages))},
+			{Label: "You sent", Value: commaInt(int64(stats.SentMessages))},
+			{Label: "Received", Value: commaInt(int64(stats.ReceivedMessages))},
+		},
+	}
+}
+
+// contactPaceHUD builds the profile's second stat strip (Messages/day /
+// Photos shared / Most active hour) through the shared "hud" define (#395).
+func contactPaceHUD(pace, photos int, activeHourLabel string) hudData {
+	hour := "—"
+	if activeHourLabel != "" {
+		hour = activeHourLabel
+	}
+	return hudData{
+		Class: "mb-8",
+		Cells: []hudCell{
+			{Label: "Messages / day", Value: commaInt(int64(pace))},
+			{Label: "Photos shared", Value: commaInt(int64(photos))},
+			{Label: "Most active hour", Value: hour, Small: true},
+		},
+	}
 }
 
 // sparkBar is one pre-computed SVG bar for the message-volume sparkline. All
@@ -111,19 +145,20 @@ func (s *Server) handleContact(w http.ResponseWriter, r *http.Request) {
 		primarySource = c.Conversations[0].Source
 	}
 	bars, sw, sh := buildSparkline(vol)
+	pace := int(stats.MessagesPerDay + 0.5)
 	s.render(w, r, "contact", contactData{
-		baseData:        base,
-		C:               c,
-		PrimarySource:   primarySource,
-		FactGroups:      groupFacts(facts),
-		FactCount:       len(facts),
-		Stats:           stats,
-		Pace:            int(stats.MessagesPerDay + 0.5),
-		ActiveHourLabel: activeHourLabel,
-		Bars:            bars,
-		SparkW:          sw,
-		SparkH:          sh,
-		Reactions:       reactions,
+		baseData:      base,
+		C:             c,
+		PrimarySource: primarySource,
+		FactGroups:    groupFacts(facts),
+		FactCount:     len(facts),
+		Stats:         stats,
+		VolumeHUD:     contactVolumeHUD(stats),
+		PaceHUD:       contactPaceHUD(pace, stats.Photos, activeHourLabel),
+		Bars:          bars,
+		SparkW:        sw,
+		SparkH:        sh,
+		Reactions:     reactions,
 	})
 }
 

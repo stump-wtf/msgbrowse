@@ -94,14 +94,14 @@ func TestIndexListsConversations(t *testing.T) {
 }
 
 // TestHomeStatStrip checks the slate Home redesign (REQ-0006-007): the hero
-// wordmark, the 3-cell stat strip with mono tabular values, and the tagline.
+// wordmark, the 3-cell hud with mono tabular values, and the tagline.
 // Quick-link tiles were removed (redundant with the header tabs).
 func TestHomeStatStrip(t *testing.T) {
 	srv, _, _ := newTestServer(t)
 	body := get(t, srv, "/").Body.String()
 	for _, want := range []string{
 		"home-hero-title",   // hero wordmark
-		"stat-strip",        // 3-cell stat strip container
+		`class="hud mb-4"`,  // 3-cell hud container
 		"stat-cell-value",   // mono tabular stat value
 		"Newest message",    // the third stat cell label
 		"home-hero-tagline", // tagline present
@@ -431,7 +431,7 @@ func TestStatusPage(t *testing.T) {
 	// Slate re-skin (REQ-0006-011): slate surfaces, the freshness stat strip,
 	// and the ingest-run metric grid. The snapshot inventory moved to the
 	// Backups tab (#2), so its table/pills no longer render here.
-	for _, want := range []string{"status-card", "stat-strip", "status-grid"} {
+	for _, want := range []string{"status-card", `class="hud mb-4"`, "status-grid"} {
 		if !contains(body, want) {
 			t.Errorf("status page missing slate marker %q", want)
 		}

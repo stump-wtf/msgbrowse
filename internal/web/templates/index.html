@@ -22,10 +22,10 @@
       </header>
 
       {{if .HasArchive}}
-      {{/* 3-cell stat strip: one bordered bar split by hairline dividers. The
-           counts come from dedicated fields (not len .Conversations) so partial
+      {{/* 3-cell hud: one bordered bar split by hairline dividers. The counts
+           come from dedicated fields (not len .Conversations) so partial
            renders can skip the sidebar listing (REQ-0008-006). */}}
-      {{template "stat_strip" .}}
+      {{template "hud" .ArchiveHUD}}
 
       {{/* Reading-room cards (#239, design brief §Home): "On this day" beside
            "Jump back in", between the stat strip and the quick links. This is

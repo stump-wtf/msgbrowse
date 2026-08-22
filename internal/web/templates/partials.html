@@ -433,6 +433,47 @@
 </div>
 {{- end}}
 
+{{/* HUD — The Reusable Stat Tile (issue #395)
+
+     A hud is a row of label/value tiles: Home's archive-freshness strip
+     (Conversations / Messages / Newest message) is the reference shape every
+     stat tile in the app should use. It used to be hardcoded to those three
+     fields under the name "stat_strip" (settings.html only), so
+     contact.html hand-rolled the same markup twice with different cells
+     instead of reusing it — the same copy-paste drift ADR-0012 already
+     called out for card padding.
+
+     Dot is a hudData{Cells, Class} (internal/web/hud.go): Cells is an
+     ordered []hudCell{Label, Value, Small}, Class is the caller's spacing
+     utility for the outer frame (callers differ — Home/Status want mb-4,
+     the contact profile's two strips want mb-3 and mb-8). Values arrive
+     pre-formatted (comma grouping already applied in Go) so this define
+     stays a pure renderer with no notion of which fields are numeric. Small
+     switches a cell to the compact value style long strings need (a
+     timestamp, an hour label) instead of the default large tabular-numeral
+     size.
+
+     Nesting: a hud standing alone (Home) keeps full surface chrome — border,
+     background, radius — via the .surface primitive (#377); a hud nested
+     inside any other bordered surface (Status's "Archive freshness" card,
+     the contact profile) loses that chrome to one CSS rule keyed off the
+     surface family (input.css), so a future caller cannot forget the
+     override the way the old per-page copies did.
+
+     @joestump-agent 08/22/2026 - Replaced "stat_strip" (settings.html-only,
+     hardcoded to .ConversationCount/.TotalMessages/.NewestTS) and
+     contact.html's two hand-rolled stat-strips with this one define. */}}
+{{define "hud"}}
+    <div class="hud{{if .Class}} {{.Class}}{{end}}">
+    {{- range .Cells}}
+        <div class="stat-cell">
+          <div class="stat-cell-label">{{.Label}}</div>
+          <div class="stat-cell-value{{if .Small}} stat-cell-value-sm{{end}}">{{.Value}}</div>
+        </div>
+    {{- end}}
+    </div>
+{{- end}}
+
 {{/* Pipeline Run History — One Table For Every Pipeline
      
      The recent-runs table shared by every derived-data pipeline: semantic

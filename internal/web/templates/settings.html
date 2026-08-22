@@ -37,27 +37,6 @@
     </nav>
 {{end}}
 
-{{/* stat_strip is the 3-cell archive-freshness bar (Conversations / Messages /
-     Newest message), shared by Home and Status so the two surfaces can never
-     drift (#224). The dot needs .ConversationCount, .TotalMessages, and
-     .NewestTS (indexData and statusData both carry them). */}}
-{{define "stat_strip"}}
-    <div class="stat-strip mb-4">
-        <div class="stat-cell">
-          <div class="stat-cell-label">Conversations</div>
-          <div class="stat-cell-value">{{num .ConversationCount}}</div>
-        </div>
-        <div class="stat-cell">
-          <div class="stat-cell-label">Messages</div>
-          <div class="stat-cell-value">{{num .TotalMessages}}</div>
-        </div>
-        <div class="stat-cell">
-          <div class="stat-cell-label">Newest message</div>
-          <div class="stat-cell-value stat-cell-value-sm">{{if .NewestTS}}{{.NewestTS}}{{else}}—{{end}}</div>
-        </div>
-    </div>
-{{end}}
-
 {{/* mcp_connect_card is the MCP connection card — endpoint URL, client JSON,
      and the `claude mcp add` one-liner, each with an icon-only copy button
      wired by /static/copy.js via data-copy-target (no inline handlers —

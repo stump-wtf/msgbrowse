@@ -70,6 +70,27 @@ off daisyUI, and (2) keep a light theme even though the brief is dark-only.
    rhythm the templates already used (`space-y-5`, `mb-8`), so adopting it is a
    de-duplication rather than a restyle.
 
+   **The `.hud` primitive and no-nested-chrome rule (added 2026-08-22, issue
+   #395).** `.hud` is a second primitive alongside `.surface`: the
+   label/value stat-tile row (Home's Conversations / Messages / Newest
+   message strip is the reference shape). It is composed into the `.surface`
+   list like any other card class, so a `.hud` standing alone carries full
+   surface chrome. Folding `.stat-strip` onto that same primitive made a
+   pre-existing bug exact — a `.hud` nested inside another bordered surface
+   (Status's "Archive freshness" card, the contact profile) drew the
+   identical border/background/radius a second time, one box inside an
+   otherwise-indistinguishable one. One CSS rule kills it structurally
+   instead of per call site: `:is(.surface, .notice-card, …) .hud { border:
+   0; background: none; border-radius: 0; padding: 0; }`, keyed off the same
+   surface-family selector list the primitive itself composes from, so a
+   future caller cannot forget a modifier class the way the old per-page
+   copies did. The component is also now a single `{{define "hud"}}`
+   (`internal/web/templates/partials.html`) taking an ordered cell list
+   rather than fixed dot fields, replacing the settings.html-only
+   `stat_strip` define and contact.html's two hand-rolled copies —
+   `internal/web/spacing_test.go` and `internal/web/hud_test.go` guard both
+   the primitive membership and the nesting override against regressing.
+
 6. **Extend the scale past bordered surfaces — and record where it deliberately
    stops (added 2026-08-22, issue #394).** #372 scoped the scale to the
    `.surface` primitive and left ~56 other `padding*: …rem` literals in

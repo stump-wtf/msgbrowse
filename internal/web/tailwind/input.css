@@ -203,7 +203,7 @@
 .home-card,
 .status-card,
 .setup-card,
-.stat-strip,
+.hud,
 .journal-day-card,
 .journal-day,
 .journal-cal,
@@ -214,6 +214,33 @@
   border-radius: var(--surface-radius);
   background: var(--color-base-200);
   padding: var(--surface-pad);
+}
+
+/* The HUD, Nested (issue #395)
+ *
+ * .hud is a second primitive alongside .surface: the label/value stat-tile
+ * row (Conversations / Messages / Newest message on Home is the reference
+ * shape). Composed into the list above, it carries full surface chrome —
+ * border, background, radius — when it stands alone, exactly like Home's.
+ *
+ * A hud placed inside another bordered surface (Status's "Archive freshness"
+ * card, the contact profile) used to draw that SAME chrome a second time,
+ * one box nested inside an identical one, because #377 folded both classes
+ * onto this exact primitive. This rule kills it structurally: any surface-
+ * family container strips a nested hud's own border/background/radius/
+ * padding, so a hud never needs a per-call-site modifier class to look
+ * right — a future caller cannot get this wrong the way the old per-page
+ * copies did. The selector list mirrors the primitive composition rule
+ * above; extend both together when a new surface-family class is added.
+ *
+ * @joestump-agent 08/22/2026 - Added with the hud component work (#395). */
+:is(.surface, .notice-card, .home-card, .status-card, .setup-card,
+    .journal-day-card, .journal-day, .journal-cal, .result-card,
+    .media-list-card, .setup-guide-panel) .hud {
+  border: 0;
+  background: none;
+  border-radius: 0;
+  padding: 0;
 }
 
 /* Dense tier: list rows, which sit many-to-a-screen and would swamp the page at
@@ -1418,12 +1445,12 @@ a.meta-chip:hover {
   color: color-mix(in oklab, var(--color-base-content) 60%, transparent);
 }
 
-/* --- Home: 3-cell stat strip -------------------------------------------- */
-.stat-strip {
+/* --- The hud component: 3-cell label/value strip (issue #395) ----------- */
+.hud {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   overflow: hidden;
-  /* The cells carry the padding; the strip is only the frame around them. */
+  /* The cells carry the padding; the hud is only the frame around them. */
   padding: 0;
 }
 /* Hairline dividers between cells (not on the first). */
@@ -1455,7 +1482,7 @@ a.meta-chip:hover {
   font-weight: 600;
 }
 @media (max-width: 640px) {
-  .stat-strip { grid-template-columns: 1fr; }
+  .hud { grid-template-columns: 1fr; }
   .stat-cell + .stat-cell {
     border-left: 0;
     border-top: 1px solid color-mix(in oklab, var(--color-neutral) 70%, transparent);
