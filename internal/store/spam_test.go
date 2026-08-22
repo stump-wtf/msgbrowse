@@ -207,3 +207,71 @@ func TestSetSpamSenderFieldsOnUnknownSenderErrors(t *testing.T) {
 		t.Fatal("expected an error naming the missing sender")
 	}
 }
+
+// A sender's first/last-seen window is the record of when they CONTACTED you,
+// and two writes that carry no contact information must not narrow or move it.
+//
+// Both paths reach the same upsert with a zero window. A scan batch made
+// entirely of system lines yields first = last = 0, and AddSpamEvent passes the
+// event's own timestamp for a sender it may never have scanned. Neither is a
+// message, so neither may edit the window.
+func TestSpamSenderWindowSurvivesWritesThatCarryNoMessages(t *testing.T) {
+	st := newTestStore(t)
+	ctx := context.Background()
+	conv := seedConversation(t, st, source.IMessage, "+15551110001")
+
+	const (
+		firstContact = 1_600_000_000 // 2020-09-13
+		lastContact  = 1_600_086_400 // a day later
+	)
+	sender := SpamSender{Source: source.IMessage, Identifier: "+15551110001",
+		ConversationName: "+15551110001", FirstSeenUnix: firstContact, LastSeenUnix: lastContact}
+	findings := []SpamFinding{{
+		MessageHash: "hash-a", Source: source.IMessage, Identifier: "+15551110001",
+		Direction: SpamInbound, TSUnix: firstContact, IsCandidate: true,
+	}}
+	if err := st.PutSpamBatch(ctx, conv, "v1", "hash-a", sender, findings, nil); err != nil {
+		t.Fatal(err)
+	}
+
+	// A later batch holding only system lines: real thread, no scannable
+	// messages, so the scan has nothing to say about the window.
+	empty := SpamSender{Source: source.IMessage, Identifier: "+15551110001",
+		ConversationName: "+15551110001", FirstSeenUnix: 0, LastSeenUnix: 0}
+	if err := st.PutSpamBatch(ctx, conv, "v1", "hash-a", empty, nil, nil); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := st.GetSpamSender(ctx, source.IMessage, "+15551110001")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.FirstSeenUnix != firstContact {
+		t.Errorf("a message-less batch moved first_seen_unix: got %d, want %d", got.FirstSeenUnix, firstContact)
+	}
+	if got.LastSeenUnix != lastContact {
+		t.Errorf("a message-less batch moved last_seen_unix: got %d, want %d", got.LastSeenUnix, lastContact)
+	}
+
+	// Filing a complaint years later is not the sender contacting you, so it
+	// must not become their "last seen" date in a dossier.
+	const complaintAt = 1_750_000_000 // 2025-06-15
+	if err := st.AddSpamEvent(ctx, SpamEvent{
+		Source: source.IMessage, Identifier: "+15551110001",
+		EventType: "fcc_complaint", EventAt: "2025-06-15T12:00:00Z",
+		EventAtUnix: complaintAt, Details: "ticket 12345", Origin: "manual",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err = st.GetSpamSender(ctx, source.IMessage, "+15551110001")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.LastSeenUnix != lastContact {
+		t.Errorf("filing an event moved last_seen_unix to the event date: got %d, want %d", got.LastSeenUnix, lastContact)
+	}
+	if got.FirstSeenUnix != firstContact {
+		t.Errorf("filing an event moved first_seen_unix: got %d, want %d", got.FirstSeenUnix, firstContact)
+	}
+}

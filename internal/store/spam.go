@@ -270,6 +270,14 @@ ON CONFLICT(conversation_id) DO UPDATE SET
 // promoted seen→watch when a candidate appears. suspected_entity,
 // consent_status, consent_notes and notes are human judgments and are never
 // written here, which is what makes a rescan safe to run at any time.
+//
+// A zero in the incoming window means "this write carries no message", not
+// "the sender was first seen at the epoch", and is ignored on both columns. Two
+// callers depend on that: a scan batch made entirely of system lines has no
+// timestamps to contribute, and AddSpamEvent creates a row for a sender it has
+// never scanned. Letting either through would move a window that is supposed to
+// record only when the sender CONTACTED you — and because the first-seen guard
+// takes any smaller value, a zero did not merely fail to widen it, it erased it.
 func upsertSpamSenderTx(ctx context.Context, tx *sql.Tx, sender SpamSender, sawCandidate bool, now string) error {
 	status := SpamStatusSeen
 	if sawCandidate {
@@ -281,7 +289,8 @@ INSERT INTO spam_senders(source, identifier, conversation_name, status,
 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT(source, identifier) DO UPDATE SET
     conversation_name = excluded.conversation_name,
-    first_seen_unix   = CASE WHEN spam_senders.first_seen_unix = 0 OR excluded.first_seen_unix < spam_senders.first_seen_unix
+    first_seen_unix   = CASE WHEN excluded.first_seen_unix = 0 THEN spam_senders.first_seen_unix
+                             WHEN spam_senders.first_seen_unix = 0 OR excluded.first_seen_unix < spam_senders.first_seen_unix
                              THEN excluded.first_seen_unix ELSE spam_senders.first_seen_unix END,
     last_seen_unix    = MAX(spam_senders.last_seen_unix, excluded.last_seen_unix),
     status            = CASE WHEN spam_senders.status = 'seen' AND excluded.status = 'watch'
@@ -326,9 +335,13 @@ func (s *Store) AddSpamEvent(ctx context.Context, e SpamEvent) error {
 	}
 	// An event for a sender nobody has scanned yet still needs a row to hang
 	// off, or `spam senders` would not list the person you just filed against.
+	//
+	// The window is left at zero rather than stamped with the event time. An
+	// FCC complaint filed today is not the sender contacting you today, and the
+	// dossier prints first/last seen as the contact window — stamping it there
+	// would report a complaint as a contact in the evidence record itself.
 	if err := upsertSpamSenderTx(ctx, tx, SpamSender{
 		Source: e.Source, Identifier: e.Identifier,
-		FirstSeenUnix: e.EventAtUnix, LastSeenUnix: e.EventAtUnix,
 	}, false, now); err != nil {
 		return err
 	}

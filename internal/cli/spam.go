@@ -357,6 +357,9 @@ func newSpamEvidenceCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			if err := validateDossierFormat(format); err != nil {
+				return err
+			}
 			outDir, err := cmd.Flags().GetString("out")
 			if err != nil {
 				return err
@@ -426,9 +429,6 @@ func newSpamEvidenceCommand() *cobra.Command {
 					return fmt.Errorf("write dossier: %w", err)
 				}
 				written = append(written, p)
-			}
-			if len(written) == 0 {
-				return fmt.Errorf("invalid --format %q (want md, json, or both)", format)
 			}
 			for _, p := range written {
 				fmt.Fprintln(cmd.OutOrStdout(), p)
@@ -735,6 +735,23 @@ func truncate(s string, n int) string {
 // safeFilename keeps a dossier filename to characters that behave the same on
 // every filesystem: "+15551234567" is fine, an email address or a handle with a
 // slash is not.
+// validateDossierFormat rejects an unrecognized --format before any work
+// happens.
+//
+// Checked only at the write, as it originally was, a bad value silently
+// rendered Markdown under --stdout — the JSON branch is an equality test, so
+// everything else fell through to it — and on the file path it still created
+// the export directory before refusing. A command whose output is evidence
+// must not quietly hand back a format nobody asked for.
+func validateDossierFormat(format string) error {
+	switch format {
+	case "md", "json", "both":
+		return nil
+	default:
+		return fmt.Errorf("invalid --format %q (want md, json, or both)", format)
+	}
+}
+
 func safeFilename(s string) string {
 	var b strings.Builder
 	for _, r := range s {

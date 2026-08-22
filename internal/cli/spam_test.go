@@ -138,3 +138,25 @@ func TestSafeFilename(t *testing.T) {
 		t.Errorf("safeFilename = %q", got)
 	}
 }
+
+// An unrecognized --format must be refused before any work happens. Validated
+// only at the write, it fell through the --stdout branch's equality test and
+// rendered Markdown — handing back a dossier in a format the caller did not ask
+// for, which is worse than an error for a command whose output is evidence.
+func TestValidateDossierFormat(t *testing.T) {
+	for _, ok := range []string{"md", "json", "both"} {
+		if err := validateDossierFormat(ok); err != nil {
+			t.Errorf("validateDossierFormat(%q) = %v, want nil", ok, err)
+		}
+	}
+	for _, bad := range []string{"xml", "", "MD", "markdown"} {
+		err := validateDossierFormat(bad)
+		if err == nil {
+			t.Errorf("validateDossierFormat(%q) accepted an unknown format", bad)
+			continue
+		}
+		if !strings.Contains(err.Error(), "invalid --format") {
+			t.Errorf("validateDossierFormat(%q) error does not name the flag: %v", bad, err)
+		}
+	}
+}
