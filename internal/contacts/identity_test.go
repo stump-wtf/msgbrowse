@@ -186,3 +186,60 @@ func TestStrongReasonBeatsDisplayName(t *testing.T) {
 		t.Errorf("reason = %q, want %q (the stronger evidence)", got[0].Reason, ReasonPhone)
 	}
 }
+
+// TestIsMultiRecipientNameBoundary covers the group/person decision at its
+// edges. IsMultiRecipientName had no direct test: it is the function that
+// decides whether a thread becomes a group, and both failure directions are
+// costly — a naive comma count invents a group out of "Stump, Joe", while
+// requiring too much misses a real multi-recipient thread.
+//
+// The interesting cases are the ones with a separator but too few handles.
+//
+// @joestump 08/22/2026 - Added in review of #378; the function shipped with no
+// direct coverage.
+func TestIsMultiRecipientNameBoundary(t *testing.T) {
+	cases := []struct {
+		name  string
+		group bool
+		why   string
+	}{
+		{"Stump, Joe", false, "surname-first person: separator, zero handles"},
+		{"Smith, Jr.", false, "generational suffix"},
+		{"Doe, John Q.", false, "comma plus initial, still no handles"},
+		{"me@example.com, chelsea@example.com", true, "two emails"},
+		{"+15551110001, +15551110002", true, "two phones"},
+		{"+15551110001; +15551110002", true, "semicolon separator"},
+		{"me@example.com, Chelsea", false, "only one part is handle-shaped"},
+		{"Chelsea, me@example.com", false, "one handle, reversed order"},
+		{"+15551110001", false, "single handle, no separator"},
+		{"Book Club", false, "no separator, no handles"},
+		{"", false, "empty"},
+		{"   ", false, "whitespace only"},
+		{"a@b.co, c@d.co, Joe", true, "two handles plus a name is still a group"},
+	}
+	for _, c := range cases {
+		if got := IsMultiRecipientName(c.name); got != c.group {
+			t.Errorf("IsMultiRecipientName(%q) = %v, want %v (%s)", c.name, got, c.group, c.why)
+		}
+	}
+}
+
+// TestFoldDisplayNameFloorBoundary pins the six-character floor at the exact
+// step. TestFoldDisplayNameRefusesWeakEvidence covers names comfortably below
+// it ("Joe", "Alex"), which leaves the 5-vs-6 transition — where an off-by-one
+// would live — unasserted.
+//
+// @joestump 08/22/2026 - Added in review of #378.
+func TestFoldDisplayNameFloorBoundary(t *testing.T) {
+	if got := FoldDisplayName("Chels"); got != "" {
+		t.Errorf("FoldDisplayName(%q) = %q, want \"\" (5 folded chars is below the floor)", "Chels", got)
+	}
+	if got := FoldDisplayName("Chelse"); got == "" {
+		t.Error("FoldDisplayName(\"Chelse\") = \"\", want non-empty (6 folded chars is exactly the floor)")
+	}
+	// Punctuation folds away BEFORE the length check, so a name that looks
+	// long enough can still fall below it.
+	if got := FoldDisplayName("J. Doe"); got != "" {
+		t.Errorf("FoldDisplayName(%q) = %q, want \"\" (folds to 4 chars)", "J. Doe", got)
+	}
+}
