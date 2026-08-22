@@ -94,7 +94,7 @@ func TestSurfacesCarryNoRawPadding(t *testing.T) {
 func TestSpacingScaleIsDefined(t *testing.T) {
 	css := readSourceCSS(t)
 	for _, token := range []string{
-		"--space-1:", "--space-2:", "--space-3:", "--space-4:", "--space-5:", "--space-6:",
+		"--space-1:", "--space-2:", "--space-3:", "--space-4:", "--space-5:", "--space-6:", "--space-7:",
 		"--surface-pad:", "--surface-pad-dense:", "--surface-pad-roomy:",
 		"--surface-radius:", "--surface-radius-dense:", "--surface-radius-roomy:",
 		"--stack-gap:", "--section-gap:",
