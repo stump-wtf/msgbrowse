@@ -1463,20 +1463,32 @@ a.meta-chip:hover {
 }
 
 /* --- Quick-link icon tiles (Home) ---------------------------------------- */
-/* Compact square tiles (icon + label) that sit four across in the 780px
-   reading column. The .notice-card empty state still uses .link-card-title /
-   .link-card-sub, so those rules stay below.
+/* Compact square tiles (icon + label). NOT CURRENTLY RENDERED: the Home
+   quick-link tiles were removed as redundant with the header tabs, and no
+   template applies .link-card or .link-card-icon today — TestHomeStatStrip
+   in handlers_test.go asserts Home does not emit them. What is still live is
+   the .link-card-title / .link-card-sub pair, reused by the .notice-card
+   empty states and .status-banner-head, so those rules stay below.
  *
  * Radius/padding (#394): the radius was a hand-rolled 0.75rem, off the scale
  * entirely — resolved onto --surface-radius-dense, the tier for surfaces that
- * sit many-to-a-screen (this one sits four across). The padding stays a
- * literal 0.95rem/0.6rem on purpose: it is asymmetric, tuned with min-height
- * to make a square-ish icon tile, and folding it into --surface-pad would
- * make it symmetric and change the tile's shape. Recorded as a deliberate
- * exemption in ADR-0012 rather than silently reshaped.
+ * sit many-to-a-screen. Because the rule is unrendered this is hygiene rather
+ * than a restyle: nothing on screen moves. The padding stays a literal
+ * 0.95rem/0.6rem on purpose: it is asymmetric, tuned with min-height to make
+ * a square-ish icon tile, and folding it into --surface-pad would make it
+ * symmetric and change the tile's shape. Recorded as a deliberate exemption
+ * in ADR-0012 rather than silently reshaped.
  *
  * @joestump-agent 08/22/2026 - Resolved the radius onto the scale (#394);
- * padding stays exempt, see ADR-0012. */
+ * padding stays exempt, see ADR-0012.
+ *
+ * @joestump-agent 08/22/2026 - Corrected in review: this rule is dead CSS.
+ * The comment above described a live four-across Home surface that no
+ * template has rendered since the tiles were removed, which overstated the
+ * blast radius of the radius change. Whether to delete .link-card /
+ * .link-card:hover / .link-card-icon outright — and rename the -title/-sub
+ * descendants, which ARE live — is a separate call: it also touches
+ * perf_client_test.go's reduced-motion list and spacing_test.go. */
 .link-card {
   display: flex;
   flex-direction: column;

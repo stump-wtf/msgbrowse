@@ -82,9 +82,15 @@ off daisyUI, and (2) keep a light theme even though the brief is dark-only.
    - **`.link-card`'s radius was the "ninth value" the original ADR entry
      warned about**: `0.75rem`, sitting exactly between
      `--surface-radius-dense` (0.625rem) and `--surface-radius` (0.875rem).
-     Resolved onto `--surface-radius-dense` — the tile sits four-across on
-     Home, the same "many-to-a-screen" shape `--surface-radius-dense`
-     already governs for `.result-card` / `.media-list-card`. Its padding
+     Resolved onto `--surface-radius-dense`, the "many-to-a-screen" shape
+     `--surface-radius-dense` already governs for `.result-card` /
+     `.media-list-card`. Note that the rule is **currently unrendered** —
+     the Home quick-link tiles were removed as redundant with the header
+     tabs, and `TestHomeStatStrip` asserts Home does not emit `.link-card`;
+     only the `.link-card-title` / `.link-card-sub` descendants are still
+     live, reused by `.notice-card` and `.status-banner-head`. Resolving the
+     radius is therefore stylesheet hygiene with no rendered effect, not a
+     visual change. Its padding
      (`0.95rem 0.6rem`) stays a **deliberate literal**: it is asymmetric,
      paired with `min-height: 92px` to make a square-ish icon tile, and
      folding it into `--surface-pad` would make it symmetric and reshape the
