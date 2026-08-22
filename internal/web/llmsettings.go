@@ -113,11 +113,12 @@ type llmSettingsData struct {
 	// degrade to a disabled select, never to a text input).
 	ModelsAvailable bool
 	// ModelsUnavailable explains WHY the selects are disabled, as its own
-	// fixed enum ("unsupported", "unreachable", "unavailable"), rendered as a
-	// banner beside the fields. It is deliberately separate from ModelsResult:
-	// that one reports the outcome of an explicit "Refresh models" click and
-	// loses the top-banner slot to a save or test result, while this one must
-	// stay on screen for as long as the controls are disabled.
+	// fixed enum ("unsupported", "unreachable", "empty", "unavailable"),
+	// rendered as a banner beside the fields. It is deliberately separate from
+	// ModelsResult: that one reports the outcome of an explicit "Refresh
+	// models" click and loses the top-banner slot to a save or test result,
+	// while this one must stay on screen for as long as the controls are
+	// disabled.
 	ModelsUnavailable string
 	// EmbedOptions / FactsOptions are the rendered <option> sets, built once in
 	// renderLLMSettings so no response can reach the template with a model
@@ -419,7 +420,7 @@ func (s *Server) handleSettingsLLMSave(w http.ResponseWriter, r *http.Request) {
 		"api_key_set", apiKey != "", "api_key_changed", !keptKey)
 
 	applied := s.llmConfig.CurrentLLM()
-	s.renderLLMSettings(w, r, llmSettingsData{
+	next := llmSettingsData{
 		BaseURL:           applied.BaseURL,
 		EmbedModel:        applied.EmbedModel,
 		FactsModel:        applied.ChatModel,
@@ -427,13 +428,22 @@ func (s *Server) handleSettingsLLMSave(w http.ResponseWriter, r *http.Request) {
 		APIKeyFromEnv:     applied.APIKeyFromEnv,
 		SaveResult:        "ok",
 		EmbedModelChanged: s.embedModelChanged(r.Context(), applied.EmbedModel),
-		// Carry this response's discovery forward rather than probing the
-		// endpoint again for the same answer.
-		Models:            data.Models,
-		ModelsAvailable:   data.ModelsAvailable,
-		ModelsUnavailable: data.ModelsUnavailable,
-		modelsResolved:    true,
-	})
+	}
+	// Carry this response's discovery forward ONLY when it still describes the
+	// endpoint that is now live. Discovery ran before ApplyLLM, against the
+	// PREVIOUS base URL and key; if the save changed either, those models came
+	// from a different server. Reusing them would render the old endpoint's
+	// listing as an enabled, selectable set while the client points somewhere
+	// else — and omit the models the new endpoint actually offers. Re-probing
+	// costs one bounded call on the save that changed the endpoint, and none
+	// on the far more common save that did not.
+	if applied.BaseURL == cur.BaseURL && keptKey {
+		next.Models = data.Models
+		next.ModelsAvailable = data.ModelsAvailable
+		next.ModelsUnavailable = data.ModelsUnavailable
+		next.modelsResolved = true
+	}
+	s.renderLLMSettings(w, r, next)
 }
 
 // handleSettingsLLMTest is POST /settings/llm/test — the "Test connection"

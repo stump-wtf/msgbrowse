@@ -32,6 +32,10 @@ type fakeLLMConfigurator struct {
 	// models, when non-nil, is what ListModels returns; nil falls through to
 	// llm.ErrModelsNotSupported (the pre-#271 default).
 	models []string
+	// listErr, when non-nil, is returned by ListModels instead of anything
+	// else — the unreachable-endpoint case, which is a transport error rather
+	// than llm.ErrModelsNotSupported and maps to its own banner.
+	listErr error
 }
 
 func (f *fakeLLMConfigurator) CurrentLLM() llm.Settings { return f.cur }
@@ -50,6 +54,9 @@ func (f *fakeLLMConfigurator) TestLLM(_ context.Context, s llm.Settings) llm.Tes
 }
 
 func (f *fakeLLMConfigurator) ListModels(_ context.Context) ([]string, error) {
+	if f.listErr != nil {
+		return nil, f.listErr
+	}
 	if f.models != nil {
 		return f.models, nil
 	}
@@ -869,6 +876,17 @@ func TestLLMTabDiscoveryFailureDisablesSelects(t *testing.T) {
 			},
 			"The endpoint offers no models.",
 		},
+		{
+			// A transport error, not ErrModelsNotSupported: the endpoint is
+			// down or the URL is wrong, which is a different thing to tell
+			// the user than "this endpoint serves no listing".
+			"endpoint unreachable",
+			&fakeLLMConfigurator{
+				cur:     llm.Settings{BaseURL: "http://llm.test:4000/v1", EmbedModel: "test-embed", ChatModel: "test-chat"},
+				listErr: errors.New("dial tcp: connection refused"),
+			},
+			"Could not reach the endpoint to list its models.",
+		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -1084,4 +1102,112 @@ func TestLLMSaveOffIsAlwaysAllowed(t *testing.T) {
 	if got := fc.applied[0]; got.EmbedModel != "" {
 		t.Errorf("applied embed model = %q, want off", got.EmbedModel)
 	}
+}
+
+// perEndpointLLMConfigurator answers ListModels according to the CURRENTLY
+// configured base URL. fakeLLMConfigurator returns one fixed listing whatever
+// the endpoint is, which cannot express "the save pointed us at a different
+// server" — the case TestLLMSaveRediscoversAfterBaseURLChange is about.
+type perEndpointLLMConfigurator struct {
+	cur     llm.Settings
+	applied []llm.Settings
+	byURL   map[string][]string
+}
+
+func (f *perEndpointLLMConfigurator) CurrentLLM() llm.Settings { return f.cur }
+func (f *perEndpointLLMConfigurator) ApplyLLM(s llm.Settings) error {
+	f.applied = append(f.applied, s)
+	f.cur = s
+	return nil
+}
+func (f *perEndpointLLMConfigurator) TestLLM(context.Context, llm.Settings) llm.TestResult {
+	return llm.TestResult{}
+}
+func (f *perEndpointLLMConfigurator) ListModels(context.Context) ([]string, error) {
+	if m, ok := f.byURL[f.cur.BaseURL]; ok {
+		return m, nil
+	}
+	return nil, llm.ErrModelsNotSupported
+}
+
+// TestLLMSaveRediscoversAfterBaseURLChange guards the carry-forward in the
+// save handler's success path.
+//
+// Discovery runs BEFORE ApplyLLM, so it describes the endpoint the user is
+// leaving. Reusing it unconditionally rendered the previous server's listing
+// as an enabled, selectable set while the live client already pointed at the
+// new one — offering models the endpoint may not have and hiding the ones it
+// does. The save that changes the endpoint re-probes; the save that does not
+// still reuses (TestLLMSaveReusesDiscoveryWhenEndpointUnchanged).
+func TestLLMSaveRediscoversAfterBaseURLChange(t *testing.T) {
+	srv, _, _ := newTestServer(t)
+	fc := &perEndpointLLMConfigurator{
+		cur: llm.Settings{BaseURL: "http://old.test:4000/v1", EmbedModel: "old-a", ChatModel: "old-b"},
+		byURL: map[string][]string{
+			"http://old.test:4000/v1": {"old-a", "old-b"},
+			"http://new.test:4000/v1": {"new-x", "new-y"},
+		},
+	}
+	srv.SetLLMConfig(fc)
+
+	tok := mintToken(t, srv)
+	// Change only the base URL; the model fields post back what the form held.
+	rec := llmPOST(t, srv, selfOrigin, tok, map[string]string{
+		"base_url":    "http://new.test:4000/v1",
+		"embed_model": "old-a",
+		"facts_model": "old-b",
+	})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d", rec.Code)
+	}
+	if len(fc.applied) != 1 {
+		t.Fatalf("applied %d, want 1", len(fc.applied))
+	}
+	body := rec.Body.String()
+	if !contains(body, "new-x") || !contains(body, "new-y") {
+		t.Error("the post-save page must offer the models of the endpoint that is now live")
+	}
+	// old-b stays present as the retained current value, but old-a — neither
+	// current-chat nor offered by the new endpoint — must not be a live option.
+	if contains(body, `<option value="old-a"`) && !contains(body, "not currently offered") {
+		t.Error("the previous endpoint's listing is still being offered as live choices")
+	}
+}
+
+// TestLLMSaveReusesDiscoveryWhenEndpointUnchanged is the other half: the
+// common save, where nothing about the endpoint moved, must not pay for a
+// second probe of the same server.
+func TestLLMSaveReusesDiscoveryWhenEndpointUnchanged(t *testing.T) {
+	srv, _, _ := newTestServer(t)
+	fc := &countingLLMConfigurator{
+		fakeLLMConfigurator: fakeLLMConfigurator{
+			cur:    llm.Settings{BaseURL: "http://llm.test:4000/v1", EmbedModel: "alpha", ChatModel: "beta"},
+			models: []string{"alpha", "beta"},
+		},
+	}
+	srv.SetLLMConfig(fc)
+
+	tok := mintToken(t, srv)
+	rec := llmPOST(t, srv, selfOrigin, tok, map[string]string{
+		"base_url":    "http://llm.test:4000/v1",
+		"embed_model": "beta",
+		"facts_model": "alpha",
+	})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d", rec.Code)
+	}
+	if fc.listCalls != 1 {
+		t.Errorf("ListModels called %d times, want 1 — an unchanged endpoint should reuse the save's own discovery", fc.listCalls)
+	}
+}
+
+// countingLLMConfigurator counts ListModels calls.
+type countingLLMConfigurator struct {
+	fakeLLMConfigurator
+	listCalls int
+}
+
+func (f *countingLLMConfigurator) ListModels(ctx context.Context) ([]string, error) {
+	f.listCalls++
+	return f.fakeLLMConfigurator.ListModels(ctx)
 }
