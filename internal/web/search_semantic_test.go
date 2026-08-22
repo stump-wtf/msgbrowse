@@ -26,6 +26,25 @@ func TestSearchSemanticUnavailable(t *testing.T) {
 	}
 }
 
+// TestSearchUnavailableExplainerPointsAtSearchIndexTab: the explainer above
+// tells the user to go build the index, so it has to name the surface that
+// actually carries the Build control. That moved from /status to
+// /settings/search-index in #368; a link left on /status would send the user to
+// a page with nothing to click on, which is the worse failure — the advice
+// looks followed and nothing happens.
+//
+// @joestump 08/22/2026 - Added while reviewing #376, which orphaned this link.
+func TestSearchUnavailableExplainerPointsAtSearchIndexTab(t *testing.T) {
+	srv, _, _ := newTestServer(t) // no indexer → the explainer renders
+	body := get(t, srv, "/search/results?q=lease&mode=semantic").Body.String()
+	if !contains(body, `href="/settings/search-index"`) {
+		t.Errorf("explainer should link the Search index tab, got: %s", body)
+	}
+	if contains(body, `href="/status"`) {
+		t.Errorf("explainer still links /status, which no longer carries the Build control: %s", body)
+	}
+}
+
 // TestSearchSemanticResults: with an indexer wired (an embed model + a query
 // vector) and a stored embedding, semantic mode returns the message ranked by
 // similarity, rendered through the result card with a score chip and WITHOUT an
