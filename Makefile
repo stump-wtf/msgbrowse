@@ -78,7 +78,7 @@ test: ## Run all tests
 	$(GO) test ./...
 
 test-race: ## Race-detector pass over the concurrency-bearing packages (SPEC-0027 REQ-0027-004)
-	CGO_ENABLED=1 $(GO) test -race ./internal/sentiment/ ./internal/store/
+	CGO_ENABLED=1 $(GO) test -race ./internal/sentiment/ ./internal/spam/ ./internal/store/
 
 cover: ## Run tests with coverage
 	$(GO) test -coverprofile=coverage.out ./...

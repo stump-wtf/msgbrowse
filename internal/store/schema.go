@@ -6,7 +6,7 @@ import "context"
 // `user_version` pragma. On Open, the migrations runner brings any older
 // database forward to this version. Bump it and append a migration whenever the
 // schema changes.
-const schemaVersion = 17
+const schemaVersion = 18
 
 // SchemaVersion returns the schema revision this binary expects (and migrates a
 // database forward to on Open). Read-only callers — notably `msgbrowse doctor` —
@@ -56,6 +56,7 @@ var migrations = []string{
 	15: schemaV15,
 	16: schemaV16,
 	17: schemaV17,
+	18: schemaV18,
 }
 
 // schemaV1 is the initial Signal-only schema. It is preserved verbatim so a
@@ -779,5 +780,106 @@ CREATE TABLE IF NOT EXISTS sentiment_state (
 CREATE TABLE IF NOT EXISTS contact_sentiment_optout (
     contact_id INTEGER PRIMARY KEY,
     created_at TEXT NOT NULL
+);
+`
+
+// schemaV18 lays down the unsolicited-contact (spam) evidence layer
+// (ADR-0029, SPEC-0028).
+//
+// Every table here is a DERIVED CACHE over the archive in the ADR-0002 sense,
+// with one deliberate exception (spam_senders, below), so none of them carry a
+// foreign key to messages: a re-ingest deletes and re-inserts message rows with
+// new rowids but identical content hashes, and an ON DELETE CASCADE would wipe
+// the evidence record on every import. Keying by message hash is what lets a
+// dossier assembled today still resolve after tomorrow's re-export.
+//
+// spam_findings is the per-message scan result: one row per message the ruleset
+// examined, stamped with the ruleset_version that produced it, because findings
+// from two different rule configurations are not comparable and must never be
+// mixed in one dossier. It is NOT sparse — a non-matching message from a
+// stranger still gets a row with empty reasons, because "we looked at this
+// message and it tripped nothing" is itself evidence, and the trailing-12-month
+// counts are counts of contact, not counts of violations.
+//
+// spam_senders is the one table that is NOT purely derived: status,
+// suspected_entity, consent_status, consent_notes and notes are HUMAN
+// judgments, entered by hand and never overwritten by a scan. A scan may
+// promote 'seen' to 'watch'; it may not touch anything a person set. That is
+// why the table survives `spam scan --reset`, which clears only the derived
+// halves (findings, cursors, and scan-origin events).
+//
+// spam_events records things that happened outside the message stream (an FCC
+// complaint, a 7726 report) alongside the opt-outs detected inside it. origin
+// distinguishes the two: a detected STOP ('scan') is re-derivable, a typed one
+// ('manual') is not, and only the former is cleared by --reset. The UNIQUE
+// constraint makes both insert paths idempotent.
+//
+// spam_state is the per-conversation incremental cursor, the same
+// hash-anchored keyset design as fact_state and sentiment_state: a stored
+// ruleset_version different from the current one rescans the conversation from
+// the top, which is safe because every write is an idempotent upsert.
+const schemaV18 = `
+CREATE TABLE IF NOT EXISTS spam_senders (
+    id                INTEGER PRIMARY KEY,
+    source            TEXT    NOT NULL,
+    identifier        TEXT    NOT NULL,
+    conversation_name TEXT    NOT NULL DEFAULT '',
+    status            TEXT    NOT NULL DEFAULT 'seen',
+    suspected_entity  TEXT    NOT NULL DEFAULT '',
+    consent_status    TEXT    NOT NULL DEFAULT 'no_consent_on_record',
+    consent_notes     TEXT    NOT NULL DEFAULT '',
+    notes             TEXT    NOT NULL DEFAULT '',
+    first_seen_unix   INTEGER NOT NULL DEFAULT 0,
+    last_seen_unix    INTEGER NOT NULL DEFAULT 0,
+    created_at        TEXT    NOT NULL,
+    updated_at        TEXT    NOT NULL,
+    UNIQUE(source, identifier)
+);
+
+CREATE TABLE IF NOT EXISTS spam_findings (
+    message_hash    TEXT    NOT NULL,
+    ruleset_version TEXT    NOT NULL,
+    source          TEXT    NOT NULL,
+    identifier      TEXT    NOT NULL,
+    direction       TEXT    NOT NULL,
+    ts_unix         INTEGER NOT NULL,
+    reasons         TEXT    NOT NULL DEFAULT '[]',
+    urls            TEXT    NOT NULL DEFAULT '[]',
+    phones          TEXT    NOT NULL DEFAULT '[]',
+    emails          TEXT    NOT NULL DEFAULT '[]',
+    names_matched   TEXT    NOT NULL DEFAULT '[]',
+    entities        TEXT    NOT NULL DEFAULT '[]',
+    is_candidate    INTEGER NOT NULL DEFAULT 0,
+    is_after_optout INTEGER NOT NULL DEFAULT 0,
+    UNIQUE(message_hash, ruleset_version)
+);
+
+-- Every read side (sender stats, violations, dossier, the rolling-window math)
+-- filters to one sender and one ruleset generation, then orders by time.
+CREATE INDEX IF NOT EXISTS idx_spam_findings_sender
+    ON spam_findings(source, identifier, ruleset_version, ts_unix);
+
+CREATE TABLE IF NOT EXISTS spam_events (
+    id            INTEGER PRIMARY KEY,
+    source        TEXT    NOT NULL,
+    identifier    TEXT    NOT NULL,
+    event_type    TEXT    NOT NULL,
+    event_at      TEXT    NOT NULL,
+    event_at_unix INTEGER NOT NULL,
+    details       TEXT    NOT NULL DEFAULT '',
+    origin        TEXT    NOT NULL DEFAULT 'manual',
+    message_hash  TEXT    NOT NULL DEFAULT '',
+    created_at    TEXT    NOT NULL,
+    UNIQUE(source, identifier, event_type, event_at_unix, message_hash)
+);
+
+CREATE INDEX IF NOT EXISTS idx_spam_events_sender
+    ON spam_events(source, identifier, event_at_unix);
+
+CREATE TABLE IF NOT EXISTS spam_state (
+    conversation_id   INTEGER PRIMARY KEY REFERENCES conversations(id) ON DELETE CASCADE,
+    last_message_hash TEXT    NOT NULL,
+    ruleset_version   TEXT    NOT NULL,
+    updated_at        TEXT    NOT NULL
 );
 `

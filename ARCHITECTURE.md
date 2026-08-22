@@ -24,6 +24,8 @@ cmd/msgbrowse-desktop    Wails v2 desktop shell + systray, embedding the same we
     ├── internal/embed   batch embedding orchestration
     ├── internal/facts   incremental, cited contact-fact extraction (LLM)
     ├── internal/journal per-day mechanical rollup + optional LLM digest (ADR-0023)
+    ├── internal/spam    unsolicited-contact evidence: local deterministic rules,
+    │                    opt-out detection, per-sender dossiers — NO egress (ADR-0029)
     ├── internal/imageconv  transcode HEIC/TIFF → cached JPEG (external converter, ADR-0014)
     ├── internal/archivepath shared, traversal-safe attachment path resolution
     ├── internal/contacts pluggable address-book Resolver seam + identifier normalization (contact merging)
@@ -70,6 +72,15 @@ desktop's embedded server.
   model swap or `journal.digest_prompt` edit re-derives affected days. Days are
   bucketed in UTC; no FK to messages (same rationale as embeddings/contact_facts —
   re-ingest rewrites message rowids).
+- `spam_findings`, `spam_senders`, `spam_events`, `spam_state` (schemaV18) — the
+  unsolicited-contact evidence layer (ADR-0029): per-message scan results stamped
+  with a `ruleset_version` (a digest of the `spam:` config, so a rule change
+  re-derives rather than mixing generations), the non-contact counterparties and
+  the human judgments recorded about them (status / suspected entity / consent —
+  columns a scan may never overwrite), the opt-outs and complaints, and the
+  per-conversation hash cursor. FK-less for the same reason as `embeddings` and
+  `contact_facts`. `is_after_optout` is recomputed WHOLESALE after every scan and
+  every recorded opt-out, never incrementally.
 - `snapshots`, `ingest_state`, `ingest_runs` — backup inventory + incremental
   bookkeeping + per-run summaries.
 - `paired_devices`, `sync_state` — device sync (ADR-0021): the explicitly
@@ -108,6 +119,10 @@ One `llm.Client` interface (`Embed`, `Chat`, `Transcribe`, `Vision`) backed by a
 OpenAI-compatible HTTP client, pointed by default at a local LiteLLM proxy. This
 package is the sole *internet* egress. `Transcribe`/`Vision` exist for the
 media-first journal (Slice 6).
+
+`msgbrowse spam` is the one derivation that touches no network at all — its
+classification is deterministic regex/keyword matching, and ADR-0029 declines
+carrier lookup rather than adding a second egress.
 
 Two other network/process paths exist beyond it, both local: opt-in device
 sync (`device_sync.enabled`, off by default) has `internal/syncthing` supervise
@@ -151,8 +166,9 @@ the UI loads — CSS, htmx, the theme script, icons — is same-origin.
 - [ADR-0020](docs/adr/0020-bundled-exporters-guided-setup.md) — bundled exporter toolchain in the `.app` + guided setup.
 - [ADR-0021](docs/adr/0021-syncthing-sync-engine.md) — device sync: supervised Syncthing engine (supersedes ADR-0018).
 - [ADR-0024](docs/adr/0024-contact-merging-and-address-book-abstraction.md) — contact merging + address-book abstraction (pure-Go resolver seam, macOS provider behind a build tag).
+- [ADR-0029](docs/adr/0029-unsolicited-contact-evidence.md) — unsolicited-contact evidence: local, zero-egress derivation over the imported archive; no carrier lookup.
 
-The full set (ADR-0001–0022) lives in [`docs/adr/`](docs/adr/).
+The full set (ADR-0001–0029) lives in [`docs/adr/`](docs/adr/).
 
 ## Containerization
 

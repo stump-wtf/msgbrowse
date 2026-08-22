@@ -97,6 +97,7 @@ with one click. See the
 | `msgbrowse facts` | Extract cited AI facts about each contact. |
 | `msgbrowse media` | Transcode HEIC/TIFF to cached JPEGs for the gallery. |
 | `msgbrowse journal` | Build the per-day journal rollup + optional LLM digest. |
+| `msgbrowse spam` | Build an evidence record of unsolicited contact and export per-sender dossiers. Local, deterministic, **no network egress**. |
 | `msgbrowse serve` | Run the local HTMX web UI (default `127.0.0.1:8787`). |
 | `msgbrowse mcp` | Run the MCP server (stdio; `--http` for streamable HTTP). |
 | `msgbrowse devices` | Manage LAN-only device-sync peers: `list`, `status`, `unpair`. |

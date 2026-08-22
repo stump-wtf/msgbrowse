@@ -77,6 +77,12 @@ type Config struct {
 	// retention 14/12/4/2.
 	Backups BackupsConfig `mapstructure:"backups"`
 
+	// Spam configures the unsolicited-contact evidence layer (ADR-0029).
+	// Every key is inert until `msgbrowse spam scan` is run: the scan is a
+	// deliberate command, never a side effect of import or serving, and it
+	// performs no network egress at all.
+	Spam SpamConfig `mapstructure:"spam"`
+
 	// IngestOnStart triggers an ingest pass when `serve` boots.
 	IngestOnStart bool `mapstructure:"ingest_on_start"`
 
@@ -176,6 +182,65 @@ type JournalConfig struct {
 
 	// MaxDaysPerRun caps how many days a single digest run will process.
 	MaxDaysPerRun int `mapstructure:"max_days_per_run"`
+}
+
+// SpamConfig is the classification policy for the unsolicited-contact evidence
+// layer (ADR-0029 / SPEC-0028). Every field participates in the ruleset version
+// stamped on each finding, so changing any of them re-derives the whole
+// evidence layer on the next scan — findings produced under two different rule
+// sets are not comparable and must never share a dossier.
+//
+// The block is entirely optional. With it absent the scan still runs and still
+// records who messaged you and what you sent back; it simply has no watch list,
+// no name variants, and no opt-out notice to match, so nothing is flagged as a
+// candidate.
+type SpamConfig struct {
+	// MyNumbers are the archive owner's own identifiers. They are never
+	// counterparties.
+	MyNumbers []string `mapstructure:"my_numbers"`
+
+	// Allowlist holds identifiers that are never candidates even though no
+	// address book knows them: banks, 2FA short codes, delivery notifications.
+	Allowlist []string `mapstructure:"allowlist"`
+
+	// WatchAreaCodes are NANP area codes (no country code) worth flagging.
+	WatchAreaCodes []string `mapstructure:"watch_area_codes"`
+
+	// NameVariants are the owner's first name and every misspelling a sender
+	// has used. A stranger using your name is evidence they believe they know
+	// who they are texting.
+	NameVariants []string `mapstructure:"name_variants"`
+
+	// FlagAnyURL makes a bare link a reason on its own, not just a shortener.
+	FlagAnyURL bool `mapstructure:"flag_any_url"`
+
+	// ShortenerDomains overrides the built-in link-shortener denylist.
+	ShortenerDomains []string `mapstructure:"shortener_domains"`
+
+	// EntityKeywords seed the industry guess. They are leads, never findings.
+	EntityKeywords []string `mapstructure:"entity_keywords"`
+
+	// StopKeywords are outbound bodies that, standing alone, count as an
+	// opt-out.
+	StopKeywords []string `mapstructure:"stop_keywords"`
+
+	// CannedNotice is the owner's DNC/TCPA notice, matched as a normalized
+	// prefix so autocorrect and a trimmed send still register.
+	CannedNotice string `mapstructure:"canned_notice"`
+
+	// CannedNoticeMatchRatio is the fraction of CannedNotice that must appear.
+	CannedNoticeMatchRatio float64 `mapstructure:"canned_notice_match_ratio"`
+
+	// ExcludeConversations is a denylist of conversation names the scan never
+	// reads. It is separate from journal.exclude_conversations on purpose: that
+	// list is about what may be sent to an LLM, this one about what may enter
+	// an evidence record, and the right answers differ.
+	ExcludeConversations []string `mapstructure:"exclude_conversations"`
+
+	// ExportDir is where `msgbrowse spam evidence` writes dossiers. Empty means
+	// <data_dir>/spam-exports. A dossier is a plaintext copy of every message
+	// from one sender; the directory is created 0700 and files 0600.
+	ExportDir string `mapstructure:"export_dir"`
 }
 
 // BackupsConfig configures msgbrowse-owned snapshots (ADR-0026 / SPEC-0026).
@@ -299,6 +364,19 @@ func SetDefaults(v *viper.Viper) {
 	v.SetDefault("backups.retention.monthly", DefaultRetention.Monthly)
 	v.SetDefault("backups.retention.quarterly", DefaultRetention.Quarterly)
 	v.SetDefault("backups.retention.yearly", DefaultRetention.Yearly)
+
+	v.SetDefault("spam.my_numbers", []string{})
+	v.SetDefault("spam.allowlist", []string{})
+	v.SetDefault("spam.watch_area_codes", []string{})
+	v.SetDefault("spam.name_variants", []string{})
+	v.SetDefault("spam.flag_any_url", true)
+	v.SetDefault("spam.shortener_domains", []string{})
+	v.SetDefault("spam.entity_keywords", []string{})
+	v.SetDefault("spam.stop_keywords", []string{})
+	v.SetDefault("spam.canned_notice", "")
+	v.SetDefault("spam.canned_notice_match_ratio", 0.6)
+	v.SetDefault("spam.exclude_conversations", []string{})
+	v.SetDefault("spam.export_dir", "")
 
 	v.SetDefault("ingest_on_start", false)
 	v.SetDefault("watch", false)

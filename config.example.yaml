@@ -106,6 +106,52 @@ device_sync:
   # The desktop .app ignores this and always runs its bundled, pinned copy.
   syncthing_bin: ""
 
+# Unsolicited-contact evidence layer (ADR-0029 / SPEC-0028). Everything here is
+# inert until you run `msgbrowse spam scan`: the scan is a deliberate command,
+# never a side effect of import or serving, and unlike facts/sentiment/journal
+# it performs NO network egress at all — classification is local, deterministic
+# and regex-based, and msgbrowse does no carrier lookup.
+#
+# Changing ANY key below changes the ruleset version stamped on every finding,
+# which rescans the whole archive on the next run. That is deliberate: findings
+# produced under two different rule sets are not comparable and must never
+# share a dossier.
+spam:
+  # Your own identifiers in E.164. Never counterparties.
+  my_numbers: []
+  # Never candidates even though no address book knows them: banks, 2FA short
+  # codes, delivery notifications.
+  allowlist: []
+  # NANP area codes (no country code) worth flagging.
+  watch_area_codes: []
+  # Your first name and every misspelling a sender has used for you. A stranger
+  # using your name is evidence they believe they know who they are texting.
+  name_variants: []
+  # Treat a bare link as a reason on its own, not just a shortener.
+  flag_any_url: true
+  # Overrides the built-in link-shortener denylist (empty = use the built-in).
+  shortener_domains: []
+  # Industry hints for the "who is behind this number" column. Leads, never
+  # findings (empty = use the built-in list).
+  entity_keywords: []
+  # Outbound bodies that, standing ALONE, count as an opt-out. A body merely
+  # containing one of these is a complaint, not a formal opt-out (empty = use
+  # the built-in list).
+  stop_keywords: []
+  # Your DNC/TCPA notice, matched as a normalized prefix so autocorrect and a
+  # trimmed send still register. Paste the exact wording you send.
+  canned_notice: ""
+  # How much of the notice must match, as a fraction.
+  canned_notice_match_ratio: 0.6
+  # Conversation names the scan never reads. Separate from
+  # journal.exclude_conversations on purpose: that list governs what may be sent
+  # to an LLM, this one what may enter an evidence record.
+  exclude_conversations: []
+  # Where `msgbrowse spam evidence` writes dossiers. Empty = <data_dir>/spam-exports.
+  # A dossier is a plaintext copy of every message from one sender; the
+  # directory is created 0700 and the files 0600.
+  export_dir: ""
+
 # Run an import pass automatically when `serve` starts.
 ingest_on_start: false
 # Re-ingest automatically when the archive changes (fsnotify).

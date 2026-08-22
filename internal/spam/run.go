@@ -1,0 +1,348 @@
+package spam
+
+import (
+	"context"
+	"fmt"
+	"log/slog"
+	"strings"
+	"time"
+
+	"github.com/joestump/msgbrowse/internal/contacts"
+	"github.com/joestump/msgbrowse/internal/store"
+)
+
+// Options configures one scan.
+type Options struct {
+	// Rules is the classification policy. Required.
+	Rules *Rules
+	// AddressBook decides who counts as a stranger. Nil means
+	// contacts.Unavailable, which puts the scan in degraded mode (see Summary).
+	AddressBook contacts.Resolver
+	// Exclude is a denylist of conversation names never examined. It mirrors
+	// journal.exclude_conversations and is applied before any body is read.
+	Exclude []string
+	// OnlyConversationID limits the scan to one conversation.
+	OnlyConversationID int64
+	// Reset clears derived findings, cursors, and detected opt-outs first.
+	// Human judgments and manually filed events survive it.
+	Reset bool
+	// BatchSize is how many messages are read and written per transaction.
+	BatchSize int
+	// Now supplies the current time; defaults to time.Now.
+	Now func() time.Time
+	// Logger receives progress; defaults to slog.Default().
+	Logger *slog.Logger
+}
+
+// Summary is what one scan did.
+type Summary struct {
+	RulesetVersion   string
+	Conversations    int
+	MessagesScanned  int
+	Findings         int
+	Candidates       int
+	OptOutsDetected  int
+	Senders          int
+	SkippedInContact int
+	SkippedAllowlist int
+	SkippedOwner     int
+	SkippedNotShaped int
+	// AddressBook is "available", "needs-permission", or "absent".
+	AddressBook string
+	// Degraded is true when the address book could not be read and the scan
+	// fell back to the identifier-shape heuristic. A degraded run is still
+	// useful, but it cannot tell a stranger from a friend whose thread is named
+	// by a bare number, so the caller MUST surface this.
+	Degraded   bool
+	DurationMS int64
+}
+
+// Run scans the archive for unsolicited contact and writes the evidence layer.
+//
+// It performs NO network I/O. Classification is local, deterministic, and
+// regex-based, so this command is safe to run on an archive you would not send
+// to an LLM (ADR-0029 §3).
+//
+// The scan is incremental in the same way fact extraction and sentiment scoring
+// are: a per-conversation cursor anchored on a message content hash. Changing
+// any rule changes the ruleset version, which rescans every conversation —
+// findings from two rule generations are not comparable and must never share a
+// dossier.
+func Run(ctx context.Context, st *store.Store, opts Options) (Summary, error) {
+	log := opts.Logger
+	if log == nil {
+		log = slog.Default()
+	}
+	now := opts.Now
+	if now == nil {
+		now = time.Now
+	}
+	if opts.Rules == nil {
+		return Summary{}, fmt.Errorf("spam: no ruleset configured")
+	}
+	batch := opts.BatchSize
+	if batch <= 0 || batch > 500 {
+		batch = 200
+	}
+	book := opts.AddressBook
+	if book == nil {
+		book = contacts.Unavailable{}
+	}
+	start := now()
+	version := opts.Rules.Version()
+	sum := Summary{RulesetVersion: version}
+
+	if opts.Reset {
+		if err := st.ResetSpam(ctx); err != nil {
+			return sum, err
+		}
+		log.Info("spam reset: cleared findings, cursors, and detected opt-outs (manual records kept)")
+	}
+
+	// Resolve the address book ONCE, in bulk. Asking it per identifier would be
+	// N round trips into Contacts.framework for no extra accuracy.
+	availability := book.Availability(ctx)
+	sum.AddressBook = availability.String()
+	known := map[string]struct{}{}
+	if availability == contacts.Available {
+		people, err := book.People(ctx)
+		if err != nil {
+			return sum, fmt.Errorf("spam: read address book: %w", err)
+		}
+		for _, p := range people {
+			for _, id := range p.Identifiers {
+				if k := MatchKey(id.Value); k != "" {
+					known[k] = struct{}{}
+				}
+			}
+		}
+		log.Info("spam: address book read", "people", len(people), "identifiers", len(known))
+	} else {
+		// Degraded mode. spam-catcher's rule here was "treat everyone as a
+		// stranger and warn", which is right when the tool only ever stores
+		// non-contacts. msgbrowse already holds the whole archive, so that
+		// rule would enroll every friend and relative as a spam sender on the
+		// default (address-book-free) build. Instead the scan narrows to
+		// threads whose name is a bare phone number or email — the shape an
+		// unknown number takes in an export, because the exporter names a
+		// known thread after the person — and says loudly that it did.
+		sum.Degraded = true
+		log.Warn("spam: no readable address book — scanning only phone/email-shaped threads; senders you know may be missing and known threads named by a bare number may be misfiled",
+			"availability", sum.AddressBook)
+	}
+
+	convs, err := st.SpamConversations(ctx, opts.Exclude)
+	if err != nil {
+		return sum, err
+	}
+	if opts.OnlyConversationID > 0 {
+		filtered := convs[:0]
+		for _, c := range convs {
+			if c.ID == opts.OnlyConversationID {
+				filtered = append(filtered, c)
+			}
+		}
+		convs = filtered
+		// A targeted run that matches nothing is a typo, not a clean result.
+		if len(convs) == 0 {
+			return sum, fmt.Errorf("spam: conversation %d is not eligible — unknown id, a group thread, holds no real messages, or is on the exclude list", opts.OnlyConversationID)
+		}
+	}
+
+	for _, c := range convs {
+		if err := ctx.Err(); err != nil {
+			return sum, err
+		}
+		identifier, ok := senderIdentifier(c.Name)
+		if !ok {
+			continue
+		}
+		switch {
+		case opts.Rules.IsMine(identifier):
+			sum.SkippedOwner++
+			continue
+		case opts.Rules.IsAllowlisted(identifier):
+			sum.SkippedAllowlist++
+			continue
+		}
+		if availability == contacts.Available {
+			if _, inBook := known[MatchKey(identifier)]; inBook {
+				sum.SkippedInContact++
+				continue
+			}
+		} else if !shapedLikeAHandle(c.Name) {
+			sum.SkippedNotShaped++
+			continue
+		}
+
+		stats, err := scanConversation(ctx, st, opts.Rules, version, batch, c, identifier)
+		if err != nil {
+			return sum, err
+		}
+		sum.Conversations++
+		sum.Senders++
+		sum.MessagesScanned += stats.scanned
+		sum.Findings += stats.findings
+		sum.Candidates += stats.candidates
+		sum.OptOutsDetected += stats.optOuts
+	}
+
+	// Wholesale, never incremental: an opt-out detected in this run changes the
+	// flag on messages scanned long before it. See RecomputeSpamAfterOptOut.
+	if err := st.RecomputeSpamAfterOptOut(ctx, version); err != nil {
+		return sum, err
+	}
+
+	sum.DurationMS = time.Since(start).Milliseconds()
+	log.Info("spam scan complete", "ruleset", version, "conversations", sum.Conversations,
+		"messages", sum.MessagesScanned, "candidates", sum.Candidates,
+		"opt_outs", sum.OptOutsDetected, "duration_ms", sum.DurationMS)
+	return sum, nil
+}
+
+type convStats struct {
+	scanned    int
+	findings   int
+	candidates int
+	optOuts    int
+}
+
+// scanConversation walks one thread from its stored cursor, classifying and
+// persisting batch by batch.
+func scanConversation(ctx context.Context, st *store.Store, rules *Rules, version string, batch int, c store.SpamConversation, identifier string) (convStats, error) {
+	var stats convStats
+
+	// Resume point. A stored version that differs from the current ruleset
+	// means those findings answer a different question: rescan from the top.
+	// Every write is an idempotent upsert, so a restart is always safe.
+	var cursorTS, cursorID int64
+	if lastHash, storedVersion, ok, err := st.GetSpamState(ctx, c.ID); err != nil {
+		return stats, err
+	} else if ok && storedVersion == version {
+		if ts, id, found, err := st.ResolveCursor(ctx, c.ID, lastHash); err != nil {
+			return stats, err
+		} else if found {
+			cursorTS, cursorID = ts, id
+		}
+		// found == false means the cursor's message is gone (re-export); the
+		// zero cursor restarts this conversation from the top.
+	}
+
+	const maxBatches = 100_000 // defensive backstop; the cursor always advances
+	for range maxBatches {
+		if err := ctx.Err(); err != nil {
+			return stats, err
+		}
+		page, err := st.GetMessages(ctx, c.ID, cursorTS, cursorID, batch, false)
+		if err != nil {
+			return stats, err
+		}
+		if len(page.Messages) == 0 {
+			break
+		}
+
+		var (
+			findings []store.SpamFinding
+			events   []store.SpamEvent
+			anchor   string
+			first    int64
+			last     int64
+		)
+		for _, m := range page.Messages {
+			if m.IsSystem || strings.TrimSpace(m.Body) == "" {
+				continue
+			}
+			anchor = m.Hash
+			stats.scanned++
+			if first == 0 || m.TSUnix < first {
+				first = m.TSUnix
+			}
+			if m.TSUnix > last {
+				last = m.TSUnix
+			}
+
+			f := store.SpamFinding{
+				MessageHash: m.Hash,
+				Source:      c.Source,
+				Identifier:  identifier,
+				Direction:   store.SpamInbound,
+				TSUnix:      m.TSUnix,
+			}
+			if m.IsOwner {
+				f.Direction = store.SpamOutbound
+				if kind := rules.MatchOptOut(m.Body); kind != "" {
+					events = append(events, store.SpamEvent{
+						Source:      c.Source,
+						Identifier:  identifier,
+						EventType:   kind,
+						EventAt:     m.TS,
+						EventAtUnix: m.TSUnix,
+						Details:     "detected in an outbound message during scan",
+						Origin:      "scan",
+						MessageHash: m.Hash,
+					})
+					stats.optOuts++
+				}
+			} else {
+				cl := rules.Classify(identifier, m.Body)
+				f.Reasons, f.URLs, f.Phones = cl.Reasons, cl.URLs, cl.Phones
+				f.Emails, f.Names, f.Entities = cl.Emails, cl.Names, cl.Entities
+				f.IsCandidate = cl.IsCandidate
+				if cl.IsCandidate {
+					stats.candidates++
+				}
+			}
+			findings = append(findings, f)
+		}
+
+		// Anchor the cursor on the last REAL message in the batch. Re-export
+		// reformats volatile system lines (changing their hash), and anchoring
+		// on one would fail to resolve later and force a full rescan.
+		if anchor == "" {
+			anchor = page.Messages[len(page.Messages)-1].Hash
+		}
+		sender := store.SpamSender{
+			Source:           c.Source,
+			Identifier:       identifier,
+			ConversationName: c.Name,
+			FirstSeenUnix:    first,
+			LastSeenUnix:     last,
+		}
+		if err := st.PutSpamBatch(ctx, c.ID, version, anchor, sender, findings, events); err != nil {
+			return stats, err
+		}
+		stats.findings += len(findings)
+
+		cursorTS, cursorID = page.NextTSUnix, page.NextID
+		if len(page.Messages) < batch {
+			break
+		}
+	}
+	return stats, nil
+}
+
+// senderIdentifier canonicalizes a conversation name into the identifier the
+// evidence layer keys on. A blank or unnameable thread is skipped.
+func senderIdentifier(convName string) (string, bool) {
+	id := contacts.Normalize(convName)
+	if id.IsZero() {
+		return "", false
+	}
+	return id.Value, true
+}
+
+// shapedLikeAHandle reports whether a conversation name is a bare phone number
+// or email — the shape an UNKNOWN counterparty takes in an export, since the
+// exporter names a thread after the person when it can resolve one.
+//
+// This is the degraded-mode gate, and it is a heuristic, not a fact: a thread
+// exported before the sender was added to Contacts still carries a number.
+// SPEC-0028 requires the summary to say when a run relied on it.
+func shapedLikeAHandle(convName string) bool {
+	switch contacts.Normalize(convName).Kind {
+	case contacts.KindPhone, contacts.KindEmail:
+		return true
+	default:
+		return false
+	}
+}
