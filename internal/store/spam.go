@@ -193,7 +193,15 @@ func (s *Store) GetSpamState(ctx context.Context, convID int64) (lastHash, versi
 // re-derives the same rows rather than duplicating them. The sender row is
 // created if absent and promoted seen→watch when a candidate appears, but its
 // human-set columns are never touched here.
-func (s *Store) PutSpamBatch(ctx context.Context, convID int64, version string, lastHash string, sender SpamSender, findings []SpamFinding, events []SpamEvent) error {
+//
+// env is the scan environment (SPEC-0028 REQ-0028-013): "provider/availability"
+// as built by spam.scanEnv. It is stamped onto every finding and onto the
+// cursor so a row records the stranger predicate that produced it, which
+// ruleset_version alone cannot express — see schemaV20. It deliberately does
+// NOT participate in the cursor's rescan decision: a changed address book is
+// not a changed ruleset, and forcing a full re-derive on every switch between
+// the desktop app and the CLI is exactly the cost ADR-0029 §2 avoids.
+func (s *Store) PutSpamBatch(ctx context.Context, convID int64, version, env string, lastHash string, sender SpamSender, findings []SpamFinding, events []SpamEvent) error {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("begin spam batch: %w", err)
@@ -211,8 +219,9 @@ func (s *Store) PutSpamBatch(ctx context.Context, convID int64, version string, 
 	if len(findings) > 0 {
 		stmt, err := tx.PrepareContext(ctx, `
 INSERT INTO spam_findings(message_hash, ruleset_version, source, identifier, direction, ts_unix,
-                          reasons, urls, phones, emails, names_matched, entities, is_candidate)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                          reasons, urls, phones, emails, names_matched, entities, is_candidate,
+                          scan_env)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT(message_hash, ruleset_version) DO UPDATE SET
     source        = excluded.source,
     identifier    = excluded.identifier,
@@ -224,7 +233,8 @@ ON CONFLICT(message_hash, ruleset_version) DO UPDATE SET
     emails        = excluded.emails,
     names_matched = excluded.names_matched,
     entities      = excluded.entities,
-    is_candidate  = excluded.is_candidate`)
+    is_candidate  = excluded.is_candidate,
+    scan_env  = excluded.scan_env`)
 		// is_after_optout is deliberately NOT written here. It is owned by
 		// RecomputeSpamAfterOptOut, which rewrites the whole generation after
 		// every scan and after every manually recorded opt-out; letting a batch
@@ -236,7 +246,7 @@ ON CONFLICT(message_hash, ruleset_version) DO UPDATE SET
 		for _, f := range findings {
 			if _, err := stmt.ExecContext(ctx, f.MessageHash, version, f.Source, f.Identifier, f.Direction, f.TSUnix,
 				jsonList(f.Reasons), jsonList(f.URLs), jsonList(f.Phones), jsonList(f.Emails),
-				jsonList(f.Names), jsonList(f.Entities), boolInt(f.IsCandidate)); err != nil {
+				jsonList(f.Names), jsonList(f.Entities), boolInt(f.IsCandidate), env); err != nil {
 				return fmt.Errorf("insert spam finding %s: %w", f.MessageHash, err)
 			}
 		}
@@ -249,13 +259,14 @@ ON CONFLICT(message_hash, ruleset_version) DO UPDATE SET
 	}
 
 	if _, err := tx.ExecContext(ctx, `
-INSERT INTO spam_state(conversation_id, last_message_hash, ruleset_version, updated_at)
-VALUES (?, ?, ?, ?)
+INSERT INTO spam_state(conversation_id, last_message_hash, ruleset_version, scan_env, updated_at)
+VALUES (?, ?, ?, ?, ?)
 ON CONFLICT(conversation_id) DO UPDATE SET
     last_message_hash = excluded.last_message_hash,
     ruleset_version   = excluded.ruleset_version,
+    scan_env      = excluded.scan_env,
     updated_at        = excluded.updated_at`,
-		convID, lastHash, version, now); err != nil {
+		convID, lastHash, version, env, now); err != nil {
 		return fmt.Errorf("advance spam cursor: %w", err)
 	}
 
@@ -520,6 +531,39 @@ SELECT f.message_hash, f.source, f.identifier, f.direction, f.ts_unix,
 }
 
 // SpamCounts returns the per-sender tallies for one ruleset generation.
+// SpamProvenance returns the distinct scan environments that produced a
+// sender's findings in one ruleset generation, sorted for stable output.
+//
+// A record assembled from rows written under more than one stranger predicate
+// is a mixed-provenance record, and the dossier has to say so: half its
+// messages may have been selected because the sender was absent from an address
+// book, and the other half because the thread name merely looked like a bare
+// handle. An empty string in the result means rows that predate schemaV20,
+// whose environment was never recorded — reported as unknown, never guessed.
+func (s *Store) SpamProvenance(ctx context.Context, source, identifier, version string) ([]string, error) {
+	rows, err := s.db.QueryContext(ctx, `
+SELECT DISTINCT scan_env
+  FROM spam_findings
+ WHERE source = ? AND identifier = ? AND ruleset_version = ?
+ ORDER BY scan_env`, source, identifier, version)
+	if err != nil {
+		return nil, fmt.Errorf("spam provenance: %w", err)
+	}
+	defer rows.Close()
+	var out []string
+	for rows.Next() {
+		var env string
+		if err := rows.Scan(&env); err != nil {
+			return nil, fmt.Errorf("scan spam provenance: %w", err)
+		}
+		out = append(out, env)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("spam provenance rows: %w", err)
+	}
+	return out, nil
+}
+
 func (s *Store) SpamCounts(ctx context.Context, version string) (map[string]SpamSenderCounts, error) {
 	rows, err := s.db.QueryContext(ctx, `
 SELECT source, identifier,

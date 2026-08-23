@@ -6,7 +6,7 @@ import "context"
 // `user_version` pragma. On Open, the migrations runner brings any older
 // database forward to this version. Bump it and append a migration whenever the
 // schema changes.
-const schemaVersion = 19
+const schemaVersion = 20
 
 // SchemaVersion returns the schema revision this binary expects (and migrates a
 // database forward to on Open). Read-only callers — notably `msgbrowse doctor` —
@@ -58,6 +58,7 @@ var migrations = []string{
 	17: schemaV17,
 	18: schemaV18,
 	19: schemaV19,
+	20: schemaV20,
 }
 
 // schemaV1 is the initial Signal-only schema. It is preserved verbatim so a
@@ -909,4 +910,37 @@ CREATE TABLE IF NOT EXISTS spam_state (
 // its next sync rather than needing a reimport.
 const schemaV19 = `
 ALTER TABLE contact_merge_rules ADD COLUMN match_display_name INTEGER NOT NULL DEFAULT 1;
+`
+
+// Governing: ADR-0029 (unsolicited-contact evidence) §2
+// Implements: SPEC-0028 REQ-0028-013 "Scan-environment provenance", SPEC-0028 REQ-0028-004 "Schema — hash-keyed, FK-less, re-ingest-safe"
+//
+// schemaV20 stamps the scan ENVIRONMENT onto the evidence layer (issue #385).
+//
+// ruleset_version digests the rules. It does not digest the conditions the
+// rules ran under, and one of those changes what a scan concludes: whether an
+// address book was readable. A desktop scan (Contacts wired via
+// SetContactResolver) and a release-CLI scan (CGO_ENABLED=0, no provider) use
+// two different stranger predicates — address-book membership versus the
+// phone/email-shaped-thread heuristic — and before this migration both wrote
+// into the same generation with nothing recording which produced a row.
+//
+// The stamp is "provider/availability" (spam.scanEnv): the resolver's identity
+// and what it could actually do. The degraded flag REQ-0028-013 also names is
+// not a third column because it is fully determined by the availability half
+// (degraded <=> it is not "available", which is the branch in spam.Run);
+// storing it too would be denormalized and could disagree with itself.
+//
+// This is deliberately NOT folded into ruleset_version. A degraded scan is not
+// a different ruleset, it is the same rules over a weaker input, and hashing
+// availability into the version would re-derive the entire layer every time you
+// switch between the desktop app and the CLI. Recording it keeps both facts —
+// the rules that ran, and what they could see — without that cost.
+//
+// ” is the honest default for rows that predate this migration: they were
+// produced under an environment nobody recorded, which is distinct from all
+// three known values and is reported as unknown provenance rather than guessed.
+const schemaV20 = `
+ALTER TABLE spam_findings ADD COLUMN scan_env TEXT NOT NULL DEFAULT '';
+ALTER TABLE spam_state    ADD COLUMN scan_env TEXT NOT NULL DEFAULT '';
 `

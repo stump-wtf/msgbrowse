@@ -338,9 +338,11 @@ func TestResetKeepsHumanJudgments(t *testing.T) {
 func TestScanHonorsExcludeList(t *testing.T) {
 	st := newStore(t)
 	seed(t, st, "+15551110001", [3]string{"2025-01-05 09:00:00", "+15551110001", "hi Jon"})
+	// Exclude moved into the versioned ruleset (issue #385) — it is policy, so
+	// two scans with different exclude lists must not share a version.
 	sum := runScan(t, st, Options{
 		AddressBook: fakeBook{avail: contacts.Available},
-		Exclude:     []string{"+15551110001"},
+		Rules:       testRules(t, func(r *Rules) { r.Exclude = []string{"+15551110001"} }),
 	})
 	if sum.Senders != 0 {
 		t.Errorf("excluded conversation was scanned: %+v", sum)

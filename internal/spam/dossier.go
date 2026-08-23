@@ -93,6 +93,15 @@ type Dossier struct {
 	// silently implies a precision msgbrowse does not have is the one failure
 	// mode worth engineering against.
 	Limitations []string `json:"limitations"`
+	// Provenance is the distinct scan environments that produced this record's
+	// findings — the contacts.Availability string each row was written under,
+	// with "" meaning a row that predates schemaV20 and never recorded one.
+	//
+	// More than one entry means a MIXED record: some messages were selected
+	// because the sender was absent from a readable address book, others only
+	// because the thread name looked like a bare handle. Limitations says so
+	// explicitly; this field is what lets a reader check the claim.
+	Provenance []string `json:"provenance,omitempty"`
 }
 
 // BuildDossier assembles the record for one sender.
@@ -102,6 +111,10 @@ func BuildDossier(ctx context.Context, st *store.Store, sender store.SpamSender,
 		return Dossier{}, err
 	}
 	events, err := st.ListSpamEvents(ctx, sender.Source, sender.Identifier)
+	if err != nil {
+		return Dossier{}, err
+	}
+	provenance, err := st.SpamProvenance(ctx, sender.Source, sender.Identifier, version)
 	if err != nil {
 		return Dossier{}, err
 	}
@@ -119,7 +132,8 @@ func BuildDossier(ctx context.Context, st *store.Store, sender store.SpamSender,
 			ConsentNotes:     sender.ConsentNotes,
 			Notes:            sender.Notes,
 		},
-		Limitations: Limitations(),
+		Limitations: Limitations(provenance),
+		Provenance:  provenance,
 	}
 
 	var inbound []int64
@@ -231,6 +245,35 @@ func WorstWindow(inbound []int64) Window {
 	return best
 }
 
+// availabilityAvailable is the one contacts.Availability value that means the
+// scan had a real address book. It is a literal rather than a call to
+// contacts.Available.String() so this file does not need the contacts import;
+// TestAvailabilityAvailableMatchesContacts pins the two together so the
+// duplication cannot silently drift.
+const availabilityAvailable = "available"
+
+// Governing: ADR-0029 (unsolicited-contact evidence)
+// Implements: SPEC-0028 REQ-0028-013 "Scan-environment provenance", SPEC-0028 REQ-0028-011 "Dossier — one struct, two formats, and its own limitations"
+//
+// envIsDegraded reports whether a scan_env stamp describes a degraded scan.
+//
+// The stamp is "provider/availability" (spam.scanEnv). Only the availability
+// half decides the stranger predicate, so a stamp is degraded whenever that
+// half is anything other than "available". An unparseable or empty stamp is NOT
+// degraded — it is unknown, which envIsUnknown handles separately; conflating
+// the two would report a pre-schemaV20 row as a degraded scan, which asserts
+// something nobody recorded.
+func envIsDegraded(env string) bool {
+	if env == "" {
+		return false
+	}
+	_, availability, ok := strings.Cut(env, "/")
+	if !ok {
+		return false
+	}
+	return availability != availabilityAvailable
+}
+
 // Limitations is the fixed list of things a msgbrowse dossier cannot establish.
 // It is embedded in every export.
 //
@@ -241,8 +284,8 @@ func WorstWindow(inbound []int64) Window {
 // explicit evidentiary requirement, and this record does not meet it. Saying so
 // is not a disclaimer; it is the difference between a useful organizing tool
 // and a document that misleads the person relying on it.
-func Limitations() []string {
-	return []string{
+func Limitations(provenance []string) []string {
+	out := []string{
 		"Timestamps are the archive's local wall-clock time with NO recorded UTC offset — the exporter does not preserve one. Any instant here can be off by the difference between the exporting machine's timezone and the reader's assumption, and a DST boundary can reorder two messages minutes apart. Do not present these as timezone-qualified timestamps.",
 		"Message text comes from an exporter's output, not from Apple's chat.db. The body hash proves the text has not changed since msgbrowse imported it; it says nothing about the fidelity of the export itself.",
 		"Carrier and line type (mobile / landline / VoIP) are NOT established. msgbrowse performs no carrier lookup, so the wireless-line element of a TCPA claim is unsupported by this record.",
@@ -252,6 +295,66 @@ func Limitations() []string {
 		"Group threads are not scanned; attachments and images are not part of this record.",
 		"Nothing here is legal advice. It organizes facts; a lawyer decides what they mean.",
 	}
+	return append(out, provenanceLimitations(provenance)...)
+}
+
+// provenanceLimitations turns the scan environments behind a record into the
+// limitations they imply (issue #385).
+//
+// A degraded scan has no address book, so it cannot tell a stranger from a
+// friend whose thread is merely named by a bare number. It compensates by
+// narrowing to phone/email-shaped thread names, which trades one error for
+// another: senders you genuinely do not know are missed when their thread
+// carries a display name. Either way the record is not the same evidence a
+// contacts-backed scan produces, and a reader cannot infer that from the rows.
+//
+// The mixed case is called out separately because it is the one a reader is
+// least likely to suspect: the record looks uniform, and the counts that make
+// it persuasive are sums over two different selection rules.
+func provenanceLimitations(provenance []string) []string {
+	seen := map[string]bool{}
+	for _, p := range provenance {
+		seen[p] = true
+	}
+	var out []string
+	if len(seen) > 1 {
+		out = append(out, "This record MIXES scan environments: its findings were produced under more than one stranger predicate ("+strings.Join(sortedEnvs(seen), ", ")+"). Counts here are sums over rows selected by different rules and should not be read as a single consistent sample. Re-scan under one environment before relying on the totals.")
+	}
+	if seen[""] {
+		out = append(out, "Some findings predate scan-environment recording, so it is not known whether an address book was readable when they were produced. Re-scan to stamp them.")
+	}
+	for _, env := range sortedKeys(seen) {
+		if envIsDegraded(env) {
+			out = append(out, "Findings were produced in DEGRADED mode (scan environment "+env+"): no address book could be read, so the scan could not tell a stranger from a known contact and narrowed to threads named by a bare phone number or email. Senders you do not know whose thread carries a display name are missing from this record, and a known contact whose thread is named by a bare number may be misfiled into it.")
+			break
+		}
+	}
+	return out
+}
+
+// sortedKeys gives provenanceLimitations a deterministic order, so a dossier
+// built twice from the same rows renders identically.
+func sortedKeys(seen map[string]bool) []string {
+	out := make([]string, 0, len(seen))
+	for k := range seen {
+		out = append(out, k)
+	}
+	sort.Strings(out)
+	return out
+}
+
+// sortedEnvs renders an environment set for a human, naming the unrecorded one
+// rather than printing an empty string.
+func sortedEnvs(seen map[string]bool) []string {
+	out := make([]string, 0, len(seen))
+	for e := range seen {
+		if e == "" {
+			e = "unrecorded"
+		}
+		out = append(out, e)
+	}
+	sort.Strings(out)
+	return out
 }
 
 // JSON renders the dossier as indented JSON.

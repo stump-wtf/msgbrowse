@@ -131,6 +131,11 @@ type Unavailable struct{}
 
 var _ Resolver = Unavailable{}
 
+// ProviderName identifies this resolver in a scan-environment stamp
+// (SPEC-0028 REQ-0028-013). "none" is the honest answer: there is no provider,
+// which is a different statement from "a provider exists but is unreadable".
+func (Unavailable) ProviderName() string { return "none" }
+
 // Availability always reports Absent: there is no address book to read.
 func (Unavailable) Availability(context.Context) Availability { return Absent }
 
