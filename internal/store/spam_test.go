@@ -58,7 +58,7 @@ func TestPutSpamBatchIsIdempotentAndAdvancesTheCursor(t *testing.T) {
 	}}
 
 	for range 2 {
-		if err := st.PutSpamBatch(ctx, conv, "v1", "hash-a", sender, findings, nil); err != nil {
+		if err := st.PutSpamBatch(ctx, conv, "v1", "available", "hash-a", sender, findings, nil); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -96,7 +96,7 @@ func TestSpamSenderUpsertNeverClobbersHumanColumns(t *testing.T) {
 	conv := seedConversation(t, st, source.IMessage, "+15551110001")
 	sender := SpamSender{Source: source.IMessage, Identifier: "+15551110001", FirstSeenUnix: 200, LastSeenUnix: 200}
 
-	if err := st.PutSpamBatch(ctx, conv, "v1", "h1", sender, nil, nil); err != nil {
+	if err := st.PutSpamBatch(ctx, conv, "v1", "available", "h1", sender, nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	got, _ := st.GetSpamSender(ctx, source.IMessage, "+15551110001")
@@ -112,7 +112,7 @@ func TestSpamSenderUpsertNeverClobbersHumanColumns(t *testing.T) {
 	// A later scan sees a candidate. It must NOT lift 'ignored' back to 'watch'.
 	candidate := []SpamFinding{{MessageHash: "h2", Source: source.IMessage,
 		Identifier: "+15551110001", Direction: SpamInbound, TSUnix: 100, IsCandidate: true}}
-	if err := st.PutSpamBatch(ctx, conv, "v1", "h2", sender, candidate, nil); err != nil {
+	if err := st.PutSpamBatch(ctx, conv, "v1", "available", "h2", sender, candidate, nil); err != nil {
 		t.Fatal(err)
 	}
 
@@ -140,7 +140,7 @@ func TestRecomputeSpamAfterOptOutUsesTheEarliestOptOut(t *testing.T) {
 		{MessageHash: "after", Source: source.IMessage, Identifier: "+15551110001", Direction: SpamInbound, TSUnix: 300},
 		{MessageHash: "mine", Source: source.IMessage, Identifier: "+15551110001", Direction: SpamOutbound, TSUnix: 400},
 	}
-	if err := st.PutSpamBatch(ctx, conv, "v1", "mine", sender, findings, nil); err != nil {
+	if err := st.PutSpamBatch(ctx, conv, "v1", "available", "mine", sender, findings, nil); err != nil {
 		t.Fatal(err)
 	}
 	for _, at := range []int64{200, 250} {
@@ -179,7 +179,7 @@ func TestSpamCountsGroupPerSenderAndGeneration(t *testing.T) {
 	ctx := context.Background()
 	conv := seedConversation(t, st, source.IMessage, "+15551110001")
 	sender := SpamSender{Source: source.IMessage, Identifier: "+15551110001"}
-	if err := st.PutSpamBatch(ctx, conv, "v1", "b", sender, []SpamFinding{
+	if err := st.PutSpamBatch(ctx, conv, "v1", "available", "b", sender, []SpamFinding{
 		{MessageHash: "a", Source: source.IMessage, Identifier: "+15551110001", Direction: SpamInbound, TSUnix: 1, IsCandidate: true},
 		{MessageHash: "b", Source: source.IMessage, Identifier: "+15551110001", Direction: SpamOutbound, TSUnix: 2},
 	}, nil); err != nil {
@@ -230,7 +230,7 @@ func TestSpamSenderWindowSurvivesWritesThatCarryNoMessages(t *testing.T) {
 		MessageHash: "hash-a", Source: source.IMessage, Identifier: "+15551110001",
 		Direction: SpamInbound, TSUnix: firstContact, IsCandidate: true,
 	}}
-	if err := st.PutSpamBatch(ctx, conv, "v1", "hash-a", sender, findings, nil); err != nil {
+	if err := st.PutSpamBatch(ctx, conv, "v1", "available", "hash-a", sender, findings, nil); err != nil {
 		t.Fatal(err)
 	}
 
@@ -238,7 +238,7 @@ func TestSpamSenderWindowSurvivesWritesThatCarryNoMessages(t *testing.T) {
 	// messages, so the scan has nothing to say about the window.
 	empty := SpamSender{Source: source.IMessage, Identifier: "+15551110001",
 		ConversationName: "+15551110001", FirstSeenUnix: 0, LastSeenUnix: 0}
-	if err := st.PutSpamBatch(ctx, conv, "v1", "hash-a", empty, nil, nil); err != nil {
+	if err := st.PutSpamBatch(ctx, conv, "v1", "available", "hash-a", empty, nil, nil); err != nil {
 		t.Fatal(err)
 	}
 

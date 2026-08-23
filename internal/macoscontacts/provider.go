@@ -181,6 +181,10 @@ var _ contacts.Resolver = (*Provider)(nil)
 // contacts.Unavailable). On a Mac built with the tag it is backed by the live
 // Contacts.framework binding. The runtime GOOS==darwin guard is belt-and-braces
 // on top of the build tag: the framework is only ever reached on an actual Mac.
+// ProviderName identifies this resolver in a scan-environment stamp
+// (SPEC-0028 REQ-0028-013).
+func (p *Provider) ProviderName() string { return "macoscontacts" }
+
 func New(log *slog.Logger) *Provider {
 	if log == nil {
 		log = slog.Default()
