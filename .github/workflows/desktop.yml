@@ -78,8 +78,11 @@ permissions:
 env:
   GO_VERSION: "1.25"
   # Wails CLI pin — keep in lockstep with the wails/v2 library version in
-  # cmd/msgbrowse-desktop/go.mod.
-  WAILS_VERSION: "v2.12.0"
+  # cmd/msgbrowse-desktop/go.mod. Renovate bumps the library but not this pin,
+  # so re-check it whenever that module moves: a CLI older than the toolchain
+  # fails `wails build` with: package "context" without types was imported
+  # from ... — x/tools inside the CLI refusing newer export data.
+  WAILS_VERSION: "v2.15.0"
 
   # --- Bundled toolchain pins (ADR-0020 / SPEC-0013) --------------------------
   # All three exporters are pinned so a build is reproducible and the shipped
