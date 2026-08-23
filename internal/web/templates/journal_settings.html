@@ -121,6 +121,17 @@
               {{- else}}never built{{end -}}
             </div></div>
         </div>
+        {{/* The gap stated as a COUNT, not only as the percentage above (#370).
+             A percentage reads as a score and invites "good enough"; "329 days
+             have messages but no digest" reads as a work queue and invites the
+             button directly below it. It sits under the grid rather than inside
+             the coverage cell because a three-column grid gives it about twenty
+             characters a line. */}}
+        {{- if gt .Build.Undigested 0}}
+        <p class="status-note mt-4">{{num .Build.Undigested}} days have messages but no digest — they show as
+          &ldquo;not analysed yet&rdquo; on the <a href="/journal" class="link link-hover">Journal</a> calendar
+          until a build reaches them.</p>
+        {{- end}}
         {{- if .Build.LastError}}
         <p class="status-note mt-4"><span class="sync-badge sync-badge-err">Failed</span>
           Last run aborted: <span class="font-mono">{{.Build.LastError}}</span></p>

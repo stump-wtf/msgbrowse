@@ -308,6 +308,130 @@ SELECT COUNT(*),
 	return c, nil
 }
 
+// Sentiment as a SECOND mood source for the calendar
+//
+// The calendar's only mood source used to be journal_digests.mood, so a day the
+// LLM digest pass had not reached yet had no mood at all and rendered untinted —
+// indistinguishable from a day the pass HAD read and found unremarkable (#370).
+// The read below adds the sentiment layer (SPEC-0027 REQ-0027-009, ADR-0028) as
+// a weaker second source: a day with affect-tier scores can be tinted even
+// before it is digested.
+//
+// This is NOT free, local, or egress-free. ADR-0028 explicitly rejected a
+// classical local lexicon (VADER/NRC-style); the IPIP lexicon is an anchor set
+// fed to a chat model, and internal/sentiment.Run makes a billable Chat call per
+// batch. So the sentiment layer is only ever a REFINEMENT on the digest layer's
+// gap, never a promise that every day can be tinted for nothing.
+//
+// Deliberately shaped as a per-(day, construct) aggregate rather than a finished
+// mood: which constructs read as pleasant or unpleasant is taxonomy that belongs
+// with internal/sentiment's lexicon, and internal/store cannot import it without
+// closing a cycle. The web layer owns that mapping and folds these rows into an
+// enum (see internal/web/journalmood.go). At most 31 days x ~15 constructs, so
+// folding in Go costs nothing.
+
+// SentimentDayConstruct is one (UTC day, construct) aggregate of the sentiment
+// scores in a month: the summed signed score and how many message-level rows it
+// came from. Sum/N is the construct's mean for that day.
+//
+// Governing: SPEC-0027 REQ-0027-009 (per-day mood, UTC-bucketed exactly as
+// ADR-0023 mandates), SPEC-0016 REQ-0016-015 (calendar reads are UTC-bucketed
+// and honor the journal denylist).
+type SentimentDayConstruct struct {
+	Day       string // "YYYY-MM-DD", UTC, same frame as journal_days
+	Construct string
+	Sum       float64
+	N         int
+}
+
+// LatestSentimentGeneration returns the (model, lexicon_version) the scoring
+// engine most recently ran under, read off the per-conversation cursor table.
+// ok is false when nothing has ever been scored.
+//
+// Every read of message_sentiment MUST pin a generation: scores from different
+// models or lexicon curations are not comparable and must never be averaged
+// together (SPEC-0027 REQ "sparse, generation-stamped storage"). sentiment_state
+// is the right source for "current" because it records when the engine last
+// advanced a cursor — message_sentiment.ts_unix is the MESSAGE's timestamp, not
+// a write time, so ordering by it would name the generation that happened to
+// touch the newest message rather than the one that ran last.
+func (s *Store) LatestSentimentGeneration(ctx context.Context) (SentimentGeneration, bool, error) {
+	var gen SentimentGeneration
+	err := s.db.QueryRowContext(ctx,
+		`SELECT model, lexicon_version FROM sentiment_state ORDER BY updated_at DESC, conversation_id DESC LIMIT 1`).
+		Scan(&gen.Model, &gen.LexiconVersion)
+	if err == sql.ErrNoRows {
+		return SentimentGeneration{}, false, nil
+	}
+	if err != nil {
+		return SentimentGeneration{}, false, fmt.Errorf("latest sentiment generation: %w", err)
+	}
+	return gen, true, nil
+}
+
+// MonthSentiment returns the month's sentiment scores aggregated per (UTC day,
+// construct) for one generation, ordered day then construct so the fold is
+// deterministic.
+//
+// Three filters, and every one of them is load-bearing:
+//
+//   - The generation pin, for the comparability reason above. An unset
+//     generation returns nothing rather than averaging every generation in the
+//     table together.
+//   - The contact_sentiment_optout guard, applied as a NOT EXISTS INSIDE this
+//     query rather than as a caller-supplied id list. SPEC-0027 makes opt-out
+//     DELETION rather than suppression, so in a settled database these rows are
+//     already gone — but a contact who opts out while a scoring run is in flight
+//     can have scores written back moments later, and their affect must not
+//     reach a day tint even for the minutes before the next run cleans up.
+//     PutSentimentBatch guards its writes the same way and for the same reason;
+//     making it a parameter here would leave the privacy guarantee to whether
+//     each future caller remembered to pass it, which is not a guarantee.
+//   - exclude, the journal.exclude_conversations denylist, resolved to ids and
+//     applied through the same notInClause the rest of this file uses. A
+//     denylisted thread must not colour the calendar any more than it may
+//     inflate the stat tiles (REQ-0016-015).
+//
+// Bounded by a sargable ts_unix range on idx_message_sentiment_ts. The join to
+// messages cannot fan out: messages.hash is UNIQUE.
+func (s *Store) MonthSentiment(ctx context.Context, year int, month time.Month, gen SentimentGeneration, exclude []string) ([]SentimentDayConstruct, error) {
+	if gen.Model == "" || gen.LexiconVersion == "" {
+		return nil, nil // nothing has been scored under a known generation
+	}
+	excl, err := s.excludedConversationIDs(ctx, exclude)
+	if err != nil {
+		return nil, err
+	}
+	start := time.Date(year, month, 1, 0, 0, 0, 0, time.UTC)
+
+	args := []any{gen.Model, gen.LexiconVersion, start.Unix(), start.AddDate(0, 1, 0).Unix()}
+	q := `
+SELECT date(ms.ts_unix,'unixepoch') d, ms.construct, SUM(ms.score), COUNT(*)
+  FROM message_sentiment ms
+  JOIN messages m ON m.hash = ms.message_hash
+ WHERE ms.model = ? AND ms.lexicon_version = ?
+   AND ms.ts_unix >= ? AND ms.ts_unix < ?
+   AND m.is_system = 0 AND TRIM(m.body) <> ''
+   AND NOT EXISTS (SELECT 1 FROM contact_sentiment_optout o WHERE o.contact_id = ms.contact_id)`
+	q += notInClause("m.conversation_id", excl, &args)
+	q += ` GROUP BY d, ms.construct ORDER BY d, ms.construct`
+
+	rows, err := s.db.QueryContext(ctx, q, args...)
+	if err != nil {
+		return nil, fmt.Errorf("month sentiment: %w", err)
+	}
+	defer rows.Close()
+	var out []SentimentDayConstruct
+	for rows.Next() {
+		var a SentimentDayConstruct
+		if err := rows.Scan(&a.Day, &a.Construct, &a.Sum, &a.N); err != nil {
+			return nil, err
+		}
+		out = append(out, a)
+	}
+	return out, rows.Err()
+}
+
 // MonthTopReactions returns the top reaction emojis per day for the given
 // month (issue #299), for the calendar day cells' emoji chips. Days map to
 // "YYYY-MM-DD" keys; each value lists the day's most-used emojis, ties

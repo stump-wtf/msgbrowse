@@ -23,6 +23,17 @@ type journalBuildData struct {
 	Digested int // of those, how many carry a digest
 	Stale    int // of those, how many predate later messages on the same day
 	Percent  int
+	// Undigested is Days - Digested: days that HAVE messages and carry no digest
+	// at all. It is the same fact the percentage already implies, stated as a
+	// count on purpose (#370).
+	//
+	// The gap used to be invisible in both directions. On the calendar those days
+	// rendered untinted, which read as "unremarkable" rather than "never
+	// analysed" — fixed there by an explicit unanalysed state. Here it was
+	// legible only as "91%", and a percentage is a score, not a work queue: it
+	// invites "good enough" where "329 days have never been digested" invites a
+	// Build. The number belongs beside the control that closes it.
+	Undigested int
 
 	// BuiltThrough is the newest day the mechanical layer covers; NewestDay is
 	// the newest day with messages at all. When they differ the layer is behind.
@@ -70,6 +81,11 @@ func (s *Server) journalBuildStatus(ctx context.Context) (journalBuildData, erro
 	d.BuiltThrough = cov.BuiltThrough
 	if cov.Days > 0 {
 		d.Percent = cov.Digested * 100 / cov.Days
+	}
+	// Derived rather than queried: JournalCoverage already counted both sides in
+	// one pass, and a second read could only disagree with it.
+	if d.Undigested = cov.Days - cov.Digested; d.Undigested < 0 {
+		d.Undigested = 0
 	}
 	// The mechanical layer can legitimately lag the archive (a fresh import with
 	// no journal run since). Surfacing the newest MESSAGE day beside the newest
