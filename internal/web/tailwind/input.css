@@ -1871,6 +1871,40 @@ a.cal-day:hover {
 .cal-day--neutral { background: color-mix(in oklab, var(--mood-neutral) 24%, var(--color-base-200)); }
 .cal-day--quiet   { background: color-mix(in oklab, var(--mood-quiet) 28%, var(--color-base-200)); }
 .cal-day--tense   { background: color-mix(in oklab, var(--mood-tense) 24%, var(--color-base-200)); }
+
+/* --- The two non-digest mood states (#370) -------------------------------- */
+/* A day with messages must never render as a bare .cal-day: that state read as
+   "unremarkable" and actually meant "the digest pass has not reached this day",
+   and there was no way to tell those apart. There are now exactly three states,
+   and both of the ones below carry a NON-CHROMATIC cue as well as a tint, so the
+   distinction survives greyscale and colour-vision differences — the same
+   reasoning .cal-day--stale's ring already followed.
+
+   .cal-day--inferred is a mood folded from sentiment scores rather than read
+   from an editorial digest. It pairs with a mood class and weakens that class's
+   fill to roughly 40% of its strength, so the calendar's shape still reads at a
+   glance while a digested day is visibly more committed than an inferred one.
+   The two-class selectors below beat the single-class fills above on specificity,
+   which is what makes the override work without !important. */
+.cal-day--inferred {
+  border-style: dashed;
+  border-color: color-mix(in oklab, var(--color-base-content) 22%, transparent);
+}
+.cal-day--inferred.cal-day--upbeat  { background: color-mix(in oklab, var(--mood-upbeat) 10%, var(--color-base-200)); }
+.cal-day--inferred.cal-day--neutral { background: color-mix(in oklab, var(--mood-neutral) 10%, var(--color-base-200)); }
+.cal-day--inferred.cal-day--quiet   { background: color-mix(in oklab, var(--mood-quiet) 11%, var(--color-base-200)); }
+.cal-day--inferred.cal-day--tense   { background: color-mix(in oklab, var(--mood-tense) 10%, var(--color-base-200)); }
+
+/* .cal-day--unanalyzed is a day with messages and no mood from either source.
+   Deliberately colourless — inventing a hue would be the original bug in a new
+   coat — but it is not blank either: a dotted edge over the same faint surface
+   .cal-day--none uses says "there is something here, nothing has read it yet",
+   where .cal-day--none says "nothing happened". */
+.cal-day--unanalyzed {
+  background: color-mix(in oklab, var(--color-base-content) 4%, transparent);
+  border-style: dotted;
+  border-color: color-mix(in oklab, var(--color-base-content) 20%, transparent);
+}
 .journal-cal-legend {
   display: flex;
   flex-wrap: wrap;
@@ -1890,6 +1924,15 @@ a.cal-day:hover {
   height: 9px;
   border-radius: 2px;
   display: inline-block;
+}
+/* The legend swatches for the two non-digest states (#370) and for staleness.
+   .cal-dot carries no border of its own, so the dashed/dotted edges those states
+   rely on would be invisible at swatch size without an explicit width here — a
+   legend entry whose swatch does not look like the cell it explains is worse
+   than no legend entry. */
+.cal-dot.cal-day--inferred,
+.cal-dot.cal-day--unanalyzed {
+  border-width: 1px;
 }
 .journal-stats {
   display: flex;
@@ -1938,6 +1981,17 @@ a.cal-day:hover {
 .journal-mood.cal-day--neutral { background: color-mix(in oklab, var(--mood-neutral) 30%, var(--color-base-200)); }
 .journal-mood.cal-day--quiet   { background: color-mix(in oklab, var(--mood-quiet) 34%, var(--color-base-200)); }
 .journal-mood.cal-day--tense   { background: color-mix(in oklab, var(--mood-tense) 30%, var(--color-base-200)); }
+/* The day card's chip when the mood was folded from sentiment rather than read
+   from a digest (#370). Same weakening as the grid cell, plus a dashed outline —
+   these rules must sit AFTER the .journal-mood fills above, which match on the
+   same specificity and would otherwise win on source order. */
+.journal-mood.cal-day--inferred {
+  border: 1px dashed color-mix(in oklab, var(--color-base-content) 25%, transparent);
+}
+.journal-mood.cal-day--inferred.cal-day--upbeat  { background: color-mix(in oklab, var(--mood-upbeat) 13%, var(--color-base-200)); }
+.journal-mood.cal-day--inferred.cal-day--neutral { background: color-mix(in oklab, var(--mood-neutral) 13%, var(--color-base-200)); }
+.journal-mood.cal-day--inferred.cal-day--quiet   { background: color-mix(in oklab, var(--mood-quiet) 14%, var(--color-base-200)); }
+.journal-mood.cal-day--inferred.cal-day--tense   { background: color-mix(in oklab, var(--mood-tense) 13%, var(--color-base-200)); }
 .journal-summary {
   white-space: pre-wrap; /* preserve paragraph breaks in the prose-fallback body */
   font-size: 15px;

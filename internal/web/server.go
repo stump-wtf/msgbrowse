@@ -92,6 +92,12 @@ type Store interface {
 	LatestJournalRun(ctx context.Context) (*store.JournalRun, error)
 	RecentJournalRuns(ctx context.Context, n int) ([]store.JournalRun, error)
 	JournalCoverage(ctx context.Context) (store.JournalCoverage, error)
+	// The calendar's SECOND mood source (#370): sentiment-derived tints for days
+	// the digest pass has not reached. See internal/web/journalmood.go for the
+	// precedence and why the untinted state had to be given a name. The
+	// per-contact opt-out is enforced inside MonthSentiment, not by this layer.
+	LatestSentimentGeneration(ctx context.Context) (store.SentimentGeneration, bool, error)
+	MonthSentiment(ctx context.Context, year int, month time.Month, gen store.SentimentGeneration, exclude []string) ([]store.SentimentDayConstruct, error)
 	SemanticSearch(ctx context.Context, query []float32, model string, opts store.SemanticOptions) ([]store.ScoredMessage, error)
 	EmbeddingCoverage(ctx context.Context, model string) (store.EmbeddingCoverage, error)
 	// Contact merge engine (#11) behind the Settings → Contacts tab (#12).

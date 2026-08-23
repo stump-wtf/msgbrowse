@@ -75,8 +75,16 @@
           {{- range .Grid}}{{- range .}}
           {{- if .InMonth}}
           {{- if .HasContent}}
-          <a class="cal-day {{.MoodClass}}{{if .Stale}} cal-day--stale{{end}}{{if .Selected}} cal-day--selected{{end}}" href="{{.URL}}"
-             {{- if .Stale}} title="This day&rsquo;s digest is out of date"{{end}}
+          {{/* Every day WITH messages carries exactly one mood state (#370):
+               a digest tint, a fainter sentiment tint (cal-day--inferred), or the
+               explicit cal-day--unanalyzed treatment. There is no fall-through to
+               a bare `cal-day`, and every class here is in the legend below.
+               MoodClass is a fixed `cal-day--<enum>` string built in Go from an
+               allowlist — never a model-supplied value (REQ-0016-016). */}}
+          <a class="cal-day {{.MoodClass}}{{if .Inferred}} cal-day--inferred{{end}}{{if .Unanalyzed}} cal-day--unanalyzed{{end}}{{if .Stale}} cal-day--stale{{end}}{{if .Selected}} cal-day--selected{{end}}" href="{{.URL}}"
+             {{- if .Stale}} title="This day&rsquo;s digest is out of date"
+             {{- else if .Inferred}} title="Tinted from sentiment scores — this day has no editorial digest yet"
+             {{- else if .Unanalyzed}} title="Not analysed yet — this day has no editorial digest and no sentiment scores"{{end}}
              hx-boost="true" hx-target="#main-content" hx-select="#main-content" hx-swap="outerHTML show:#journal-day-card:top" hx-push-url="true">
             <span class="cal-day-num">{{.DayNum}}</span><span class="cal-day-count font-mono">{{num .Count}}</span>
             {{- if .Reactions}}
@@ -91,9 +99,21 @@
           {{- else}}<span class="cal-day cal-day--blank"></span>{{- end}}
           {{- end}}{{- end}}
         </div>
+        {{/* The legend documents EVERY state the grid can produce (#370), not
+             just the four moods. Before this the untinted majority of a
+             partially-digested archive had no entry at all, so "this day is
+             unremarkable" and "this day has never been analysed" looked the same
+             and neither was named. TestJournalLegendDocumentsEveryGridState
+             enforces the completeness by diffing the classes the grid emits
+             against the classes the legend carries — add a cal-day state without
+             a legend entry and the build fails. */}}
         <div class="journal-cal-legend">
           <span class="opacity-50">Mood</span>
           {{- range .Moods}}<span class="journal-legend-item"><span class="cal-dot cal-day--{{.}}"></span>{{.}}</span>{{- end}}
+          <span class="journal-legend-item" title="Mood folded from this day&rsquo;s sentiment scores, not from an editorial digest"><span class="cal-dot cal-day--inferred cal-day--neutral"></span>from sentiment</span>
+          <span class="journal-legend-item" title="No editorial digest and no sentiment scores for this day yet"><span class="cal-dot cal-day--unanalyzed"></span>not analysed yet</span>
+          <span class="journal-legend-item" title="This day&rsquo;s digest predates later messages on the same day"><span class="cal-dot cal-day--stale"></span>out of date</span>
+          <span class="journal-legend-item"><span class="cal-dot cal-day--none"></span>no messages</span>
         </div>
         <div class="journal-stats">
           <div class="journal-stat"><span class="journal-stat-value">{{num .Stats.DaysWithEntries}}</span><span class="journal-stat-label">days with entries</span></div>
@@ -110,7 +130,13 @@
         <h2 class="journal-day-title">{{.DateLabel}}</h2>
         <div class="journal-day-meta">
           <span class="font-mono">{{num .MessageCount}}</span> messages · <span class="font-mono">{{num .ConversationCount}}</span> conversations
-          {{- if .Mood}} · <span class="journal-mood {{.MoodClass}}">{{.Mood}}</span>{{end}}
+          {{/* The mood chip names its SOURCE when it did not come from a digest
+               (#370): a sentiment-folded mood is a mechanical read of per-message
+               affect scores, and labelling it the same as an editorial mood would
+               claim the digest pass read a day it never reached. */}}
+          {{- if .Mood}} · <span class="journal-mood {{.MoodClass}}{{if .MoodInferred}} cal-day--inferred{{end}}"
+            {{- if .MoodInferred}} title="Folded from this day&rsquo;s sentiment scores — it has no editorial digest yet"{{end}}>{{.Mood}}
+            {{- if .MoodInferred}} <span class="opacity-60">from sentiment</span>{{end}}</span>{{end}}
         </div>
         {{/* Staleness (#240): this digest was written BEFORE later messages
              landed on the day, so it is describing an incomplete day. Shown only

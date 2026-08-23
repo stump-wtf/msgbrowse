@@ -33,13 +33,31 @@ type journalData struct {
 
 // calCell is one day cell in the month grid. A zero-value cell (InMonth false)
 // is a leading/trailing blank.
+//
+// A day with messages always lands in exactly one of three DEFINED mood states
+// (#370) — see journalmood.go for the precedence and why it exists:
+//
+//	digest    → MoodClass set, Inferred false      (full tint)
+//	sentiment → MoodClass set, Inferred true       (faint tint + dashed edge)
+//	neither   → MoodClass "",  Unanalyzed true     (explicit "not analysed yet")
+//
+// The three are mutually exclusive and jointly exhaustive over HasContent cells,
+// which is what stops a day from rendering as a bare `cal-day` again.
 type calCell struct {
-	InMonth    bool
-	DayNum     int
-	Count      int
-	MoodClass  string // "cal-day--upbeat" etc; "" when no digest
-	HasContent bool   // true → the cell links to ?day=
-	Stale      bool   // digest predates later messages on this day (#240)
+	InMonth   bool
+	DayNum    int
+	Count     int
+	MoodClass string // "cal-day--upbeat" etc; "" only when the day has no mood at all
+	// Inferred marks a tint that came from sentiment scores rather than a
+	// digest. It renders fainter and dashed so the calendar never implies an
+	// editorial reading of a day the digest pass has not reached.
+	Inferred bool
+	// Unanalyzed marks a day WITH messages that has neither a digest mood nor
+	// enough sentiment to infer one. It is a real state with its own class and
+	// its own legend entry, not an absence.
+	Unanalyzed bool
+	HasContent bool // true → the cell links to ?day=
+	Stale      bool // digest predates later messages on this day (#240)
 	Selected   bool
 	URL        string
 	// Reactions is the day's top emojis (issue #299), rendered as small
@@ -55,9 +73,13 @@ type dayCard struct {
 	ConversationCount int
 	Mood              string
 	MoodClass         string
-	Digest            *journal.Digest     // parsed structured digest (nil when none)
-	Body              string              // prose fallback (older/parse-failed digests)
-	TopSenders        []store.SenderCount // mechanical fallback when no digest at all
+	// MoodInferred says the mood on this card came from sentiment scores rather
+	// than a digest (#370). The chip is labelled and styled differently so a
+	// reader is never told a day was editorialized when it was not.
+	MoodInferred bool
+	Digest       *journal.Digest     // parsed structured digest (nil when none)
+	Body         string              // prose fallback (older/parse-failed digests)
+	TopSenders   []store.SenderCount // mechanical fallback when no digest at all
 	// Stale marks a digest written BEFORE later messages landed on this day
 	// (#240). NewMessages is how many arrived since. Both stay zero-valued when
 	// the captured count is unknown (a pre-v15 digest), so an old digest is
@@ -173,6 +195,14 @@ func (s *Server) renderJournalPage(w http.ResponseWriter, r *http.Request) {
 		s.serverError(w, err)
 		return
 	}
+	// The second, weaker mood source (#370). One read for the whole month, reused
+	// by both the grid and the selected day's card — the selected day is always
+	// inside the rendered month, because journalContext derives the month FROM it.
+	inferred, err := s.monthSentimentMoods(ctx, year, month)
+	if err != nil {
+		s.serverError(w, err)
+		return
+	}
 
 	data := journalData{
 		baseData:      base,
@@ -181,7 +211,7 @@ func (s *Server) renderJournalPage(w http.ResponseWriter, r *http.Request) {
 		MonthLabel:    time.Date(year, month, 1, 0, 0, 0, 0, time.UTC).Format("January 2006"),
 		PrevURL:       monthNavURL(year, month, -1),
 		NextURL:       monthNavURL(year, month, +1),
-		Grid:          buildMonthGrid(year, month, monthDays, day, topReactions),
+		Grid:          buildMonthGrid(year, month, monthDays, day, topReactions, inferred),
 		Stats:         stats,
 		Moods:         journal.Moods,
 		WeekdayLabel:  weekdayLabel(stats),
@@ -192,7 +222,7 @@ func (s *Server) renderJournalPage(w http.ResponseWriter, r *http.Request) {
 			s.serverError(w, err)
 			return
 		} else if ok {
-			data.Selected = buildDayCard(view)
+			data.Selected = buildDayCard(view, inferred[day])
 		}
 	}
 	s.render(w, r, "journal", data)
@@ -220,8 +250,10 @@ func journalContext(day, yearQ, monthQ, latest string) (int, time.Month) {
 // buildMonthGrid lays the month's present days into a fixed 6x7 (Sun-first) grid;
 // absent days are blank cells. Present days link to their editorial card.
 // reactions maps "YYYY-MM-DD" → the day's top emojis for the cells' chips
-// (issue #299); a nil map renders no chips.
-func buildMonthGrid(year int, month time.Month, days []store.JournalMonthDay, selected string, reactions map[string][]store.EmojiCount) [][]calCell {
+// (issue #299); a nil map renders no chips. inferred maps "YYYY-MM-DD" → the
+// sentiment-derived mood for days the digest pass has not reached (#370); a nil
+// map simply leaves those days in the UNANALYSED state.
+func buildMonthGrid(year int, month time.Month, days []store.JournalMonthDay, selected string, reactions map[string][]store.EmojiCount, inferred map[string]string) [][]calCell {
 	byDOM := make(map[int]store.JournalMonthDay, len(days))
 	for _, d := range days {
 		if len(d.Day) == 10 {
@@ -246,10 +278,21 @@ func buildMonthGrid(year int, month time.Month, days []store.JournalMonthDay, se
 			cell.Count = md.MessageCount
 			cell.HasContent = true
 			cell.URL = "/journal?day=" + dayStr
-			if md.Mood != "" {
-				cell.MoodClass = "cal-day--" + md.Mood
-			}
 			cell.Reactions = reactions[dayStr]
+			// The three-state precedence (#370), resolved here so the template
+			// stays logic-free. A digest mood wins outright; otherwise the
+			// sentiment fold gets a turn at a fainter tint; otherwise the day is
+			// explicitly UNANALYSED. Both classes come from moodClass, so a mood
+			// outside the fixed enum yields no class and lands the day in state 3
+			// rather than emitting a model-derived one (REQ-0016-016).
+			switch cell.MoodClass = moodClass(md.Mood); {
+			case cell.MoodClass != "":
+				// state 1: digested.
+			case moodClass(inferred[dayStr]) != "":
+				cell.MoodClass, cell.Inferred = moodClass(inferred[dayStr]), true
+			default:
+				cell.Unanalyzed = true
+			}
 		}
 		if md, ok := byDOM[dom]; ok && md.Stale {
 			cell.Stale = true
@@ -272,12 +315,16 @@ func buildMonthGrid(year int, month time.Month, days []store.JournalMonthDay, se
 
 // buildDayCard assembles the editorial card, parsing the structured digest when
 // present and falling back to prose then the mechanical top-senders.
-func buildDayCard(v store.JournalDayView) *dayCard {
+//
+// inferredMood is the day's sentiment-derived mood ("" when it has none), used
+// only when the day carries no digest mood — the same precedence the grid
+// applies, so the card and the cell the reader just clicked can never disagree
+// about what tinted it (#370).
+func buildDayCard(v store.JournalDayView, inferredMood string) *dayCard {
 	c := &dayCard{
 		Day:               v.Day,
 		MessageCount:      v.MessageCount,
 		ConversationCount: v.ConversationCount,
-		Mood:              v.Mood,
 		Body:              v.DigestBody,
 		TopSenders:        v.TopSenders,
 	}
@@ -286,8 +333,15 @@ func buildDayCard(v store.JournalDayView) *dayCard {
 	} else {
 		c.DateLabel = v.Day
 	}
-	if v.Mood != "" {
-		c.MoodClass = "cal-day--" + v.Mood
+	// Mood and MoodClass are set together from a VALIDATED enum value, digest
+	// first then sentiment. Mood is printed as the chip's label, so an
+	// out-of-allowlist model string must not reach it either — a day whose digest
+	// carries a mood this build does not know renders no chip at all rather than
+	// an unstyled one (REQ-0016-016).
+	if c.MoodClass = moodClass(v.Mood); c.MoodClass != "" {
+		c.Mood = v.Mood
+	} else if c.MoodClass = moodClass(inferredMood); c.MoodClass != "" {
+		c.Mood, c.MoodInferred = inferredMood, true
 	}
 	if v.DigestStructured != "" {
 		var d journal.Digest
