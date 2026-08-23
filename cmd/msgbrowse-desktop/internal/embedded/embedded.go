@@ -32,6 +32,7 @@ import (
 
 	"github.com/joestump/msgbrowse/internal/config"
 	"github.com/joestump/msgbrowse/internal/embed"
+	"github.com/joestump/msgbrowse/internal/facts"
 	"github.com/joestump/msgbrowse/internal/journal"
 	"github.com/joestump/msgbrowse/internal/llm"
 	"github.com/joestump/msgbrowse/internal/mcp"
@@ -238,6 +239,8 @@ func Start(ctx context.Context, cfg *config.Config, log *slog.Logger, opts ...Op
 	srv.SetIndexer(embed.NewIndexer(st, holder, log))
 	// Same for the Journal page's Build / Rebuild controls (#240).
 	srv.SetJournalBuilder(journal.NewBuilder(st, holder, cfg.Journal, log))
+	// Same for the Settings → Facts tab's contact-fact extraction (#366).
+	srv.SetFactsExtractor(facts.NewExtractor(st, holder, cfg.Journal, log))
 	mcpSrv := mcp.NewServer(st, holder, mcp.Options{
 		EmbedModelFunc: holder.EmbedModel,
 		Logger:         log,

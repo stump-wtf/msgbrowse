@@ -16,7 +16,18 @@ type contactData struct {
 	PrimarySource string // first thread's source ("" when none) — the header presence dot; empty-safe, so the template never indexes an empty slice
 	FactGroups    []factGroup
 	FactCount     int
-	Stats         store.ContactStats
+	// FactsExtracted, FactScanned and FactConvTotal separate the two empty
+	// states the facts section used to render identically (#366). fact_state
+	// carries one row per conversation the extractor LOOKED AT, including the
+	// ones that produced nothing, so "we have never analyzed this person" and
+	// "we analyzed them and they have no durable facts" are distinguishable —
+	// and must be distinguished, because the first is a configuration problem
+	// with a fix and the second is a finding. Before this they were the same
+	// blank panel, which read as a verdict about the person.
+	FactsExtracted bool
+	FactScanned    int
+	FactConvTotal  int
+	Stats          store.ContactStats
 	// VolumeHUD and PaceHUD are the profile's two derived-stat strips
 	// (message volume, then pace/photos/active-hour), rendered through the
 	// shared "hud" define (#395) instead of hand-rolled markup.
@@ -121,6 +132,14 @@ func (s *Server) handleContact(w http.ResponseWriter, r *http.Request) {
 		s.serverError(w, err)
 		return
 	}
+	// Governing: SPEC-0005 (contact-facts) REQ-0005-004 — the incremental cursor
+	// is the only record of what extraction has examined, so it is also the only
+	// honest source for the empty state below.
+	scan, err := s.store.ContactFactScan(ctx, id)
+	if err != nil {
+		s.serverError(w, err)
+		return
+	}
 
 	title := humanName(c.DisplayName) + " · msgbrowse"
 	var base baseData
@@ -147,18 +166,21 @@ func (s *Server) handleContact(w http.ResponseWriter, r *http.Request) {
 	bars, sw, sh := buildSparkline(vol)
 	pace := int(stats.MessagesPerDay + 0.5)
 	s.render(w, r, "contact", contactData{
-		baseData:      base,
-		C:             c,
-		PrimarySource: primarySource,
-		FactGroups:    groupFacts(facts),
-		FactCount:     len(facts),
-		Stats:         stats,
-		VolumeHUD:     contactVolumeHUD(stats),
-		PaceHUD:       contactPaceHUD(pace, stats.Photos, activeHourLabel),
-		Bars:          bars,
-		SparkW:        sw,
-		SparkH:        sh,
-		Reactions:     reactions,
+		baseData:       base,
+		C:              c,
+		PrimarySource:  primarySource,
+		FactGroups:     groupFacts(facts),
+		FactCount:      len(facts),
+		FactsExtracted: scan.Extracted(),
+		FactScanned:    scan.Scanned,
+		FactConvTotal:  scan.Total,
+		Stats:          stats,
+		VolumeHUD:      contactVolumeHUD(stats),
+		PaceHUD:        contactPaceHUD(pace, stats.Photos, activeHourLabel),
+		Bars:           bars,
+		SparkW:         sw,
+		SparkH:         sh,
+		Reactions:      reactions,
 	})
 }
 

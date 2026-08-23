@@ -181,7 +181,7 @@ type Summary struct {
 // the exclude list) using bounded concurrency. A per-batch LLM failure aborts
 // the run; because the cursor is persisted after each batch, the next run
 // resumes where this one stopped.
-func Run(ctx context.Context, st *store.Store, client llm.Client, opts Options) (Summary, error) {
+func Run(ctx context.Context, st *store.Store, client llm.Client, opts Options) (sum Summary, err error) {
 	log := opts.Logger
 	if log == nil {
 		log = slog.Default()
@@ -209,6 +209,49 @@ func Run(ctx context.Context, st *store.Store, client llm.Client, opts Options) 
 		opts.MaxTokens = 1024
 	}
 	start := time.Now()
+
+	// --- Run log (#366) ---
+	// The durable record the Settings → Facts tab reads: begin, a heartbeat per
+	// finished conversation, and a terminal write. It is also the cross-process
+	// guard — `msgbrowse facts` and a running `msgbrowse serve` share one SQLite
+	// file and nothing else, so this row is how the web layer knows a CLI run is
+	// already in flight and refuses to start a second, billable one alongside it.
+	//
+	// The terminal write is DEFERRED so it lands on every exit path, including a
+	// fatal transport error mid-batch and a cancelled context. A run that dies
+	// without it leaves the card reading "extracting…" until the heartbeat goes
+	// stale — and that stale window is also a window in which no new run may
+	// start. It writes through a context detached from cancellation for the same
+	// reason: the usual way a run dies is ctx being cancelled, and the record
+	// must still land.
+	//
+	// A failed INSERT must NOT abort the pass: run logging is bookkeeping, and
+	// losing it is not a reason to refuse the work the user asked for. runID
+	// stays 0, the heartbeat and terminal write are skipped, and extraction
+	// proceeds — the posture journal.Run and embed.Run already take.
+	runID, rerr := st.BeginFactRun(ctx, model, runScope(opts), start)
+	if rerr != nil {
+		log.Warn("facts: could not record run start; continuing without a run log", "error", rerr)
+		runID = 0
+	}
+	defer func() {
+		if runID == 0 {
+			return // no row to finish
+		}
+		finishCtx := context.WithoutCancel(ctx)
+		msg := ""
+		if err != nil {
+			msg = err.Error()
+		}
+		if ferr := st.FinishFactRun(finishCtx, store.FactRun{
+			ID: runID, FinishedAt: time.Now(),
+			DurationMS:    time.Since(start).Milliseconds(),
+			Conversations: sum.Conversations, Messages: sum.MessagesParsed,
+			FactsAdded: sum.FactsAdded, Batches: sum.Batches, Error: msg,
+		}); ferr != nil {
+			log.Error("facts: could not record run completion", "error", ferr)
+		}
+	}()
 
 	if opts.Reset {
 		if err := st.ResetFacts(ctx); err != nil {
@@ -241,7 +284,6 @@ func Run(ctx context.Context, st *store.Store, client llm.Client, opts Options) 
 
 	var (
 		mu      sync.Mutex
-		sum     Summary
 		firstEr error
 		once    sync.Once
 	)
@@ -266,7 +308,17 @@ func Run(ctx context.Context, st *store.Store, client llm.Client, opts Options) 
 				sum.MessagesParsed += cs.MessagesParsed
 				sum.FactsAdded += cs.FactsAdded
 				sum.Batches += cs.Batches
+				doneConvs, doneFacts := sum.Conversations, sum.FactsAdded
 				mu.Unlock()
+				// Heartbeat outside the lock: the counters are already snapshotted,
+				// and holding the aggregation mutex across a SQLite write would
+				// serialize every worker behind it. A failed heartbeat is logged and
+				// ignored — the run is the work, not the bookkeeping.
+				if runID != 0 {
+					if herr := st.UpdateFactRunProgress(runCtx, runID, doneConvs, doneFacts, time.Now()); herr != nil {
+						log.Debug("facts: could not record run progress", "error", herr)
+					}
+				}
 			}
 		}()
 	}
@@ -426,4 +478,19 @@ func realMessages(msgs []store.MessageView) []store.MessageView {
 		out = append(out, m)
 	}
 	return out
+}
+
+// runScope maps a run's options onto the FIXED scope token recorded on its
+// fact_runs row. It is a token, never prose: the web layer turns it into
+// display text, so nothing request- or model-derived can reach the rendered run
+// history through this column.
+func runScope(opts Options) string {
+	switch {
+	case opts.Reset:
+		return store.FactScopeReset
+	case opts.OnlyConversationID > 0:
+		return store.FactScopeConversation
+	default:
+		return store.FactScopeArchive
+	}
 }

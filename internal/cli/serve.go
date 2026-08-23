@@ -13,6 +13,7 @@ import (
 	"github.com/joestump/msgbrowse/internal/backup"
 	"github.com/joestump/msgbrowse/internal/config"
 	"github.com/joestump/msgbrowse/internal/embed"
+	"github.com/joestump/msgbrowse/internal/facts"
 	"github.com/joestump/msgbrowse/internal/ingest"
 	"github.com/joestump/msgbrowse/internal/journal"
 	"github.com/joestump/msgbrowse/internal/onboardsvc"
@@ -93,6 +94,11 @@ func newServeCommand() *cobra.Command {
 			// one live holder, so a build started after an LLM save digests
 			// against the new endpoint.
 			srv.SetJournalBuilder(journal.NewBuilder(st, llmHolder, cfg.Journal, slog.Default()))
+			// And for the Settings → Facts tab's contact-fact extraction (#366),
+			// which had no in-app entry point at all before: same live holder,
+			// same store, so a run started after an LLM save extracts against
+			// the new endpoint.
+			srv.SetFactsExtractor(facts.NewExtractor(st, llmHolder, cfg.Journal, slog.Default()))
 
 			// The Backups tab (ADR-0026 / SPEC-0026): msgbrowse-owned snapshots
 			// of data_dir (DB + embeddings) + config, created/listed/pruned/

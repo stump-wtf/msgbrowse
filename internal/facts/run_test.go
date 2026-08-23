@@ -229,3 +229,60 @@ func TestRunOnlyConversationAndReset(t *testing.T) {
 		t.Errorf("reset run FactsAdded = %d, want 2 (re-derived for both)", sumReset.FactsAdded)
 	}
 }
+
+// TestRunRecordsRunLog covers the #366 bookkeeping: every pass writes a
+// fact_runs row, and it writes the TERMINAL row on failure too. The terminal
+// write is what the web layer's cross-process guard depends on — a run that
+// dies without one leaves the card reading "extracting…" for the whole
+// staleness window, and that window is also a window in which no new run may
+// start.
+func TestRunRecordsRunLog(t *testing.T) {
+	ctx := context.Background()
+	st := openStore(t)
+	seed(t, st, source.Signal, "Harper")
+	client := &fakeClient{resp: `[{"fact":"Has a dog named Biscuit","category":"personal","evidence":1}]`}
+
+	sum, err := Run(ctx, st, client, Options{Model: "test-chat", Logger: quietLogger()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	run, err := st.LatestFactRun(ctx)
+	if err != nil || run == nil {
+		t.Fatalf("LatestFactRun = %v, %v; want a recorded run", run, err)
+	}
+	if run.InFlight() {
+		t.Error("a completed pass left its run row in flight")
+	}
+	if run.Model != "test-chat" || run.Scope != store.FactScopeArchive {
+		t.Errorf("run = %+v, want model test-chat and the archive scope", run)
+	}
+	if run.FactsAdded != sum.FactsAdded || run.Conversations != sum.Conversations {
+		t.Errorf("run totals %d/%d disagree with the summary %d/%d",
+			run.Conversations, run.FactsAdded, sum.Conversations, sum.FactsAdded)
+	}
+
+	// A reset pass records the reset scope, so the run history can say which
+	// runs were the expensive ones.
+	if _, err := Run(ctx, st, client, Options{Model: "test-chat", Reset: true, Logger: quietLogger()}); err != nil {
+		t.Fatal(err)
+	}
+	if run, _ = st.LatestFactRun(ctx); run.Scope != store.FactScopeReset {
+		t.Errorf("reset run scope = %q, want %q", run.Scope, store.FactScopeReset)
+	}
+
+	// A transport failure still lands a terminal row carrying the abort reason.
+	boom := &fakeClient{chatErr: errors.New("endpoint refused")}
+	if _, err := Run(ctx, st, boom, Options{Model: "test-chat", Reset: true, Logger: quietLogger()}); err == nil {
+		t.Fatal("expected the transport error to abort the run")
+	}
+	run, err = st.LatestFactRun(ctx)
+	if err != nil || run == nil {
+		t.Fatalf("LatestFactRun after a failure = %v, %v", run, err)
+	}
+	if run.InFlight() {
+		t.Error("a failed pass left its run row in flight; the guard would block every later run")
+	}
+	if !strings.Contains(run.Error, "endpoint refused") {
+		t.Errorf("run error = %q, want the abort reason", run.Error)
+	}
+}
