@@ -92,6 +92,13 @@ type Store interface {
 	LatestJournalRun(ctx context.Context) (*store.JournalRun, error)
 	RecentJournalRuns(ctx context.Context, n int) ([]store.JournalRun, error)
 	JournalCoverage(ctx context.Context) (store.JournalCoverage, error)
+	// In-app fact extraction (#366): the run log the Settings → Facts card reads,
+	// the coverage snapshot behind it, and the per-contact cursor coverage that
+	// lets the contact page tell "never extracted" from "extracted, no facts".
+	LatestFactRun(ctx context.Context) (*store.FactRun, error)
+	RecentFactRuns(ctx context.Context, n int) ([]store.FactRun, error)
+	FactCoverage(ctx context.Context, exclude []string) (store.FactCoverage, error)
+	ContactFactScan(ctx context.Context, contactID int64) (store.ContactFactScan, error)
 	SemanticSearch(ctx context.Context, query []float32, model string, opts store.SemanticOptions) ([]store.ScoredMessage, error)
 	EmbeddingCoverage(ctx context.Context, model string) (store.EmbeddingCoverage, error)
 	// Contact merge engine (#11) behind the Settings → Contacts tab (#12).
@@ -212,6 +219,17 @@ type Server struct {
 	// calls, so a raced double-start costs money, not just duplicated work.
 	journalMu      sync.Mutex
 	journalRunning bool
+
+	// factsExtractor runs the contact-fact extraction pass behind the Settings →
+	// Facts tab's Extract / Re-extract controls (#366); nil (browser / no-op mode)
+	// renders the unavailable state and no controls at all.
+	factsExtractor FactsExtractor
+	// factsMu guards factsRunning, the single-flight flag for the ONE extraction
+	// job the web layer runs at a time. Extraction is billable outbound LLM work
+	// over every eligible conversation, so a raced double-start costs real
+	// money, not just duplicated work.
+	factsMu      sync.Mutex
+	factsRunning bool
 	// addressBook is the pluggable address-book provider behind contact
 	// merging (issue #9): the macOS desktop shell wires a Contacts-backed
 	// contacts.Resolver via SetContactResolver; nil (Linux, browser mode,
@@ -479,6 +497,17 @@ func (s *Server) routes() http.Handler {
 	// Live progress fragment: the build card polls this while a run is in
 	// flight and stops when the fresh HTML drops the trigger.
 	mux.HandleFunc("GET /journal/build/progress", s.handleJournalBuildProgress)
+	// In-app fact extraction (#366): privileged POSTs behind the same
+	// checkSetupPOST gate. Extract picks up where each conversation's stored
+	// cursor stopped; Re-extract clears every fact and cursor first. Both start
+	// a detached single-flight job and re-render the Facts tab with a
+	// fixed-enum banner, and NEITHER takes any user-supplied scope — the reset
+	// flag is chosen by the route, so a hand-crafted POST cannot widen the job.
+	mux.HandleFunc("POST /facts/run", s.handleFactsRun)
+	mux.HandleFunc("POST /facts/reset", s.handleFactsReset)
+	// Live progress fragment: the card polls this while a run is in flight and
+	// stops when the fresh HTML drops the trigger.
+	mux.HandleFunc("GET /facts/run/progress", s.handleFactsProgress)
 	mux.HandleFunc("GET /c/{id}", s.handleConversation)
 	// Per-person Contact + AI Facts + Profile page (redesign Phase 1), keyed by
 	// contact id (the merged-person grain), reached from the transcript header.
@@ -539,6 +568,12 @@ func (s *Server) routes() http.Handler {
 	// fixed-enum result banner.
 	mux.HandleFunc("GET /settings/search-index", s.handleSettingsSearchIndex)
 	mux.HandleFunc("GET /settings/journal", s.handleSettingsJournal)
+	// The Settings → Facts tab (#366): the contact-fact extraction pipeline's
+	// own tab, one per pipeline like Search index and Journal (SPEC-0004
+	// REQ-0004-010). The pipeline's POSTs keep their own /facts/* paths — the
+	// #368 precedent, where /journal/build and /status/index kept theirs and
+	// only the surface they re-render moved.
+	mux.HandleFunc("GET /settings/facts", s.handleSettingsFacts)
 	mux.HandleFunc("GET /settings/contacts", s.handleSettingsContacts)
 	mux.HandleFunc("POST /settings/contacts/rules", s.handleSettingsMergeRules)
 	mux.HandleFunc("POST /settings/contacts/merge", s.handleSettingsMerge)

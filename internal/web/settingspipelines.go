@@ -1,8 +1,9 @@
 // Settings Tabs For The Derived-Data Pipelines
 //
 // One Settings tab per pipeline: /settings/search-index owns the semantic-search
-// embeddings, /settings/journal owns the journal digests. Each renders its
-// pipeline's coverage, model, run history and build controls, and nothing else.
+// embeddings, /settings/journal owns the journal digests, /settings/facts owns
+// contact-fact extraction. Each renders its pipeline's coverage, model, run
+// history and build controls, and nothing else.
 //
 // SPEC-0004 REQ-0004-010 requires this shape. The two cards previously shared
 // the Status tab, whose unrelated coverage figures, models, run histories and
@@ -15,9 +16,18 @@
 // The POST routes are unchanged — /status/index, /status/index/reset,
 // /journal/build, /journal/rebuild, /journal/rebuild/day keep their paths and
 // their checkSetupPOST gates. Only the surface they re-render moved, so no
-// bookmark, form action or guard changed meaning.
+// bookmark, form action or guard changed meaning. The facts pipeline follows
+// that same shape: its POSTs live at /facts/run and /facts/reset, and only the
+// tab they re-render is new.
 //
 // @joestump-agent 08/20/2026 - Split out of the Status tab (#368).
+//
+// @joestump-agent 08/23/2026 - Added the Facts tab (#366). Fact extraction had
+// been CLI-only since it shipped: no route, no control, no Settings surface at
+// all, so on a real archive the contact page rendered an empty fact set forever
+// with no way to fill it. It joins as its own tab rather than sharing one,
+// because that is what REQ-0004-010 requires and because the shared Status tab
+// this rule replaced is exactly the shape being avoided.
 package web
 
 import (
@@ -62,6 +72,18 @@ type journalSettingsData struct {
 	// Rebuild POST, "" on a plain GET.
 	JournalResult string
 	SetupToken    string
+}
+
+// factsSettingsData drives /settings/facts. Field names match what the
+// facts_build_card define reads, so the card is shared verbatim with the
+// live-progress fragment (factsCardData).
+type factsSettingsData struct {
+	baseData
+	Build factsBuildData
+	// FactsResult is the fixed-enum banner from a just-completed Extract /
+	// Re-extract POST, "" on a plain GET.
+	FactsResult string
+	SetupToken  string
 }
 
 // handleSettingsSearchIndex is GET /settings/search-index.
@@ -144,6 +166,45 @@ func (s *Server) renderJournalSettings(w http.ResponseWriter, r *http.Request, j
 		data.SetupToken = tok
 	}
 	s.render(w, r, "journal_settings", data)
+}
+
+// handleSettingsFacts is GET /settings/facts.
+func (s *Server) handleSettingsFacts(w http.ResponseWriter, r *http.Request) {
+	s.renderFactsSettings(w, r, "")
+}
+
+// renderFactsSettings assembles and renders the Facts tab. factsResult is the
+// fixed-enum banner from a just-completed Extract / Re-extract POST, "" on a
+// plain GET.
+func (s *Server) renderFactsSettings(w http.ResponseWriter, r *http.Request, factsResult string) {
+	ctx := r.Context()
+	base, err := s.settingsBase(ctx, r, "Facts · msgbrowse")
+	if err != nil {
+		s.serverError(w, err)
+		return
+	}
+	build, err := s.factsBuildStatus(ctx)
+	if err != nil {
+		s.serverError(w, err)
+		return
+	}
+	data := factsSettingsData{
+		baseData:    base,
+		Build:       build,
+		FactsResult: factsResult,
+	}
+	// The Extract / Re-extract forms are privileged POSTs: arm them with a live
+	// token, but only when there is an extractor to drive (browser mode renders
+	// the unavailable note and no forms at all).
+	if s.factsExtractor != nil {
+		tok, err := s.setupTokens.mint()
+		if err != nil {
+			s.serverError(w, err)
+			return
+		}
+		data.SetupToken = tok
+	}
+	s.render(w, r, "facts_settings", data)
 }
 
 // settingsBase builds the page shell for a Settings tab. A boosted navigation

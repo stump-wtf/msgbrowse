@@ -96,10 +96,26 @@
         </div>
         {{- end}}
         <p class="mt-2 text-xs opacity-50">AI-generated from messages — may be incomplete or wrong. Each fact links to its source.</p>
-        {{- else}}
+        {{- else if .FactsExtracted}}
+        {{/* Extraction HAS read this person and produced nothing — a real and
+             common outcome (a thread of pure logistics holds no durable facts).
+             Saying so is the whole point of #366: the identical blank panel
+             below used to render for this case too, so a never-configured
+             archive was indistinguishable from a considered verdict. */}}
         <div class="notice-card">
-          <p class="link-card-title">No AI facts yet.</p>
-          <p class="link-card-sub">Run <code class="font-mono">msgbrowse facts</code> to extract cited facts about this person.</p>
+          <p class="link-card-title">No durable facts found.</p>
+          <p class="link-card-sub">Fact extraction has read {{num .FactScanned}} of {{num .FactConvTotal}}
+            conversations with this person and found nothing durable to record. New messages are analyzed on
+            the next run.</p>
+        </div>
+        {{- else}}
+        {{/* Extraction has never looked here. That is a configuration state
+             with a fix, so link to the control rather than leaving a dead end. */}}
+        <div class="notice-card">
+          <p class="link-card-title">Facts have not been extracted yet.</p>
+          <p class="link-card-sub">Nothing about this person has been analyzed. Start extraction on the
+            <a href="/settings/facts" class="link link-hover">Settings &rarr; Facts</a> tab, or run
+            <code class="font-mono">msgbrowse facts</code> from the command line.</p>
         </div>
         {{- end}}
       </section>

@@ -1,0 +1,167 @@
+{{define "facts_settings"}}{{template "page_start" .}}{{template "facts_settings_content" .}}{{template "page_end" .}}{{end}}
+
+{{/* Settings → Facts
+
+     The contact-fact pipeline's own tab (#366): extraction coverage, chat
+     model, live progress, run history, and the Extract / Re-extract controls.
+     It is the ONLY surface that renders them — one tab per derived-data
+     pipeline, SPEC-0004 REQ-0004-010, the rule the #368 split established after
+     the pipelines' shared Status tab read as one undifferentiated machine-room
+     dump.
+
+     Before this tab existed, fact extraction had no in-app surface at all: it
+     was reachable only from `msgbrowse facts`, so a live 2,438-conversation
+     archive carried zero facts and zero cursors while the contact page rendered
+     its facts section over an empty set forever. The contact page links HERE
+     rather than restating any of this.
+
+     facts_settings_content is the boosted-swap unit (SPEC-0008 REQ-0008-006);
+     hx-history="false" keeps the per-session setup token out of htmx's
+     localStorage history cache. */}}
+{{define "facts_settings_content"}}<title>{{.Title}}</title>
+    <main id="main-content" class="flex-1" tabindex="0" hx-history="false">
+  <div class="px-6 lg:px-8 py-8 max-w-4xl space-y-5">
+    <h1 class="screen-h1">Settings</h1>
+    {{template "settings_subnav" "facts"}}
+
+    {{/* Extraction result banner (fixed-enum, #366). Every arm is selected
+         server-side from a fixed enum, never from request input. */}}
+    {{- if eq .FactsResult "started"}}
+    {{template "status_banner" dict "variant" "info" "title" "Extracting contact facts." "body" "Reading the conversations that have not been analyzed yet — this card reports progress while it runs."}}
+    {{- else if eq .FactsResult "reset"}}
+    {{template "status_banner" dict "variant" "warning" "title" "Re-extracting every conversation." "body" "Stored facts and cursors were cleared and are being re-derived — every conversation is a fresh set of calls to your LLM endpoint."}}
+    {{- else if eq .FactsResult "inprogress"}}
+    {{template "status_banner" dict "variant" "info" "title" "A run is already in progress." "body" "Nothing new was started — the running job continues."}}
+    {{- else if eq .FactsResult "nomodel"}}
+    {{/* Deliberately unlike the journal's no-model banner, which reports that a
+         useful mechanical layer is being built anyway. Extraction has no
+         model-free layer, so nothing was started at all and the banner says
+         so. */}}
+    {{template "status_banner" dict "variant" "warning" "title" "No chat model is configured." "body" "Nothing was started. Every fact comes from the model, so there is no useful work to do without one — set a chat model on the <a href=\"/settings/llm\" class=\"link link-hover\">LLM settings</a> tab and try again."}}
+    {{- else if eq .FactsResult "unavailable"}}
+    {{template "status_banner" dict "variant" "warning" "title" "Fact extraction is not available here." "body" "This server was started without an extractor. Run <code class=\"font-mono\">msgbrowse facts</code> from the command line instead."}}
+    {{- end}}
+
+    {{template "facts_build_card" .}}
+  </div>
+    </main>
+{{end}}
+
+{{/* facts_build_card (#366) is the in-app Extract / Re-extract surface,
+     modelled on journal_build_card. Two-way availability, in this order, so a
+     mode that cannot extract never renders a dead button:
+       1. no extractor wired → explain the CLI path, NO forms and NO token;
+       2. otherwise          → the full card, whose controls are omitted (not
+          disabled) when no chat model is configured, because there is no
+          model-free work for them to do.
+     Controls disable while anything is running, from either the cross-process
+     fact_runs heartbeat or this process's single-flight flag, so a second click
+     cannot race the guard into a duplicate (billable) run.
+
+     Fact text never appears here — only counts — but run error strings are
+     endpoint output and reach the page through html/template escaping alone,
+     with no model-derived href, class or style anywhere on the card. */}}
+{{define "facts_build_card"}}
+      {{/* Self-terminating poll: hx-swap="outerHTML" replaces this card, and the
+           replacement omits the trigger once the run ends, so the polling stops
+           on its own. No aria-live on the CARD — the live region is scoped to
+           the one line that actually changes, below. */}}
+      <div id="facts-build-card" class="status-card mb-6"
+           {{- if .Build.Busy}} hx-get="/facts/run/progress" hx-trigger="every 2s" hx-target="#facts-build-card" hx-swap="outerHTML"{{end}}>
+        <div class="status-card-title">Contact facts</div>
+        {{- if not .Build.Available}}
+        <p class="status-note">Fact extraction is unavailable in this mode. Run
+          <code class="font-mono">msgbrowse facts</code> from the command line to extract cited facts about
+          your contacts.</p>
+        {{- else}}
+
+        {{- if .Build.InProgress}}
+        <p class="status-note mb-3" role="status" aria-live="polite"><span class="sync-badge sync-badge-info">Extracting…</span>
+          {{num .Build.RunConversations}} conversations read and {{num .Build.RunFacts}} facts extracted so far
+          in the current run.</p>
+        {{- else if .Build.Running}}
+        <p class="status-note mb-3" role="status" aria-live="polite"><span class="sync-badge sync-badge-info">Extracting…</span>
+          The run has just started.</p>
+        {{- else if .Build.Stalled}}
+        <p class="status-note mb-3"><span class="sync-badge sync-badge-warn">Interrupted</span>
+          The last extraction stopped before finishing — running again resumes from each conversation's stored
+          cursor, so nothing already paid for is re-read.</p>
+        {{- end}}
+
+        {{/* Extraction coverage over the eligible conversations. <progress> (not
+             an inline-styled div) keeps this CSP-clean. */}}
+        {{- if gt .Build.Conversations 0}}
+        <div class="index-progress-row mb-4">
+          <progress class="index-progress" value="{{.Build.Processed}}" max="{{.Build.Conversations}}"></progress>
+          <span class="index-progress-pct mono">{{.Build.Percent}}%</span>
+        </div>
+        {{- end}}
+
+        <div class="status-grid">
+          <div><div class="status-metric-label">Extraction coverage</div>
+            <div class="status-metric-value">{{num .Build.Processed}} of {{num .Build.Conversations}} conversations ({{.Build.Percent}}%)</div></div>
+          <div><div class="status-metric-label">Chat model</div>
+            <div class="status-metric-value">
+              {{- if .Build.Model}}{{.Build.Model}}
+              {{- else}}<span class="opacity-60">not configured — extraction cannot run;
+                set one on the <a href="/settings/llm" class="link link-hover">LLM settings</a> tab</span>{{end -}}
+            </div></div>
+          <div><div class="status-metric-label">Facts extracted</div>
+            <div class="status-metric-value">{{num .Build.Facts}} about {{num .Build.Contacts}} contacts
+              {{- if gt .Build.Processed 0}}
+              {{/* Processed-but-factless is a real, common outcome — a thread of
+                   pure logistics holds no durable facts. Saying so is what stops
+                   an empty contact panel from reading as a failure. */}}
+              <span class="opacity-60">· {{num .Build.Productive}} of the conversations read yielded facts</span>{{end -}}
+            </div></div>
+          <div><div class="status-metric-label">Last extraction</div>
+            <div class="status-metric-value">
+              {{- if .Build.HasLastRun}}{{.Build.LastFinished}} · {{num .Build.LastFacts}} facts in {{num .Build.LastDurationMS}} ms
+              {{- else if .Build.Busy}}running now
+              {{- else}}never{{end -}}
+            </div></div>
+        </div>
+        {{- if .Build.LastError}}
+        <p class="status-note mt-4"><span class="sync-badge sync-badge-err">Failed</span>
+          Last run aborted: <span class="font-mono">{{.Build.LastError}}</span></p>
+        {{- end}}
+
+        {{template "pipeline_run_history" dict "rows" .Build.History "unit" "Facts"}}
+
+        {{- if .Build.Model}}
+        {{/* Privileged same-origin form POSTs carrying the per-session token,
+             boosted to swap only #main-content (no inline JS; CSP-clean). The
+             counts are stated ON the controls, before the click: extraction is
+             billable outbound LLM work over thousands of conversations, so the
+             price has to be visible at the moment of the decision, not
+             afterwards — the "Rebuild all N digests" contract. */}}
+        <div class="flex flex-wrap gap-3 mt-5">
+          <form method="post" action="/facts/run"
+                hx-boost="true" hx-target="#main-content" hx-select="#main-content" hx-swap="outerHTML">
+            <input type="hidden" name="setup_token" value="{{.SetupToken}}">
+            <button type="submit" class="setup-btn"{{if .Build.Busy}} disabled{{end}}>
+              {{- if gt .Build.Remaining 0}}Extract facts from {{num .Build.Remaining}} conversations
+              {{- else}}Extract new messages{{end}}</button>
+          </form>
+          {{- if or (gt .Build.Processed 0) (gt .Build.Facts 0)}}
+          <form method="post" action="/facts/reset"
+                hx-boost="true" hx-target="#main-content" hx-select="#main-content" hx-swap="outerHTML">
+            <input type="hidden" name="setup_token" value="{{.SetupToken}}">
+            <button type="submit" class="setup-btn setup-btn-ghost"{{if .Build.Busy}} disabled{{end}}
+                    aria-label="Clear {{num .Build.Facts}} extracted facts and re-extract all {{num .Build.Conversations}} conversations">
+              Re-extract all {{num .Build.Conversations}} conversations</button>
+          </form>
+          {{- end}}
+        </div>
+        <p class="status-note mt-3">Extraction sends each conversation's messages to your LLM endpoint in
+          batches — {{num .Build.Remaining}} conversations have not been read yet, and each one costs at least
+          one call. It resumes from where the last run stopped and leaves facts you already have alone.
+          {{- if or (gt .Build.Processed 0) (gt .Build.Facts 0)}} Re-extract clears all {{num .Build.Facts}}
+          stored facts and pays for every one of the {{num .Build.Conversations}} conversations again.{{end}}</p>
+        {{- else}}
+        <p class="status-note mt-5">Extraction sends message text to your configured LLM endpoint, so it needs
+          a chat model. Nothing is sent until you start a run, and no run can start without one.</p>
+        {{- end}}
+        {{- end}}
+      </div>
+{{end}}

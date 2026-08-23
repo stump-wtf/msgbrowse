@@ -6,7 +6,7 @@ import "context"
 // `user_version` pragma. On Open, the migrations runner brings any older
 // database forward to this version. Bump it and append a migration whenever the
 // schema changes.
-const schemaVersion = 19
+const schemaVersion = 20
 
 // SchemaVersion returns the schema revision this binary expects (and migrates a
 // database forward to on Open). Read-only callers — notably `msgbrowse doctor` —
@@ -58,6 +58,7 @@ var migrations = []string{
 	17: schemaV17,
 	18: schemaV18,
 	19: schemaV19,
+	20: schemaV20,
 }
 
 // schemaV1 is the initial Signal-only schema. It is preserved verbatim so a
@@ -909,4 +910,48 @@ CREATE TABLE IF NOT EXISTS spam_state (
 // its next sync rather than needing a reimport.
 const schemaV19 = `
 ALTER TABLE contact_merge_rules ADD COLUMN match_display_name INTEGER NOT NULL DEFAULT 1;
+`
+
+// schemaV20 adds what in-app fact extraction needs to be observable (#366).
+//
+// Fact extraction has always been a CLI-only pass, so nothing ever recorded
+// that it ran: on a live archive `contact_facts` and `fact_state` were both
+// empty while the contact page cheerfully rendered an empty set forever. The
+// web controls added in #366 need the same three things the journal's build
+// card needs, and there was nowhere for any of them to come from — "last run",
+// "how long it took", "how many facts it produced", and "is a run in flight
+// right now".
+//
+// fact_runs is the facts analogue of journal_runs (v15) and embed_runs (v12),
+// deliberately the same shape so pipelineRunView renders all three through one
+// table. It is also the ONLY channel between a `msgbrowse facts` CLI process
+// and a running `msgbrowse serve` sharing the same SQLite file, which is what
+// lets the web layer refuse to start a second extraction rather than race one
+// already in flight. That matters more here than anywhere else: extraction is
+// billable outbound LLM work over every eligible conversation, so a raced
+// double-start costs real money, not just duplicated effort.
+//
+// scope is a FIXED TOKEN, never free text: ” for an incremental whole-archive
+// pass, 'reset' for a wipe-and-re-extract, 'conversation' for a single-thread
+// run. The web layer maps the token to display prose, so nothing model- or
+// request-derived can reach the rendered table through this column.
+//
+// Timestamps are RFC3339 UTC strings, matching journal_runs, embed_runs and
+// ingest_runs. finished_at = ” marks a run still in flight; updated_at is the
+// per-conversation heartbeat readers use to tell a live run from a crashed one.
+const schemaV20 = `
+CREATE TABLE IF NOT EXISTS fact_runs (
+    id            INTEGER PRIMARY KEY,
+    model         TEXT    NOT NULL,
+    scope         TEXT    NOT NULL DEFAULT '',
+    started_at    TEXT    NOT NULL,
+    updated_at    TEXT    NOT NULL,
+    finished_at   TEXT    NOT NULL DEFAULT '',
+    duration_ms   INTEGER NOT NULL DEFAULT 0,
+    conversations INTEGER NOT NULL DEFAULT 0,
+    messages      INTEGER NOT NULL DEFAULT 0,
+    facts_added   INTEGER NOT NULL DEFAULT 0,
+    batches       INTEGER NOT NULL DEFAULT 0,
+    error         TEXT    NOT NULL DEFAULT ''
+);
 `
