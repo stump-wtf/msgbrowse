@@ -12,6 +12,10 @@
      surface at all: it was CLI-only, so the contact page rendered an empty fact
      set forever with no way to fill it.
 
+     Sentiment joined in #367 for the same reason and with a worse symptom: IPIP
+     scoring was CLI-only AND had no consumer, so on the live archive it had
+     never run once and nothing in internal/web referenced a single score row.
+
      Search index and Journal joined in #368 — one tab per derived-data
      pipeline, as SPEC-0004 REQ-0004-010 requires. They had been stacked on
      Status, whose unrelated coverage figures, models, run histories and costs
@@ -20,8 +24,8 @@
      surfaces, which is how the old Home and Status copies drifted apart.
 
      The dot is the active tab's token ("providers" / "mcp" / "llm" /
-     "contacts" / "search-index" / "journal" / "facts" / "status" /
-     "backups" / "logs"); the active tab carries aria-current so the state is conveyed as
+     "contacts" / "search-index" / "journal" / "facts" / "sentiment" /
+     "status" / "backups" / "logs"); the active tab carries aria-current so the state is conveyed as
      more than color (SPEC-0013 §Accessibility spirit). Boosted like every
      in-app nav (SPEC-0008 REQ-0008-006), so switching tabs swaps only
      #main-content; the old routes stay the canonical URLs — nothing
@@ -36,6 +40,7 @@
       <a href="/settings/search-index" class="settings-tab{{if eq . "search-index"}} settings-tab-active{{end}}"{{if eq . "search-index"}} aria-current="page"{{end}}>Search index</a>
       <a href="/settings/journal" class="settings-tab{{if eq . "journal"}} settings-tab-active{{end}}"{{if eq . "journal"}} aria-current="page"{{end}}>Journal</a>
       <a href="/settings/facts" class="settings-tab{{if eq . "facts"}} settings-tab-active{{end}}"{{if eq . "facts"}} aria-current="page"{{end}}>Facts</a>
+      <a href="/settings/sentiment" class="settings-tab{{if eq . "sentiment"}} settings-tab-active{{end}}"{{if eq . "sentiment"}} aria-current="page"{{end}}>Sentiment</a>
       <a href="/status" class="settings-tab{{if eq . "status"}} settings-tab-active{{end}}"{{if eq . "status"}} aria-current="page"{{end}}>Status</a>
       <a href="/backups" class="settings-tab{{if eq . "backups"}} settings-tab-active{{end}}"{{if eq . "backups"}} aria-current="page"{{end}}>Backups</a>
       <a href="/logs" class="settings-tab{{if eq . "logs"}} settings-tab-active{{end}}"{{if eq . "logs"}} aria-current="page"{{end}}>Logs</a>

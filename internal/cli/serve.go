@@ -17,6 +17,7 @@ import (
 	"github.com/joestump/msgbrowse/internal/ingest"
 	"github.com/joestump/msgbrowse/internal/journal"
 	"github.com/joestump/msgbrowse/internal/onboardsvc"
+	"github.com/joestump/msgbrowse/internal/sentiment"
 	"github.com/joestump/msgbrowse/internal/setup"
 	"github.com/joestump/msgbrowse/internal/source"
 	"github.com/joestump/msgbrowse/internal/store"
@@ -99,6 +100,10 @@ func newServeCommand() *cobra.Command {
 			// same store, so a run started after an LLM save extracts against
 			// the new endpoint.
 			srv.SetFactsExtractor(facts.NewExtractor(st, llmHolder, cfg.Journal, slog.Default()))
+			// And for the Settings → Sentiment tab's IPIP scoring (#367), which
+			// likewise had no in-app entry point and no consumer at all — on a
+			// real archive it had never run once. Same live holder, same store.
+			srv.SetSentimentScorer(sentiment.NewScorer(st, llmHolder, cfg.Journal, slog.Default()))
 
 			// The Backups tab (ADR-0026 / SPEC-0026): msgbrowse-owned snapshots
 			// of data_dir (DB + embeddings) + config, created/listed/pruned/

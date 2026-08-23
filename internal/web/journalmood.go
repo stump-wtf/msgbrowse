@@ -42,48 +42,8 @@ import (
 	"time"
 
 	"github.com/joestump/msgbrowse/internal/journal"
+	"github.com/joestump/msgbrowse/internal/sentiment"
 	"github.com/joestump/msgbrowse/internal/store"
-)
-
-// affectValence maps each affect-tier construct in internal/sentiment's lexicon
-// to the direction it pushes a day's tint: +1 for a pleasant facet, -1 for an
-// unpleasant one. A day's valence is the mean of every scored row weighted this
-// way, which keeps the fold a single number regardless of which facets the model
-// happened to find salient in a given message.
-//
-// Domain-tier constructs (the Big Five axes) are deliberately absent. They are
-// bipolar personality axes, not affect — "high Conscientiousness" says nothing
-// about whether a day felt good — and REQ-0027-009 scopes the journal's per-day
-// mood to the affect tier.
-//
-// This table is checked against the built lexicon by TestAffectValenceCoversLexicon,
-// so adding a facet in internal/sentiment without deciding its valence here fails
-// the build rather than silently dropping it out of every tint.
-var affectValence = map[string]float64{
-	"Cheerfulness":             +1,
-	"Hope/Optimism":            +1,
-	"Calmness":                 +1,
-	"Vitality/Enthusiasm/Zest": +1,
-	"Empathy":                  +1,
-	"Anger":                    -1,
-	"Anxiety":                  -1,
-	"Depression":               -1,
-	"Vulnerability":            -1,
-	"Self-consciousness":       -1,
-}
-
-const (
-	// sentimentMoodThreshold is how far a day's mean valence must sit from zero
-	// before it reads as upbeat or tense rather than neutral. Scores are clamped
-	// to [-1,+1] per message and averaged across a whole day, so day means live
-	// close to zero; a wide band here would paint every day neutral, a narrow one
-	// would flip the tint on noise.
-	sentimentMoodThreshold = 0.12
-	// sentimentMinScores is the minimum number of scored rows a day needs before
-	// its tint is drawn at all. One salient facet on one message is not a mood,
-	// and tinting a day off it would be exactly the false confidence this whole
-	// change exists to remove — such a day stays UNANALYSED, which is honest.
-	sentimentMinScores = 3
 )
 
 // moodClass maps a mood to its fixed CSS class, returning "" for anything not in
@@ -123,7 +83,7 @@ func sentimentMoods(rows []store.SentimentDayConstruct) map[string]string {
 	}
 	byDay := make(map[string]*acc)
 	for _, r := range rows {
-		w, ok := affectValence[r.Construct]
+		w, ok := sentiment.Valence(r.Construct)
 		if !ok {
 			continue // domain tier, or a construct this build does not weight
 		}
@@ -138,14 +98,14 @@ func sentimentMoods(rows []store.SentimentDayConstruct) map[string]string {
 
 	out := make(map[string]string, len(byDay))
 	for day, a := range byDay {
-		if a.n < sentimentMinScores {
+		if a.n < sentiment.MinScores {
 			continue
 		}
 		mean := a.weighted / float64(a.n)
 		switch {
-		case mean >= sentimentMoodThreshold:
+		case mean >= sentiment.MoodThreshold:
 			out[day] = "upbeat"
-		case mean <= -sentimentMoodThreshold:
+		case mean <= -sentiment.MoodThreshold:
 			out[day] = "tense"
 		default:
 			out[day] = "neutral"

@@ -325,31 +325,10 @@ func TestSentimentMoodsThresholds(t *testing.T) {
 	}
 }
 
-// TestAffectValenceCoversLexicon is the drift guard. internal/store cannot import
-// internal/sentiment without closing a cycle, so the affect taxonomy lives here —
-// which means nothing but this test stops a facet added to the lexicon from
-// being silently dropped out of every day tint.
-func TestAffectValenceCoversLexicon(t *testing.T) {
-	lex, err := sentiment.BuildLexicon()
-	if err != nil {
-		t.Fatalf("BuildLexicon: %v", err)
-	}
-	affect := map[string]bool{}
-	for _, c := range lex.Constructs {
-		if c.Tier != sentiment.TierAffect {
-			continue
-		}
-		affect[c.Name] = true
-		if _, ok := affectValence[c.Name]; !ok {
-			t.Errorf("affect construct %q has no entry in affectValence — decide its valence, or the journal silently ignores it", c.Name)
-		}
-	}
-	for name := range affectValence {
-		if !affect[name] {
-			t.Errorf("affectValence weights %q, which is not an affect-tier construct in the built lexicon", name)
-		}
-	}
-}
+// TestAffectValenceCoversLexicon was the drift guard while the affect taxonomy
+// lived here. It moved to internal/sentiment with the table (#367); its
+// successor is internal/sentiment/affect_test.go:TestAffectValenceCoversAffectTier,
+// which fails the build when a lexicon facet has no decided valence.
 
 // --- fixtures -------------------------------------------------------------
 

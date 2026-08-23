@@ -138,6 +138,54 @@
             {{- if .MoodInferred}} title="Folded from this day&rsquo;s sentiment scores — it has no editorial digest yet"{{end}}>{{.Mood}}
             {{- if .MoodInferred}} <span class="opacity-60">from sentiment</span>{{end}}</span>{{end}}
         </div>
+        {{/* Per-day mood strip from sentiment scores (#367, delivering
+             SPEC-0027's per-day mood requirement from #313).
+
+             ADDITIVE, and that word is load-bearing: a day with no affect scores
+             renders this block not at all and the card below is exactly what it
+             was, so nothing here touches SPEC-0016's mechanical rollup or the
+             digest. It is bucketed on the SAME UTC day frame the rollup uses
+             (ADR-0023: date(ts_unix,'unixepoch'), never 'localtime'), so a
+             message sent near midnight lands in one bucket, not two.
+
+             It is deliberately kept VISUALLY SEPARATE from the digest mood chip
+             above rather than merged into it. That chip is an editorial reading
+             by a model that read the whole day; this is a mechanical fold of
+             per-message affect scores. Merging them would let the page imply the
+             digest pass has read a day it has not.
+
+             MoodClass comes from a three-value Go switch (upbeat / neutral /
+             tense) — no model output or stored string reaches a class attribute
+             (SPEC-0016 REQ-0016-016). The mood word and every facet's signed
+             score are printed as text, so nothing here is encoded in colour or
+             bar length alone. */}}
+        {{- with .Sentiment}}
+        {{- if .Rendered}}
+        <div class="journal-day-meta">
+          Expressed affect · <span class="journal-mood {{.MoodClass}}">{{.Mood}}</span>
+          <span class="font-mono opacity-60">from {{num .Scores}} scores</span>
+        </div>
+        {{- if .Facets}}
+        <ul class="mb-3">
+          {{- range .Facets}}
+          <li class="mb-3">
+            <div class="flex flex-wrap items-baseline gap-2">
+              <span class="text-sm">{{.Label}}</span>
+              <span class="font-mono text-xs opacity-60">{{.Text}} · {{.Direction}} · {{.Detail}}</span>
+            </div>
+            <div class="index-progress-row">
+              <progress class="index-progress" value="{{.Value}}" max="{{.Max}}"
+                        aria-label="{{.Label}}: {{.Text}}, {{.Direction}}, from {{.Detail}}"></progress>
+            </div>
+          </li>
+          {{- end}}
+        </ul>
+        {{- end}}
+        <p class="text-xs opacity-50 mb-4">AI-generated from message text against the public-domain IPIP item
+          pool — what this day&rsquo;s messages expressed, not an assessment of anyone who wrote them. Contacts
+          who opted out of scoring are excluded entirely.</p>
+        {{- end}}
+        {{- end}}
         {{/* Staleness (#240): this digest was written BEFORE later messages
              landed on the day, so it is describing an incomplete day. Shown only
              when the captured count is known — a digest predating the count

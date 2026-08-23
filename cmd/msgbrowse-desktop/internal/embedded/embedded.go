@@ -37,6 +37,7 @@ import (
 	"github.com/joestump/msgbrowse/internal/llm"
 	"github.com/joestump/msgbrowse/internal/mcp"
 	"github.com/joestump/msgbrowse/internal/onboard"
+	"github.com/joestump/msgbrowse/internal/sentiment"
 	"github.com/joestump/msgbrowse/internal/store"
 	"github.com/joestump/msgbrowse/internal/web"
 )
@@ -241,6 +242,8 @@ func Start(ctx context.Context, cfg *config.Config, log *slog.Logger, opts ...Op
 	srv.SetJournalBuilder(journal.NewBuilder(st, holder, cfg.Journal, log))
 	// Same for the Settings → Facts tab's contact-fact extraction (#366).
 	srv.SetFactsExtractor(facts.NewExtractor(st, holder, cfg.Journal, log))
+	// Same for the Settings → Sentiment tab's IPIP scoring (#367).
+	srv.SetSentimentScorer(sentiment.NewScorer(st, holder, cfg.Journal, log))
 	mcpSrv := mcp.NewServer(st, holder, mcp.Options{
 		EmbedModelFunc: holder.EmbedModel,
 		Logger:         log,

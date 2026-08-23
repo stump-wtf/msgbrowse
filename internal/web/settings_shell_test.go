@@ -9,9 +9,10 @@ import (
 // with the LLM tab, by #2 with the Backups tab, by #12 with the Contacts tab,
 // reordered in #223 (Providers first, "Settings" renamed "MCP"), extended
 // again by #368 with the Search index and Journal tabs (one per derived-data
-// pipeline, SPEC-0004 REQ-0004-010), and by #366 with the Facts tab (the
-// contact-fact extraction pipeline): all ten render as one shell with
-// sub-navigation — each page carries the shared h1 + the boosted sub-nav with
+// pipeline, SPEC-0004 REQ-0004-010), by #366 with the Facts tab (the
+// contact-fact extraction pipeline), and by #367 with the Sentiment tab (IPIP
+// scoring, which was CLI-only and had no consumer at all): all eleven render as
+// one shell with sub-navigation — each page carries the shared h1 + the boosted sub-nav with
 // its own tab active — while the old routes stay canonical, working URLs.
 
 func TestSettingsShellSubNav(t *testing.T) {
@@ -27,6 +28,7 @@ func TestSettingsShellSubNav(t *testing.T) {
 		{"/settings/search-index", `href="/settings/search-index" class="settings-tab settings-tab-active"`},
 		{"/settings/journal", `href="/settings/journal" class="settings-tab settings-tab-active"`},
 		{"/settings/facts", `href="/settings/facts" class="settings-tab settings-tab-active"`},
+		{"/settings/sentiment", `href="/settings/sentiment" class="settings-tab settings-tab-active"`},
 		{"/status", `href="/status" class="settings-tab settings-tab-active"`},
 		{"/backups", `href="/backups" class="settings-tab settings-tab-active"`},
 		{"/logs", `href="/logs" class="settings-tab settings-tab-active"`},
@@ -47,20 +49,20 @@ func TestSettingsShellSubNav(t *testing.T) {
 			if !contains(body, `aria-current="page"`) {
 				t.Errorf("active tab missing aria-current")
 			}
-			// All ten sections stay reachable from every tab.
-			for _, href := range []string{`href="/providers"`, `href="/settings/mcp"`, `href="/settings/llm"`, `href="/settings/contacts"`, `href="/settings/search-index"`, `href="/settings/journal"`, `href="/settings/facts"`, `href="/status"`, `href="/backups"`, `href="/logs"`} {
+			// All eleven sections stay reachable from every tab.
+			for _, href := range []string{`href="/providers"`, `href="/settings/mcp"`, `href="/settings/llm"`, `href="/settings/contacts"`, `href="/settings/search-index"`, `href="/settings/journal"`, `href="/settings/facts"`, `href="/settings/sentiment"`, `href="/status"`, `href="/backups"`, `href="/logs"`} {
 				if !contains(body, href) {
 					t.Errorf("sub-nav missing %s", href)
 				}
 			}
-			// Exactly the ten tabs (#223 order, extended by #368 and #366:
-			// Providers, MCP, LLM, Contacts, Search index, Journal, AI, Status,
-			// Backups, Logs).
-			if n := strings.Count(body, `class="settings-tab`); n != 10 {
-				t.Errorf("sub-nav has %d tabs, want 10", n)
+			// Exactly the eleven tabs (#223 order, extended by #368, #366 and
+			// #367: Providers, MCP, LLM, Contacts, Search index, Journal, Facts,
+			// Sentiment, Status, Backups, Logs).
+			if n := strings.Count(body, `class="settings-tab`); n != 11 {
+				t.Errorf("sub-nav has %d tabs, want 11", n)
 			}
 			// Tab ordering: Providers → MCP → LLM → Contacts → Search index →
-			// Journal → Facts → Status → Backups → Logs.
+			// Journal → Facts → Sentiment → Status → Backups → Logs.
 			providersAt := strings.Index(body, `href="/providers"`)
 			mcpAt := strings.Index(body, `href="/settings/mcp"`)
 			llmAt := strings.Index(body, `href="/settings/llm"`)
@@ -68,6 +70,7 @@ func TestSettingsShellSubNav(t *testing.T) {
 			searchIndexAt := strings.Index(body, `href="/settings/search-index"`)
 			journalAt := strings.Index(body, `href="/settings/journal"`)
 			factsAt := strings.Index(body, `href="/settings/facts"`)
+			sentimentAt := strings.Index(body, `href="/settings/sentiment"`)
 			statusAt := strings.Index(body, `href="/status"`)
 			backupsAt := strings.Index(body, `href="/backups"`)
 			logsAt := strings.Index(body, `href="/logs"`)
@@ -89,8 +92,11 @@ func TestSettingsShellSubNav(t *testing.T) {
 			if factsAt < journalAt {
 				t.Error("Facts tab should follow Journal (#366)")
 			}
-			if statusAt < factsAt {
-				t.Error("Status tab should follow Facts (#366)")
+			if sentimentAt < factsAt {
+				t.Error("Sentiment tab should follow Facts (#367)")
+			}
+			if statusAt < sentimentAt {
+				t.Error("Status tab should follow Sentiment (#367)")
 			}
 			if backupsAt < statusAt {
 				t.Error("Backups tab should follow Status (#223)")

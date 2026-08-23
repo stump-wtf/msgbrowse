@@ -86,6 +86,19 @@ type dayCard struct {
 	// never accused of being out of date on no evidence.
 	Stale       bool
 	NewMessages int
+	// Sentiment is the additive per-day mood strip (#367, delivering SPEC-0027's
+	// per-day mood requirement from #313). Its Rendered flag is false for a day
+	// with no usable affect scores, and the card then renders exactly as it did
+	// before: the strip MUST NOT alter SPEC-0016's mechanical-rollup or digest
+	// behavior. It is bucketed on the SAME UTC day frame the rollup uses
+	// (ADR-0023), so a message near midnight cannot land in one bucket here and
+	// another there.
+	//
+	// It is deliberately NOT merged into the digest's Mood field beside it. The
+	// digest mood is an editorial reading by a model that read the day; this is a
+	// mechanical fold of per-message affect scores. Presenting them as one value
+	// would let the page imply the digest pass has read a day it has not.
+	Sentiment dayMoodStrip
 }
 
 // handleJournal renders the journal as a mood-tinted month calendar with an
@@ -222,7 +235,16 @@ func (s *Server) renderJournalPage(w http.ResponseWriter, r *http.Request) {
 			s.serverError(w, err)
 			return
 		} else if ok {
+			// #403's inferred mood on the digest card, plus #367's additive
+			// day mood strip. A failure to read the strip must not take the
+			// journal card down with it, but a genuine store error still surfaces.
 			data.Selected = buildDayCard(view, inferred[day])
+			strip, merr := s.journalDayMood(ctx, day)
+			if merr != nil {
+				s.serverError(w, merr)
+				return
+			}
+			data.Selected.Sentiment = strip
 		}
 	}
 	s.render(w, r, "journal", data)
