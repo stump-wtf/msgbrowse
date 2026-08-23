@@ -63,6 +63,17 @@ type Rules struct {
 	CannedNotice string
 	// NoticeMatchRatio is the fraction of CannedNotice that must match.
 	NoticeMatchRatio float64
+	// Exclude is a denylist of conversation names never examined. It mirrors
+	// spam.exclude_conversations and is applied before any body is read.
+	//
+	// It lives here, in the versioned ruleset, rather than in Options, because
+	// it is POLICY: it decides which conversations a generation covers, so two
+	// scans with different exclude lists are not comparable even though every
+	// other rule matched. Keeping it in Options left it out of computeVersion,
+	// which meant adding a conversation left its existing findings in place
+	// under an unchanged version, and removing one added findings later under
+	// that same version (issue #385).
+	Exclude []string
 
 	version    string
 	allowKeys  map[string]struct{}
@@ -118,6 +129,8 @@ func NewRules(r Rules) (*Rules, error) {
 		out.watchCodes[c] = struct{}{}
 	}
 
+	out.Exclude = sortedCopy(out.Exclude)
+
 	v, err := out.computeVersion()
 	if err != nil {
 		return nil, err
@@ -129,9 +142,24 @@ func NewRules(r Rules) (*Rules, error) {
 // Version is the stamp every finding this ruleset produces carries.
 func (r *Rules) Version() string { return r.version }
 
+// Governing: ADR-0029 (unsolicited-contact evidence)
+// Implements: SPEC-0028 REQ-0028-003 "Ruleset version and generation partitioning"
+//
 // computeVersion digests the effective rules. Only fields that change what a
 // scan concludes participate: the notice text and ratio are in (they decide
-// opt-outs), the entity keywords are in (they change an extracted column).
+// opt-outs), the entity keywords are in (they change an extracted column), and
+// Exclude is in (it decides which conversations the generation covers at all).
+//
+// V moved 1 -> 2 when Exclude joined (issue #385). That intentionally
+// invalidates every version computed before it, which is the point: findings
+// derived under an unrecorded exclude list are not comparable to findings
+// derived under a known one, and re-deriving is the only honest way to reconcile
+// them.
+//
+// Address-book availability is deliberately absent. It changes what a scan
+// concludes, but it is the scan ENVIRONMENT rather than policy, and hashing it
+// here would re-derive the whole layer on every switch between the desktop app
+// and the CLI. It is recorded per row instead — see schemaV20.
 func (r *Rules) computeVersion() (string, error) {
 	payload := struct {
 		V          int      `json:"v"`
@@ -145,8 +173,9 @@ func (r *Rules) computeVersion() (string, error) {
 		Stop       []string `json:"stop"`
 		Notice     string   `json:"notice"`
 		Ratio      float64  `json:"ratio"`
+		Exclude    []string `json:"exclude"`
 	}{
-		V:          1,
+		V:          2,
 		My:         sortedCopy(r.MyNumbers),
 		Allow:      sortedCopy(r.Allowlist),
 		AreaCodes:  sortedCopy(r.WatchAreaCodes),
@@ -157,6 +186,7 @@ func (r *Rules) computeVersion() (string, error) {
 		Stop:       sortedCopy(r.StopKeywords),
 		Notice:     NormalizeForMatch(r.CannedNotice),
 		Ratio:      r.NoticeMatchRatio,
+		Exclude:    sortedCopy(r.Exclude),
 	}
 	blob, err := json.Marshal(payload)
 	if err != nil {

@@ -66,6 +66,7 @@ func rulesFromConfig(c config.SpamConfig) (*spam.Rules, error) {
 		StopKeywords:     c.StopKeywords,
 		CannedNotice:     c.CannedNotice,
 		NoticeMatchRatio: c.CannedNoticeMatchRatio,
+		Exclude:          c.ExcludeConversations,
 	})
 }
 
@@ -118,7 +119,6 @@ func newSpamScanCommand() *cobra.Command {
 			sum, err := spam.Run(cmd.Context(), st, spam.Options{
 				Rules:              rules,
 				AddressBook:        newContactResolver(slog.Default()),
-				Exclude:            cfg.Spam.ExcludeConversations,
 				OnlyConversationID: convID,
 				Reset:              reset,
 				BatchSize:          batch,

@@ -18,9 +18,6 @@ type Options struct {
 	// AddressBook decides who counts as a stranger. Nil means
 	// contacts.Unavailable, which puts the scan in degraded mode (see Summary).
 	AddressBook contacts.Resolver
-	// Exclude is a denylist of conversation names never examined. It mirrors
-	// journal.exclude_conversations and is applied before any body is read.
-	Exclude []string
 	// OnlyConversationID limits the scan to one conversation.
 	OnlyConversationID int64
 	// Reset clears derived findings, cursors, and detected opt-outs first.
@@ -32,6 +29,37 @@ type Options struct {
 	Now func() time.Time
 	// Logger receives progress; defaults to slog.Default().
 	Logger *slog.Logger
+}
+
+// Governing: ADR-0029 (unsolicited-contact evidence)
+// Implements: SPEC-0028 REQ-0028-013 "Scan-environment provenance"
+//
+// ProviderNamer is an optional interface a contacts.Resolver may implement to
+// identify itself in a scan-environment stamp. A resolver that does not is
+// recorded as "unknown" rather than guessed at.
+type ProviderNamer interface {
+	ProviderName() string
+}
+
+// scanEnv is the value stamped onto every row a scan writes
+// (SPEC-0028 REQ-0028-013): the address-book resolver's identity and the
+// availability that decided the stranger predicate, joined as
+// "provider/availability" — e.g. "macoscontacts/available", "none/absent".
+//
+// Both halves are needed and neither implies the other. Availability alone
+// cannot distinguish "no provider on this platform" from "a provider exists but
+// the TCC grant is missing", which are different things to tell a reader.
+// Provider alone cannot say whether it actually worked. The degraded flag the
+// requirement also asks for is not stored separately because it is fully
+// determined by the availability half (degraded <=> it is not "available",
+// which is the branch below); storing it too would be denormalized and could
+// disagree with itself.
+func scanEnv(book contacts.Resolver, availability contacts.Availability) string {
+	provider := "unknown"
+	if n, ok := book.(ProviderNamer); ok {
+		provider = n.ProviderName()
+	}
+	return provider + "/" + availability.String()
 }
 
 // Summary is what one scan did.
@@ -49,6 +77,9 @@ type Summary struct {
 	SkippedNotShaped int
 	// AddressBook is "available", "needs-permission", or "absent".
 	AddressBook string
+	// ScanEnv is the stamp written onto every row this scan produced:
+	// "provider/availability" (SPEC-0028 REQ-0028-013).
+	ScanEnv string
 	// Degraded is true when the address book could not be read and the scan
 	// fell back to the identifier-shape heuristic. A degraded run is still
 	// useful, but it cannot tell a stranger from a friend whose thread is named
@@ -103,6 +134,7 @@ func Run(ctx context.Context, st *store.Store, opts Options) (Summary, error) {
 	// N round trips into Contacts.framework for no extra accuracy.
 	availability := book.Availability(ctx)
 	sum.AddressBook = availability.String()
+	sum.ScanEnv = scanEnv(book, availability)
 	known := map[string]struct{}{}
 	if availability == contacts.Available {
 		people, err := book.People(ctx)
@@ -131,7 +163,7 @@ func Run(ctx context.Context, st *store.Store, opts Options) (Summary, error) {
 			"availability", sum.AddressBook)
 	}
 
-	convs, err := st.SpamConversations(ctx, opts.Exclude)
+	convs, err := st.SpamConversations(ctx, opts.Rules.Exclude)
 	if err != nil {
 		return sum, err
 	}
@@ -175,7 +207,7 @@ func Run(ctx context.Context, st *store.Store, opts Options) (Summary, error) {
 			continue
 		}
 
-		stats, err := scanConversation(ctx, st, opts.Rules, version, batch, c, identifier)
+		stats, err := scanConversation(ctx, st, opts.Rules, version, sum.ScanEnv, batch, c, identifier)
 		if err != nil {
 			return sum, err
 		}
@@ -209,7 +241,7 @@ type convStats struct {
 
 // scanConversation walks one thread from its stored cursor, classifying and
 // persisting batch by batch.
-func scanConversation(ctx context.Context, st *store.Store, rules *Rules, version string, batch int, c store.SpamConversation, identifier string) (convStats, error) {
+func scanConversation(ctx context.Context, st *store.Store, rules *Rules, version, env string, batch int, c store.SpamConversation, identifier string) (convStats, error) {
 	var stats convStats
 
 	// Resume point. A stored version that differs from the current ruleset
@@ -308,7 +340,7 @@ func scanConversation(ctx context.Context, st *store.Store, rules *Rules, versio
 			FirstSeenUnix:    first,
 			LastSeenUnix:     last,
 		}
-		if err := st.PutSpamBatch(ctx, c.ID, version, anchor, sender, findings, events); err != nil {
+		if err := st.PutSpamBatch(ctx, c.ID, version, env, anchor, sender, findings, events); err != nil {
 			return stats, err
 		}
 		stats.findings += len(findings)
