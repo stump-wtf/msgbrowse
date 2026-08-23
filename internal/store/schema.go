@@ -6,7 +6,7 @@ import "context"
 // `user_version` pragma. On Open, the migrations runner brings any older
 // database forward to this version. Bump it and append a migration whenever the
 // schema changes.
-const schemaVersion = 20
+const schemaVersion = 21
 
 // SchemaVersion returns the schema revision this binary expects (and migrates a
 // database forward to on Open). Read-only callers — notably `msgbrowse doctor` —
@@ -59,6 +59,7 @@ var migrations = []string{
 	18: schemaV18,
 	19: schemaV19,
 	20: schemaV20,
+	21: schemaV21,
 }
 
 // schemaV1 is the initial Signal-only schema. It is preserved verbatim so a
@@ -953,5 +954,64 @@ CREATE TABLE IF NOT EXISTS fact_runs (
     facts_added   INTEGER NOT NULL DEFAULT 0,
     batches       INTEGER NOT NULL DEFAULT 0,
     error         TEXT    NOT NULL DEFAULT ''
+);
+`
+
+// schemaV21 adds what in-app sentiment scoring needs to be observable (#367).
+//
+// IPIP sentiment scoring (v17, ADR-0028, SPEC-0027) shipped as a CLI-only pass
+// and, on the live archive, had never run once: message_sentiment and
+// sentiment_state were both empty across 2,438 conversations while nothing in
+// the UI referenced either table. #367 gives it a Settings tab, and a tab needs
+// the same four things the journal's and the facts' cards need, none of which
+// had anywhere to come from — "when did it last run", "how long did it take",
+// "how much did it produce", and "is a run in flight right now".
+//
+// sentiment_runs is the sentiment analogue of fact_runs (v20), journal_runs
+// (v15) and embed_runs (v12), deliberately the same shape so pipelineRunView
+// renders all four through one table.
+//
+// It is also the ONLY channel between a `msgbrowse sentiment` CLI process and a
+// running `msgbrowse serve` sharing the same SQLite file, which is what lets the
+// web layer refuse to start a second run rather than race one already in
+// flight. That matters MORE here than for any other pipeline. The issue that
+// prompted this called the lexicon pass "deterministic and local" with "egress:
+// none"; the code says otherwise — sentiment.Run refuses without a chat model
+// and makes an llm.Chat call per batch, the IPIP lexicon being the anchor set
+// rendered into the system prompt rather than a local scorer. ADR-0028 rejected
+// the local-lexicon alternative outright and calls corpus scoring "the most
+// expensive extraction". So a raced double-start here is the most expensive
+// mistake of the four.
+//
+// scope is a FIXED TOKEN, never free text: ” for an incremental whole-archive
+// pass, 'reset' for a wipe-and-rescore, 'conversation' for a single-thread run.
+// The web layer maps the token to display prose, so nothing model- or
+// request-derived can reach the rendered table through this column.
+//
+// lexicon_version is the one column fact_runs has no counterpart for. Scores are
+// only comparable within a (model, lexicon_version) generation and the read side
+// filters on both, so a run log that recorded only the model could not explain
+// why a rescan happened after a curation change.
+//
+// Timestamps are RFC3339 UTC strings, matching every other run table.
+// finished_at = ” marks a run still in flight; updated_at is the
+// per-conversation heartbeat readers use to tell a live run from a crashed one.
+//
+// @joestump-agent 08/23/2026 - Added with the in-app scoring controls (#367).
+const schemaV21 = `
+CREATE TABLE IF NOT EXISTS sentiment_runs (
+    id              INTEGER PRIMARY KEY,
+    model           TEXT    NOT NULL,
+    lexicon_version TEXT    NOT NULL DEFAULT '',
+    scope           TEXT    NOT NULL DEFAULT '',
+    started_at      TEXT    NOT NULL,
+    updated_at      TEXT    NOT NULL,
+    finished_at     TEXT    NOT NULL DEFAULT '',
+    duration_ms     INTEGER NOT NULL DEFAULT 0,
+    conversations   INTEGER NOT NULL DEFAULT 0,
+    messages        INTEGER NOT NULL DEFAULT 0,
+    scores_written  INTEGER NOT NULL DEFAULT 0,
+    batches         INTEGER NOT NULL DEFAULT 0,
+    error           TEXT    NOT NULL DEFAULT ''
 );
 `

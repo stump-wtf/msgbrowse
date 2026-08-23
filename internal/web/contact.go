@@ -37,6 +37,13 @@ type contactData struct {
 	SparkW    int
 	SparkH    int
 	Reactions []store.EmojiCount
+	// Sentiment is the IPIP sentiment-over-time series and Big Five trait sketch
+	// (#367, delivering #313). Its Rendered flag gates the WHOLE section: false
+	// for a contact who opted out of scoring, which is the difference between
+	// "no data" and "no invitation to gather data about someone who asked not to
+	// be" (SPEC-0027, and #312's retroactive-deletion contract). See
+	// sentimentsurfaces.go for the four rules the section follows.
+	Sentiment sentimentProfile
 }
 
 // factGroup is a contact's facts under one category, in declared-category order.
@@ -140,6 +147,15 @@ func (s *Server) handleContact(w http.ResponseWriter, r *http.Request) {
 		s.serverError(w, err)
 		return
 	}
+	// The sentiment section (#367/#313). It reads only rows stamped with the
+	// CURRENTLY CONFIGURED (model, lexicon_version) and degrades to an empty
+	// state rather than a fabricated neutral line, so an unscored archive
+	// renders the rest of this page exactly as before (SPEC-0017 REQ-0017-008).
+	senti, err := s.contactSentiment(ctx, id)
+	if err != nil {
+		s.serverError(w, err)
+		return
+	}
 
 	title := humanName(c.DisplayName) + " · msgbrowse"
 	var base baseData
@@ -181,6 +197,7 @@ func (s *Server) handleContact(w http.ResponseWriter, r *http.Request) {
 		SparkW:         sw,
 		SparkH:         sh,
 		Reactions:      reactions,
+		Sentiment:      senti,
 	})
 }
 

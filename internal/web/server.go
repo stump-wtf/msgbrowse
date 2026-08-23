@@ -99,6 +99,22 @@ type Store interface {
 	RecentFactRuns(ctx context.Context, n int) ([]store.FactRun, error)
 	FactCoverage(ctx context.Context, exclude []string) (store.FactCoverage, error)
 	ContactFactScan(ctx context.Context, contactID int64) (store.ContactFactScan, error)
+	// In-app IPIP sentiment scoring (#367): the run log the Settings → Sentiment
+	// card reads, the coverage snapshot behind it, and the generation-pinned
+	// aggregates the three consumer surfaces (#313) fold. Every aggregate
+	// enforces contact_sentiment_optout INSIDE its query rather than taking a
+	// caller-supplied id list, so the privacy guarantee cannot be lost by a
+	// caller that forgets to pass one; IsSentimentOptedOut is the SECOND check
+	// the contact page makes, so an opted-out person gets no section at all
+	// rather than an empty one inviting a score.
+	LatestSentimentRun(ctx context.Context) (*store.SentimentRun, error)
+	RecentSentimentRuns(ctx context.Context, n int) ([]store.SentimentRun, error)
+	SentimentCoverage(ctx context.Context, gen store.SentimentGeneration, exclude []string) (store.SentimentCoverage, error)
+	IsSentimentOptedOut(ctx context.Context, contactID int64) (bool, error)
+	ContactScoredMessages(ctx context.Context, contactID int64, gen store.SentimentGeneration) (int, error)
+	ContactSentimentMonths(ctx context.Context, contactID int64, gen store.SentimentGeneration) ([]store.SentimentBucketConstruct, error)
+	ContactSentimentConstructs(ctx context.Context, contactID int64, gen store.SentimentGeneration) ([]store.SentimentBucketConstruct, error)
+	DaySentiment(ctx context.Context, day string, gen store.SentimentGeneration, exclude []string) ([]store.SentimentBucketConstruct, error)
 	SemanticSearch(ctx context.Context, query []float32, model string, opts store.SemanticOptions) ([]store.ScoredMessage, error)
 	EmbeddingCoverage(ctx context.Context, model string) (store.EmbeddingCoverage, error)
 	// Contact merge engine (#11) behind the Settings → Contacts tab (#12).
@@ -230,6 +246,18 @@ type Server struct {
 	// money, not just duplicated work.
 	factsMu      sync.Mutex
 	factsRunning bool
+
+	// sentimentScorer runs the IPIP scoring pass behind the Settings → Sentiment
+	// tab's Score / Rescore controls (#367); nil (browser / no-op mode) renders
+	// the unavailable state and no controls at all.
+	sentimentScorer SentimentScorer
+	// sentimentMu guards sentimentRunning, the single-flight flag for the ONE
+	// scoring job the web layer runs at a time. Scoring is the archive's MOST
+	// expensive pass — one llm.Chat call per batch over every eligible
+	// conversation (ADR-0028) — so a raced double-start costs the most real money
+	// of any pipeline here, not just duplicated work.
+	sentimentMu      sync.Mutex
+	sentimentRunning bool
 	// addressBook is the pluggable address-book provider behind contact
 	// merging (issue #9): the macOS desktop shell wires a Contacts-backed
 	// contacts.Resolver via SetContactResolver; nil (Linux, browser mode,
@@ -508,6 +536,19 @@ func (s *Server) routes() http.Handler {
 	// Live progress fragment: the card polls this while a run is in flight and
 	// stops when the fresh HTML drops the trigger.
 	mux.HandleFunc("GET /facts/run/progress", s.handleFactsProgress)
+	// In-app IPIP sentiment scoring (#367): privileged POSTs behind the same
+	// checkSetupPOST gate. Score picks up where each conversation's stored cursor
+	// stopped; Rescore clears every score and cursor first (never the opt-outs).
+	// Both start a detached single-flight job and re-render the Sentiment tab
+	// with a fixed-enum banner, and NEITHER takes any user-supplied scope — the
+	// reset flag is chosen by the route, so a hand-crafted POST cannot widen the
+	// job. Scoring is billable outbound LLM work (ADR-0028), which is why the
+	// control states the cost before the click.
+	mux.HandleFunc("POST /sentiment/run", s.handleSentimentRun)
+	mux.HandleFunc("POST /sentiment/reset", s.handleSentimentReset)
+	// Live progress fragment: the card polls this while a run is in flight and
+	// stops when the fresh HTML drops the trigger.
+	mux.HandleFunc("GET /sentiment/run/progress", s.handleSentimentProgress)
 	mux.HandleFunc("GET /c/{id}", s.handleConversation)
 	// Per-person Contact + AI Facts + Profile page (redesign Phase 1), keyed by
 	// contact id (the merged-person grain), reached from the transcript header.
@@ -574,6 +615,11 @@ func (s *Server) routes() http.Handler {
 	// #368 precedent, where /journal/build and /status/index kept theirs and
 	// only the surface they re-render moved.
 	mux.HandleFunc("GET /settings/facts", s.handleSettingsFacts)
+	// The Settings → Sentiment tab (#367): the IPIP scoring pipeline's own tab,
+	// one per pipeline like the other three (SPEC-0004 REQ-0004-010). Before it,
+	// scoring had no in-app surface at all and nothing in internal/web read a
+	// single score row.
+	mux.HandleFunc("GET /settings/sentiment", s.handleSettingsSentiment)
 	mux.HandleFunc("GET /settings/contacts", s.handleSettingsContacts)
 	mux.HandleFunc("POST /settings/contacts/rules", s.handleSettingsMergeRules)
 	mux.HandleFunc("POST /settings/contacts/merge", s.handleSettingsMerge)

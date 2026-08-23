@@ -68,6 +68,117 @@
       </section>
       {{- end}}
 
+      {{/* Sentiment over time + the Big Five trait sketch (#367, delivering
+           #313's SPEC-0027 surfaces). Additive to this page and rendered inside
+           contact_content with no new shell, so the boosted-partial contract of
+           SPEC-0017 REQ-0017-009 is unchanged.
+
+           .Sentiment.Rendered gates the ENTIRE block. It is false for a contact
+           who opted out of scoring, and that is not the same as "no data": an
+           opted-out person must show no scores, no traits, and no invitation to
+           gather either (SPEC-0027 / #312). It is also false when nothing is
+           configured to read against.
+
+           Nothing here encodes meaning in colour or bar length alone: every row
+           prints its construct name, its signed score, a direction in words and
+           the sample it rests on. The <progress> element carries the same fact
+           redundantly and keeps the page CSP-clean (no inline style). */}}
+      {{- if .Sentiment.Rendered}}
+      <section class="mb-8">
+        <div class="flex items-baseline gap-2 mb-2">
+          <h2 class="text-lg font-semibold">Expressed sentiment</h2>
+          {{- if .Sentiment.HasScores}}<span class="badge badge-sm badge-neutral">{{num .Sentiment.ScoredMessages}} scored messages</span>{{end}}
+        </div>
+        {{/* The uncertainty disclaimer sits WITH the numbers, not in a footnote.
+             SPEC-0027 requires it, and internal/sentiment/prompt.go frames the
+             scoring task the same way ("You are scoring text, not people") — a
+             page that rendered five confident trait bars would undo that framing
+             at the last step. */}}
+        <p class="text-xs opacity-60 mb-4">AI-generated from message text against the public-domain IPIP
+          item pool. These describe what messages <em>expressed</em>.
+          They are not a psychological assessment of this person,
+          and they are not a clinical or diagnostic result.</p>
+
+        {{- if .Sentiment.HasScores}}
+        {{- if .Sentiment.Months}}
+        <div class="mb-6">
+          <div class="stat-cell-label mb-2">Affect over time</div>
+          <ul>
+            {{- range .Sentiment.Months}}
+            <li class="mb-3">
+              <div class="flex flex-wrap items-baseline gap-2">
+                <span class="text-sm">{{.Label}}</span>
+                <span class="font-mono text-xs opacity-60">{{.Text}} · {{.Direction}} · {{.Detail}}</span>
+              </div>
+              <div class="index-progress-row">
+                <progress class="index-progress" value="{{.Value}}" max="{{.Max}}"
+                          aria-label="{{.Label}}: {{.Text}}, {{.Direction}}, from {{.Detail}}"></progress>
+              </div>
+            </li>
+            {{- end}}
+          </ul>
+        </div>
+        {{- end}}
+
+        {{- if .Sentiment.Traits}}
+        <div class="mb-2">
+          <div class="stat-cell-label mb-2">Big Five sketch</div>
+          <ul>
+            {{- range .Sentiment.Traits}}
+            <li class="mb-3">
+              <div class="flex flex-wrap items-baseline gap-2">
+                <span class="text-sm">{{.Label}}</span>
+                <span class="font-mono text-xs opacity-60">{{.Text}} · {{.Direction}} · {{.Detail}}</span>
+              </div>
+              <div class="index-progress-row">
+                <progress class="index-progress" value="{{.Value}}" max="{{.Max}}"
+                          aria-label="{{.Label}}: {{.Text}}, {{.Direction}}, from {{.Detail}}"></progress>
+              </div>
+            </li>
+            {{- end}}
+          </ul>
+          <p class="mt-2 text-xs opacity-50">A sketch of how these five axes were expressed in messages,
+            averaged over {{num .Sentiment.ScoredMessages}} scored messages. Text messages are a narrow,
+            selective sample of anyone, so this is
+            an indication of tone, not a measurement of personality.</p>
+        </div>
+        {{- else if .Sentiment.TraitsWithheld}}
+        {{/* Withheld ON PURPOSE below the threshold: five bars drawn from a
+             dozen messages would be false precision wearing clinical trait
+             names. SPEC-0027 sets the default minimum at 50. */}}
+        <div class="notice-card">
+          <p class="link-card-title">Not enough scored messages for a trait sketch.</p>
+          <p class="link-card-sub">{{num .Sentiment.ScoredMessages}} of this person's messages have been
+            scored; a Big Five sketch needs at least {{num .Sentiment.TraitThreshold}} before it says
+            anything meaningful. Scoring more history on the
+            <a href="/settings/sentiment" class="link link-hover">Settings &rarr; Sentiment</a> tab will fill
+            it in.</p>
+        </div>
+        {{- end}}
+
+        {{- else if .Sentiment.Configured}}
+        {{/* Scored nothing yet. An empty state, never a fabricated neutral line
+             — SPEC-0017 REQ-0017-008's resilience contract, and the same reason
+             the calendar's untinted days were a defect. */}}
+        <div class="notice-card">
+          <p class="link-card-title">No sentiment has been scored yet.</p>
+          <p class="link-card-sub">Nothing about how this person's messages read has been analyzed under the
+            current chat model. Start scoring on the
+            <a href="/settings/sentiment" class="link link-hover">Settings &rarr; Sentiment</a> tab, or run
+            <code class="font-mono">msgbrowse sentiment</code> from the command line. It sends message text to
+            your LLM endpoint and is the most expensive pass msgbrowse runs.</p>
+        </div>
+        {{- else}}
+        <div class="notice-card">
+          <p class="link-card-title">Sentiment scoring needs a chat model.</p>
+          <p class="link-card-sub">Scores come from a model prompted with the IPIP anchor items, so nothing can
+            be shown until one is configured on the
+            <a href="/settings/llm" class="link link-hover">Settings &rarr; LLM</a> tab.</p>
+        </div>
+        {{- end}}
+      </section>
+      {{- end}}
+
       {{/* AI-gathered facts, grouped by category, each deep-linking to the
            message it was drawn from (in that message's own conversation). */}}
       <section class="mb-4">

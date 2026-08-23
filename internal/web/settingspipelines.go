@@ -2,8 +2,9 @@
 //
 // One Settings tab per pipeline: /settings/search-index owns the semantic-search
 // embeddings, /settings/journal owns the journal digests, /settings/facts owns
-// contact-fact extraction. Each renders its pipeline's coverage, model, run
-// history and build controls, and nothing else.
+// contact-fact extraction, /settings/sentiment owns IPIP sentiment scoring. Each
+// renders its pipeline's coverage, model, run history and build controls, and
+// nothing else.
 //
 // SPEC-0004 REQ-0004-010 requires this shape. The two cards previously shared
 // the Status tab, whose unrelated coverage figures, models, run histories and
@@ -21,6 +22,12 @@
 // tab they re-render is new.
 //
 // @joestump-agent 08/20/2026 - Split out of the Status tab (#368).
+//
+// @joestump-agent 08/23/2026 - Added the Sentiment tab (#367). Same shape, same
+// story: IPIP scoring had been CLI-only since it shipped, so on the live archive
+// message_sentiment and sentiment_state were both empty and no surface in
+// internal/web referenced either. Its POSTs keep their own /sentiment/* paths
+// per the #368 precedent; only the tab they re-render is new.
 //
 // @joestump-agent 08/23/2026 - Added the Facts tab (#366). Fact extraction had
 // been CLI-only since it shipped: no route, no control, no Settings surface at
@@ -166,6 +173,57 @@ func (s *Server) renderJournalSettings(w http.ResponseWriter, r *http.Request, j
 		data.SetupToken = tok
 	}
 	s.render(w, r, "journal_settings", data)
+}
+
+// sentimentSettingsData drives /settings/sentiment. Field names match what the
+// sentiment_build_card define reads, so the card is shared verbatim with the
+// live-progress fragment (sentimentCardData).
+type sentimentSettingsData struct {
+	baseData
+	Build sentimentBuildData
+	// SentimentResult is the fixed-enum banner from a just-completed Score /
+	// Rescore POST, "" on a plain GET.
+	SentimentResult string
+	SetupToken      string
+}
+
+// handleSettingsSentiment is GET /settings/sentiment.
+func (s *Server) handleSettingsSentiment(w http.ResponseWriter, r *http.Request) {
+	s.renderSentimentSettings(w, r, "")
+}
+
+// renderSentimentSettings assembles and renders the Sentiment tab.
+// sentimentResult is the fixed-enum banner from a just-completed Score /
+// Rescore POST, "" on a plain GET.
+func (s *Server) renderSentimentSettings(w http.ResponseWriter, r *http.Request, sentimentResult string) {
+	ctx := r.Context()
+	base, err := s.settingsBase(ctx, r, "Sentiment · msgbrowse")
+	if err != nil {
+		s.serverError(w, err)
+		return
+	}
+	build, err := s.sentimentBuildStatus(ctx)
+	if err != nil {
+		s.serverError(w, err)
+		return
+	}
+	data := sentimentSettingsData{
+		baseData:        base,
+		Build:           build,
+		SentimentResult: sentimentResult,
+	}
+	// The Score / Rescore forms are privileged POSTs: arm them with a live
+	// token, but only when there is a scorer to drive (browser mode renders the
+	// unavailable note and no forms at all).
+	if s.sentimentScorer != nil {
+		tok, err := s.setupTokens.mint()
+		if err != nil {
+			s.serverError(w, err)
+			return
+		}
+		data.SetupToken = tok
+	}
+	s.render(w, r, "sentiment_settings", data)
 }
 
 // handleSettingsFacts is GET /settings/facts.
