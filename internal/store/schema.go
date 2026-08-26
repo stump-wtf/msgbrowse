@@ -6,7 +6,7 @@ import "context"
 // `user_version` pragma. On Open, the migrations runner brings any older
 // database forward to this version. Bump it and append a migration whenever the
 // schema changes.
-const schemaVersion = 23
+const schemaVersion = 24
 
 // SchemaVersion returns the schema revision this binary expects (and migrates a
 // database forward to on Open). Read-only callers — notably `msgbrowse doctor` —
@@ -62,6 +62,7 @@ var migrations = []string{
 	21: schemaV21,
 	22: schemaV22,
 	23: schemaV23,
+	24: schemaV24,
 }
 
 // schemaV1 is the initial Signal-only schema. It is preserved verbatim so a
@@ -1104,4 +1105,30 @@ CREATE TABLE IF NOT EXISTS spam_runs (
     senders           INTEGER NOT NULL DEFAULT 0,
     error             TEXT    NOT NULL DEFAULT ''
 );
+// Governing: ADR-0003 (dual-source archive) contact model
+// Implements: issue #396 — two archive shapes the repair pass could not heal
+//
+// schemaV24 persists each conversation's source-supplied HANDLE next to its
+// identity. The importers know handles their display names do not carry —
+// WhatsApp's JID local part IS the phone number, and the hint that carries it
+// has been parsed since #363's fix — but conversations record only source,
+// name and is_group, so anything an archive wrote before the fix keeps its
+// display-name identifier forever. RepairContactIdentities re-derives from the
+// stored columns alone, and a profile name cannot re-derive into a phone
+// number: nothing on disk says what the handle was.
+//
+// The column is written by UpsertConversationIdentity whenever derivation
+// yields a real phone/email handle, so every import from this build forward
+// stamps the strongest fact its source knows. That turns the previously
+// impossible half of #378's boundary statement ("the real handle there is the
+// JID local part, and the JID is not persisted") into ordinary repair work:
+// the existing pass heals display-name rows on its next sync, with no
+// re-import of the archive. '' is honest default for rows this build has not
+// seen yet — absent knowledge, not a wrong value.
+//
+// Deliberately plain (no UNIQUE/FK): the authoritative (source, identifier)
+// tuple still lives in contact_identifiers; this is the importer's verbatim
+// observation kept for repair, not a second key.
+const schemaV24 = `
+ALTER TABLE conversations ADD COLUMN handle TEXT NOT NULL DEFAULT '';
 `

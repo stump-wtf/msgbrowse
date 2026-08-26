@@ -180,11 +180,20 @@ func (s *Store) UpsertConversationIdentity(ctx context.Context, source, name str
 	err = tx.QueryRowContext(ctx,
 		`SELECT id, contact_id FROM conversations WHERE source = ? AND name = ?`,
 		source, name).Scan(&convID, &contactID)
+	// Persist the source's strongest handle (#396) on both the insert and the
+	// already-known paths — see schemaV24. A real handle survives even when
+	// this conversation already has a contact, which is exactly the old-
+	// archive shape the repair pass otherwise could never heal.
+	handle := ""
+	if identity.HasRealHandle() && !identity.IsGroup {
+		handle = identity.Identifier
+	}
+
 	switch {
 	case err == sql.ErrNoRows:
 		res, err := tx.ExecContext(ctx,
-			`INSERT INTO conversations(source, name, is_group) VALUES(?, ?, ?)`,
-			source, name, boolToInt(identity.IsGroup))
+			`INSERT INTO conversations(source, name, is_group, handle) VALUES(?, ?, ?, ?)`,
+			source, name, boolToInt(identity.IsGroup), handle)
 		if err != nil {
 			return 0, fmt.Errorf("insert conversation %s/%s: %w", source, name, err)
 		}
@@ -192,6 +201,7 @@ func (s *Store) UpsertConversationIdentity(ctx context.Context, source, name str
 		if err != nil {
 			return 0, err
 		}
+	
 	case err != nil:
 		return 0, fmt.Errorf("lookup conversation %s/%s: %w", source, name, err)
 	}
@@ -209,6 +219,14 @@ func (s *Store) UpsertConversationIdentity(ctx context.Context, source, name str
 		}
 		rollback = false
 		return convID, nil
+	}
+
+	if handle != "" {
+		if _, err := tx.ExecContext(ctx,
+			`UPDATE conversations SET handle = ? WHERE id = ? AND handle <> ?`,
+			handle, convID, handle); err != nil {
+			return 0, fmt.Errorf("stamp conversation handle: %w", err)
+		}
 	}
 
 	if !contactID.Valid && identity.Identifier != "" {

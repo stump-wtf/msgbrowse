@@ -35,15 +35,12 @@ type RepairReport struct {
 	// threads. Their synthesized contact is detached.
 	GroupsMarked int
 	// IdentifiersRewritten is contact_identifiers rows whose value changed to
-	// the derived handle. In practice that is the iMessage case: a conversation
-	// named by a handle in non-canonical form ("(555) 123-4567") re-derives to
-	// the normalized value.
-	//
-	// It is NOT the WhatsApp case, and cannot be: the real handle there is the
-	// JID local part, and the JID is not persisted — conversations store only
-	// source, name and is_group. A WhatsApp archive written under the old rule
-	// therefore keeps its display-name identifiers until it is re-imported,
-	// which is when the importer supplies the JID.
+	// the derived or persisted handle: a conversation named by a handle in
+	// non-canonical form ("(555) 123-4567") re-derives to the normalized
+	// value, and — since schemaV24 (#396) — a conversation whose importer knew
+	// the real handle all along (WhatsApp's JID local part) heals from its
+	// persisted `conversations.handle` on the first repair run after an import
+	// stamps it, instead of waiting for a full re-import.
 	IdentifiersRewritten int
 	// ContactsOrphaned is contacts left with no identifiers and no
 	// conversations once group threads were detached; these are the invented
@@ -93,10 +90,11 @@ func (s *Store) RepairContactIdentities(ctx context.Context) (RepairReport, erro
 		source    string
 		name      string
 		isGroup   bool
+		handle    string
 		contactID sql.NullInt64
 	}
 	rows, err := tx.QueryContext(ctx,
-		`SELECT id, source, name, is_group, contact_id FROM conversations ORDER BY id`)
+		`SELECT id, source, name, is_group, handle, contact_id FROM conversations ORDER BY id`)
 	if err != nil {
 		return rep, fmt.Errorf("repair: load conversations: %w", err)
 	}
@@ -104,7 +102,7 @@ func (s *Store) RepairContactIdentities(ctx context.Context) (RepairReport, erro
 	for rows.Next() {
 		var c convRow
 		var grp int
-		if err := rows.Scan(&c.id, &c.source, &c.name, &grp, &c.contactID); err != nil {
+		if err := rows.Scan(&c.id, &c.source, &c.name, &grp, &c.handle, &c.contactID); err != nil {
 			rows.Close()
 			return rep, err
 		}
@@ -150,13 +148,21 @@ func (s *Store) RepairContactIdentities(ctx context.Context) (RepairReport, erro
 		// that still holds the NAME is touched, and only when the derived value
 		// actually differs — so a hand-edited or already-repaired identifier is
 		// left alone and the pass stays idempotent.
-		if identity.Identifier == c.name {
+		// #396: when the importer persisted a real handle (WhatsApp's JID
+		// local part), that fact outranks anything derivable from the name,
+		// and it may replace a display-name identifier even when the name is
+		// itself not a handle — the case re-derivation alone cannot reach.
+		rewriteTo, rewriteFrom := identity.Identifier, c.name
+		if id := contacts.Normalize(c.handle); id.Kind == contacts.KindPhone || id.Kind == contacts.KindEmail {
+			rewriteTo = id.Value
+		}
+		if rewriteTo == "" || rewriteTo == rewriteFrom {
 			continue
 		}
 		res, err := tx.ExecContext(ctx,
 			`UPDATE OR IGNORE contact_identifiers SET identifier = ?
 			   WHERE contact_id = ? AND source = ? AND identifier = ?`,
-			identity.Identifier, c.contactID.Int64, c.source, c.name)
+			rewriteTo, c.contactID.Int64, c.source, rewriteFrom)
 		if err != nil {
 			return rep, fmt.Errorf("repair: rewrite identifier for conversation %d: %w", c.id, err)
 		}
