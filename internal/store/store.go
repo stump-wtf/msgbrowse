@@ -201,7 +201,7 @@ func (s *Store) UpsertConversationIdentity(ctx context.Context, source, name str
 		if err != nil {
 			return 0, err
 		}
-	
+
 	case err != nil:
 		return 0, fmt.Errorf("lookup conversation %s/%s: %w", source, name, err)
 	}

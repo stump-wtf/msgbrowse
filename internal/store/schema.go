@@ -1123,7 +1123,7 @@ CREATE TABLE IF NOT EXISTS spam_runs (
 // impossible half of #378's boundary statement ("the real handle there is the
 // JID local part, and the JID is not persisted") into ordinary repair work:
 // the existing pass heals display-name rows on its next sync, with no
-// re-import of the archive. '' is honest default for rows this build has not
+// re-import of the archive. ” is honest default for rows this build has not
 // seen yet — absent knowledge, not a wrong value.
 //
 // Deliberately plain (no UNIQUE/FK): the authoritative (source, identifier)
