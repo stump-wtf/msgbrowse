@@ -142,7 +142,19 @@ func Run(ctx context.Context, st *store.Store, opts Options) (sum Summary, retEr
 	// — is stampable on the row when the run terminates, including on abort;
 	// a scan that died halfway must be legible afterwards, not
 	// indistinguishable from one never started.
-	runID, runErr := st.BeginSpamRun(ctx, store.SpamRun{
+	//
+	// The log's own writes run on a context DETACHED from the caller's. The
+	// scan aborts on ctx.Err() (see the conversation loop), so the cancelled
+	// context that ends a run is the same one the bookkeeping would ride —
+	// and database/sql refuses a write the moment its context is done. Sharing
+	// it lost exactly the case this log exists for: a Ctrl-C'd or
+	// deadline-killed scan wrote no row at all (BeginSpamRun failed before the
+	// terminal defer was even registered) and any partial run stayed "in
+	// flight" forever. Detaching keeps cancellation meaning "stop scanning",
+	// not "stop recording that we scanned".
+	logCtx := context.WithoutCancel(ctx)
+
+	runID, runErr := st.BeginSpamRun(logCtx, store.SpamRun{
 		RulesetVersion: version,
 		ScanEnv:        sum.ScanEnv,
 		AddressBook:    sum.AddressBook,
@@ -151,7 +163,7 @@ func Run(ctx context.Context, st *store.Store, opts Options) (sum Summary, retEr
 		return sum, runErr
 	}
 	// Terminal write on EVERY exit path — happy or aborted (see above).
-	defer func() { finishSpamRun(ctx, st, runID, start, now(), sum, retErr) }()
+	defer func() { finishSpamRun(logCtx, st, runID, start, now(), sum, retErr) }()
 
 	known := map[string]struct{}{}
 	if availability == contacts.Available {
@@ -238,7 +250,7 @@ func Run(ctx context.Context, st *store.Store, opts Options) (sum Summary, retEr
 
 		// Per-conversation heartbeat (REQ-0028-014): an unfinished row whose
 		// updated_at went stale reads as crashed, not in progress.
-		heartbeatSpamRun(ctx, st, runID, sum)
+		heartbeatSpamRun(logCtx, st, runID, sum, now())
 	}
 
 	// Wholesale, never incremental: an opt-out detected in this run changes the
@@ -273,11 +285,11 @@ func runRow(sum Summary) store.SpamRun {
 // heartbeatSpamRun refreshes a run's live counters. Best-effort by design: a
 // failed heartbeat write must never abort a scan that is otherwise working,
 // it only degrades the liveness signal for readers.
-func heartbeatSpamRun(ctx context.Context, st *store.Store, id int64, sum Summary) {
+func heartbeatSpamRun(ctx context.Context, st *store.Store, id int64, sum Summary, at time.Time) {
 	row := runRow(sum)
 	if err := st.UpdateSpamRunProgress(ctx, id, row.Conversations,
 		row.MessagesScanned, row.Findings, row.Candidates, row.OptOutsDetected,
-		row.Senders, time.Now()); err != nil {
+		row.Senders, at); err != nil {
 		slog.Debug("spam: run heartbeat failed", "err", err)
 	}
 }

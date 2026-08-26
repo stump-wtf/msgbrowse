@@ -1054,7 +1054,7 @@ CREATE TABLE IF NOT EXISTS sentiment_runs (
 // Governing: ADR-0029 (unsolicited-contact evidence) §2
 // Implements: SPEC-0028 REQ-0028-014 "Every scan run is durably logged, including its failures", SPEC-0028 REQ-0028-004 "Schema — hash-keyed, FK-less, re-ingest-safe"
 //
-// schemaV22 adds spam_runs — the durable log of unsolicited-contact scans,
+// schemaV23 adds spam_runs — the durable log of unsolicited-contact scans,
 // the exact analogue of embed_runs (v12) and fact_runs (v21), deliberately
 // the same shape (issue #402). A scan is written by `msgbrowse spam-scan`
 // and, once #384's web layer lands, driven from `msgbrowse serve`; the two
@@ -1081,7 +1081,7 @@ CREATE TABLE IF NOT EXISTS sentiment_runs (
 // an unfinished row whose heartbeat went stale reads as CRASHED (the process
 // died before its terminal write), not as running — the same treatment
 // embed_runs gives an indexing process that died mid-pass. error carries the
-// abort reason for a failed run (" on success); the counts completed before
+// abort reason for a failed run (” on success); the counts completed before
 // the abort stay stamped on the row so REQ-0029-012 can answer "what went
 // wrong" years later. Timestamps are RFC3339 UTC strings, matching every
 // other runs table.

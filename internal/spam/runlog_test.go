@@ -178,3 +178,39 @@ func TestSpamRunProgressAndHistory(t *testing.T) {
 		t.Errorf("second row should be in-flight degraded, got %+v", dg[0])
 	}
 }
+
+// A scan cancelled mid-flight (Ctrl-C, a shutdown deadline) is the abort case
+// REQ-0028-014 exists for, and it is the one the deferred terminal write can
+// silently lose: the write rides the same context the scan aborted on, so a
+// cancelled ctx fails the UPDATE and the row reads as in flight forever. The
+// run's own outcome is unchanged — only its legibility afterwards.
+func TestRunLogsCancelledScanWithError(t *testing.T) {
+	st := newStore(t)
+	seed(t, st, "+15551110001",
+		[3]string{"2025-01-05 09:00:00", "+15551110001", "cut your solar bill"},
+	)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // cancelled before the scan loop reaches its ctx.Err() check
+
+	if _, err := Run(ctx, st, Options{
+		Rules:       testRules(t, nil),
+		AddressBook: fakeBook{avail: contacts.Available},
+	}); err == nil {
+		t.Fatal("expected the cancelled scan to return an error")
+	}
+
+	row, err := st.LatestSpamRun(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if row == nil {
+		t.Fatal("cancelled run left no spam_runs row")
+	}
+	if row.InFlight() {
+		t.Error("cancelled run's row still reads as in flight — terminal write was lost")
+	}
+	if row.Error == "" {
+		t.Error("cancelled run's row carries no error text")
+	}
+}
