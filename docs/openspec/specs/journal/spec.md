@@ -309,21 +309,56 @@ the stat tiles.
 - **When** the stat tiles are computed for a year
 - **Then** the excluded thread's messages are absent from the weekday/peak-hour argmax and from the day/streak counts, matching the journal the day rollups were built with.
 
-### REQ-0016-016: Untrusted structured fields are escaped; no attacker-controlled markup
+### REQ-0016-016: Untrusted structured fields are escaped; links resolve against archive facts, never against model strings
 
 Every structured-digest field is model-derived and MUST be treated as untrusted
 output. All rendered fields (summary, highlights, people, themes, standout media,
-notable links) MUST be emitted through `html/template` auto-escaping. Notable
-links MUST render as **text only**, never as a raw `href`. Mood tints MUST be
-applied as CSS classes keyed by the fixed mood enum (`cal-day--<mood>`), never an
-attacker-supplied class or inline style. The page MUST remain compatible with the
-site CSP (`style-src 'self'`, no `'unsafe-inline'`): no `style=` attribute may
-carry model-derived values.
+notable links) MUST be emitted through `html/template` auto-escaping. Mood tints
+MUST be applied as CSS classes keyed by the fixed mood enum (`cal-day--<mood>`),
+never an attacker-supplied class or inline style. The page MUST remain compatible
+with the site CSP (`style-src 'self'`, no `'unsafe-inline'`): no `style=`
+attribute may carry model-derived values.
+
+A notable link MAY render as an anchor **only** when its normalized URL matches a
+row in `links` **for that day**; on a match the anchor's `href` MUST be the
+**stored** URL, never the model's string, re-checked server-side against an
+`http`/`https` allowlist. A `javascript:`, `data:`, or otherwise non-http(s)
+value is prohibited as an href without exception — matching cannot rescue it,
+because it will never match anyway. On any miss the link renders as plain text.
+A person chip MAY link to `/contact/{id}` only when the name resolves to exactly
+one contact who participated in that day's conversations; absent or ambiguous
+names render as plain chips. Resolution happens in the handler, not the template:
+the template only branches on whether a resolved destination exists.
+
+> **Why matching-not-filtering is the rule.** The original requirement was
+> "text only, never a raw `href`" - a blanket refusal that also blocked real
+> affordances (issue #371). Filtering hostile values instead would rebuild the
+> web's URL-parsing minefield one CVE at a time. Matching inverts the burden:
+> the archive's own record of what it observed is the allowlist, so a
+> hallucinated or injected entry has nothing to resolve to and is inert by
+> construction rather than by inspection. The display text always stays the
+> model's escaped string - a matched link must not be able to relabel itself as
+> something else - while the href comes from stored fact.
 
 #### Scenario: A malicious digest field cannot inject markup or a live link
 - **Given** a digest whose `summary` contains `<script>` and whose `notable_links` contains a `javascript:` URL
 - **When** the day card renders
 - **Then** the `<script>` is HTML-escaped as inert text, the link is shown as escaped text with no clickable `href`, no inline `style=` is emitted, and the mood tint is a fixed `cal-day--<mood>` class.
+
+#### Scenario: An unobserved but plausible link stays inert
+- **Given** a digest naming `https://plausible.example/solar-deal`, a well-formed URL never seen in the archive
+- **When** the day card renders
+- **Then** the entry renders as escaped text with no anchor at all - no hover affordance implies clickability.
+
+#### Scenario: An observed link opens externally from the desktop shell
+- **Given** a digest link whose normalized URL matches a stored `links` row for that day
+- **When** the reader clicks it
+- **Then** the anchor points at the stored URL and routes through the desktop external-open path (`desktop.js` to `/desktop/open-url`) with `rel="noopener noreferrer"`; it never navigates the shell webview itself.
+
+#### Scenario: People chips resolve to participants only
+- **Given** a digest person name equal to exactly one contact who messaged that day, a second name shared by two contacts that day, and a third name present in no conversation
+- **When** the day card renders
+- **Then** the first chip links to `/contact/{id}`, and the ambiguous and absent names render as plain chips.
 
 ### REQ-0016-017: The Journal page is a reading surface — no pipeline status, ever
 

@@ -99,6 +99,14 @@ type dayCard struct {
 	// mechanical fold of per-message affect scores. Presenting them as one value
 	// would let the page imply the digest pass has read a day it has not.
 	Sentiment dayMoodStrip
+	// Resolved People and NotableLinks (#371). Each entry carries the model's
+	// string as display text plus — only when it matched an archive fact for
+	// that day — the resolved destination (journaldayrefs.go): a stored URL or
+	// a participating contact id. An empty destination renders exactly the
+	// inert chip/text REQ-0016-016 always required, so unmatched entries get
+	// no clickable affordance at all.
+	DigestPeople []JournalPersonRef
+	NotableLinks []JournalLinkRef
 }
 
 // handleJournal renders the journal as a mood-tinted month calendar with an
@@ -245,6 +253,12 @@ func (s *Server) renderJournalPage(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			data.Selected.Sentiment = strip
+			// #371: resolve the digest's People and NotableLinks against what
+			// the archive actually recorded for this day before rendering.
+			if rerr := s.resolveDayCard(ctx, day, data.Selected); rerr != nil {
+				s.serverError(w, rerr)
+				return
+			}
 		}
 	}
 	s.render(w, r, "journal", data)

@@ -204,12 +204,18 @@
           {{- range .Digest.Highlights}}<li>{{.Text}}{{if .Time}} <span class="font-mono opacity-50">{{.Time}}</span>{{end}}</li>{{- end}}
         </ul>
         {{- end}}
-        {{- if .Digest.People}}<div class="journal-chips"><span class="journal-section-label">People</span>{{range .Digest.People}}<span class="journal-chip">{{.}}</span>{{end}}</div>{{- end}}
+        {{- if .DigestPeople}}<div class="journal-chips"><span class="journal-section-label">People</span>{{range .DigestPeople}}{{if .ContactID}}<a class="journal-chip" href="/contact/{{.ContactID}}" title="Open {{.Name}}&rsquo;s contact page">{{.Name}}</a>{{else}}<span class="journal-chip">{{.Name}}</span>{{end}}{{end}}</div>{{- end}}
         {{- if .Digest.Themes}}<div class="journal-chips"><span class="journal-section-label">Themes</span>{{range .Digest.Themes}}<span class="journal-chip">{{.}}</span>{{end}}</div>{{- end}}
         {{- if .Digest.StandoutMedia}}<div class="journal-chips"><span class="journal-section-label">Media</span>{{range .Digest.StandoutMedia}}<span class="journal-chip font-mono">{{.}}</span>{{end}}</div>{{- end}}
-        {{- if .Digest.NotableLinks}}
+        {{- if .NotableLinks}}
         <div class="journal-section-label">Notable links</div>
-        <ul class="journal-links">{{range .Digest.NotableLinks}}<li class="font-mono">{{.}}</li>{{end}}</ul>
+        {{/* Each entry links ONLY when it matched a link the archive actually
+             observed that day (#371); the href is the stored URL re-checked
+             against the http/https allowlist, and desktop.js routes external
+             anchors through /desktop/open-url so the shell opens the system
+             browser instead of navigating. Unmatched entries are plain text
+             with no affordance (REQ-0016-016). */}}
+        <ul class="journal-links">{{range .NotableLinks}}{{if .URL}}<li class="font-mono"><a href="{{.URL}}" target="_blank" rel="noopener noreferrer nofollow">{{.Text}}</a></li>{{else}}<li class="font-mono">{{.Text}}</li>{{end}}{{end}}</ul>
         {{- end}}
         {{- else if .Body}}
         <p class="journal-summary">{{.Body}}</p>

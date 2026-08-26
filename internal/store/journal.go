@@ -541,3 +541,79 @@ func dayUnixWindow(day string) (start, end int64, err error) {
 	}
 	return t.Unix(), t.AddDate(0, 0, 1).Unix(), nil
 }
+
+// JournalDayLink is one URL observed in the archive on a journal day.
+type JournalDayLink struct {
+	URL    string
+	Domain string
+}
+
+// JournalDayParticipant is one contact who participated (sent at least one
+// message) in a day's conversations. ContactID is the canonical contacts.id —
+// merged contacts collapse to a single participant, so a digest name that
+// matches here links to one page no matter which source the day's messages
+// came through.
+type JournalDayParticipant struct {
+	ContactID int64
+	Name      string
+}
+
+// JournalDayLinks returns every distinct URL observed on the given day,
+// sorted by URL for stable output. It backs the journal card's notable-link
+// resolution: a model-emitted link is used only as a LOOKUP KEY against what
+// the archive actually saw; the href always comes from the stored row
+// (issue #402/#371 — see REQ-0016-016).
+func (s *Store) JournalDayLinks(ctx context.Context, day string) ([]JournalDayLink, error) {
+	start, end, err := dayUnixWindow(day)
+	if err != nil {
+		return nil, fmt.Errorf("journal day links: %w", err)
+	}
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT DISTINCT url, COALESCE(domain, '') FROM links
+		  WHERE ts_unix >= ? AND ts_unix < ?
+		  ORDER BY url`, start, end)
+	if err != nil {
+		return nil, fmt.Errorf("journal day links: %w", err)
+	}
+	defer rows.Close()
+	var out []JournalDayLink
+	for rows.Next() {
+		var l JournalDayLink
+		if err := rows.Scan(&l.URL, &l.Domain); err != nil {
+			return nil, fmt.Errorf("journal day links: scan: %w", err)
+		}
+		out = append(out, l)
+	}
+	return out, rows.Err()
+}
+
+// JournalDayParticipants returns the distinct non-group contacts who sent at
+// least one message on the given day, ordered by contact id for stability.
+// Group conversations have no contact_id by design (#378), so they never
+// contribute a participant and can never resolve to a person page.
+func (s *Store) JournalDayParticipants(ctx context.Context, day string) ([]JournalDayParticipant, error) {
+	start, end, err := dayUnixWindow(day)
+	if err != nil {
+		return nil, fmt.Errorf("journal day participants: %w", err)
+	}
+	rows, err := s.db.QueryContext(ctx, `
+SELECT DISTINCT ct.id, ct.display_name
+  FROM messages m
+  JOIN conversations c ON c.id = m.conversation_id
+  JOIN contacts ct ON ct.id = c.contact_id
+ WHERE m.ts_unix >= ? AND m.ts_unix < ? AND c.contact_id IS NOT NULL AND c.is_group = 0
+ ORDER BY ct.id`, start, end)
+	if err != nil {
+		return nil, fmt.Errorf("journal day participants: %w", err)
+	}
+	defer rows.Close()
+	var out []JournalDayParticipant
+	for rows.Next() {
+		var p JournalDayParticipant
+		if err := rows.Scan(&p.ContactID, &p.Name); err != nil {
+			return nil, fmt.Errorf("journal day participants: scan: %w", err)
+		}
+		out = append(out, p)
+	}
+	return out, rows.Err()
+}
