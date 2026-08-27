@@ -201,3 +201,57 @@ func n0(r interface{ RowsAffected() (int64, error) }) int64 {
 	n, _ := r.RowsAffected()
 	return n
 }
+
+// Adversarial probe added in review of #371: the matching layer is the whole
+// security boundary here, so both directions of it are pinned. A hostile
+// scheme must key to "" (matching nothing, hence never anchoring), and two
+// genuinely different URLs must never collide into one key — a collision
+// would let an injected string borrow a legitimate link's href.
+func TestNormalizeLinkKeyRejectsHostileSchemes(t *testing.T) {
+	for _, raw := range []string{
+		"javascript:alert(1)",
+		"JavaScript:alert(1)",
+		"data:text/html;base64,PHNjcmlwdD4=",
+		"vbscript:msgbox(1)",
+		"file:///etc/passwd",
+		"//evil.com/x",
+		"/relative/path",
+		"not a url at all",
+		"",
+		"   ",
+	} {
+		if k := normalizeLinkKey(raw); k != "" {
+			t.Errorf("normalizeLinkKey(%q) = %q, want \"\" (must match nothing)", raw, k)
+		}
+	}
+}
+
+func TestNormalizeLinkKeyEquivalence(t *testing.T) {
+	same := [][2]string{
+		{"https://Example.COM/a", "https://example.com/a"},
+		{"https://example.com:443/a", "https://example.com/a"},
+		{"http://example.com:80/a", "http://example.com/a"},
+		{"https://example.com/a#frag", "https://example.com/a"},
+		{"https://example.com/a/", "https://example.com/a"},
+		{"  https://example.com/a  ", "https://example.com/a"},
+	}
+	for _, p := range same {
+		if normalizeLinkKey(p[0]) != normalizeLinkKey(p[1]) {
+			t.Errorf("%q and %q should share a key, got %q vs %q", p[0], p[1], normalizeLinkKey(p[0]), normalizeLinkKey(p[1]))
+		}
+	}
+	// Path case is significant, and so is the query: a server may serve
+	// different content at /A and /a.
+	diff := [][2]string{
+		{"https://example.com/a", "http://example.com/a"},
+		{"https://example.com/a", "https://example.com/b"},
+		{"https://example.com/a", "https://evil.com/a"},
+		{"https://example.com/a?x=1", "https://example.com/a?x=2"},
+		{"https://example.com/A", "https://example.com/a"},
+	}
+	for _, p := range diff {
+		if normalizeLinkKey(p[0]) == normalizeLinkKey(p[1]) {
+			t.Errorf("%q and %q must NOT share a key (%q)", p[0], p[1], normalizeLinkKey(p[0]))
+		}
+	}
+}

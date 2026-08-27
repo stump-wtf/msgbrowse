@@ -587,8 +587,13 @@ func (s *Store) JournalDayLinks(ctx context.Context, day string) ([]JournalDayLi
 	return out, rows.Err()
 }
 
-// JournalDayParticipants returns the distinct non-group contacts who sent at
-// least one message on the given day, ordered by contact id for stability.
+// JournalDayParticipants returns the distinct non-group contacts whose
+// conversations carried at least one message on the given day, ordered by
+// contact id for stability. Note it is the CONVERSATION that must have a
+// message, not the contact that must have sent one: a day where only you
+// wrote still counts the counterparty as a participant, which is the right
+// allowlist for a digest naming who the day was about.
+//
 // Group conversations have no contact_id by design (#378), so they never
 // contribute a participant and can never resolve to a person page.
 func (s *Store) JournalDayParticipants(ctx context.Context, day string) ([]JournalDayParticipant, error) {
