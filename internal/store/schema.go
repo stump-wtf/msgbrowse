@@ -1105,6 +1105,8 @@ CREATE TABLE IF NOT EXISTS spam_runs (
     senders           INTEGER NOT NULL DEFAULT 0,
     error             TEXT    NOT NULL DEFAULT ''
 );
+`
+
 // Governing: ADR-0003 (dual-source archive) contact model
 // Implements: issue #396 — two archive shapes the repair pass could not heal
 //
