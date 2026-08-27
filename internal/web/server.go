@@ -76,6 +76,10 @@ type Store interface {
 	MonthTopReactions(ctx context.Context, year int, month time.Month, exclude []string, perDay int) (map[string][]store.EmojiCount, error)
 	JournalStats(ctx context.Context, year int, exclude []string) (store.JournalStats, error)
 	GetJournalDay(ctx context.Context, day string) (store.JournalDayView, bool, error)
+	// Day-card link/person resolution (#371): the archive facts the digest's
+	// notable links and people chips are matched against before rendering.
+	JournalDayLinks(ctx context.Context, day string) ([]store.JournalDayLink, error)
+	JournalDayParticipants(ctx context.Context, day string) ([]store.JournalDayParticipant, error)
 	// Home's two resurfacing cards (#239). Both are LIMITed and index-served so
 	// they can run on the boosted #main-content path too (REQ-0008-006) — which
 	// ListConversations deliberately cannot.

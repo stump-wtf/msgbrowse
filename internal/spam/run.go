@@ -99,7 +99,7 @@ type Summary struct {
 // any rule changes the ruleset version, which rescans every conversation —
 // findings from two rule generations are not comparable and must never share a
 // dossier.
-func Run(ctx context.Context, st *store.Store, opts Options) (Summary, error) {
+func Run(ctx context.Context, st *store.Store, opts Options) (sum Summary, retErr error) {
 	log := opts.Logger
 	if log == nil {
 		log = slog.Default()
@@ -121,7 +121,7 @@ func Run(ctx context.Context, st *store.Store, opts Options) (Summary, error) {
 	}
 	start := now()
 	version := opts.Rules.Version()
-	sum := Summary{RulesetVersion: version}
+	sum = Summary{RulesetVersion: version}
 
 	if opts.Reset {
 		if err := st.ResetSpam(ctx); err != nil {
@@ -135,6 +135,36 @@ func Run(ctx context.Context, st *store.Store, opts Options) (Summary, error) {
 	availability := book.Availability(ctx)
 	sum.AddressBook = availability.String()
 	sum.ScanEnv = scanEnv(book, availability)
+
+	// REQ-0028-014: the run log starts once the environment is known, so even
+	// a first-batch abort records what ran under which conditions. Everything
+	// after this point — the reset, the address-book read, every conversation
+	// — is stampable on the row when the run terminates, including on abort;
+	// a scan that died halfway must be legible afterwards, not
+	// indistinguishable from one never started.
+	//
+	// The log's own writes run on a context DETACHED from the caller's. The
+	// scan aborts on ctx.Err() (see the conversation loop), so the cancelled
+	// context that ends a run is the same one the bookkeeping would ride —
+	// and database/sql refuses a write the moment its context is done. Sharing
+	// it lost exactly the case this log exists for: a Ctrl-C'd or
+	// deadline-killed scan wrote no row at all (BeginSpamRun failed before the
+	// terminal defer was even registered) and any partial run stayed "in
+	// flight" forever. Detaching keeps cancellation meaning "stop scanning",
+	// not "stop recording that we scanned".
+	logCtx := context.WithoutCancel(ctx)
+
+	runID, runErr := st.BeginSpamRun(logCtx, store.SpamRun{
+		RulesetVersion: version,
+		ScanEnv:        sum.ScanEnv,
+		AddressBook:    sum.AddressBook,
+	}, start)
+	if runErr != nil {
+		return sum, runErr
+	}
+	// Terminal write on EVERY exit path — happy or aborted (see above).
+	defer func() { finishSpamRun(logCtx, st, runID, start, now(), sum, retErr) }()
+
 	known := map[string]struct{}{}
 	if availability == contacts.Available {
 		people, err := book.People(ctx)
@@ -217,6 +247,10 @@ func Run(ctx context.Context, st *store.Store, opts Options) (Summary, error) {
 		sum.Findings += stats.findings
 		sum.Candidates += stats.candidates
 		sum.OptOutsDetected += stats.optOuts
+
+		// Per-conversation heartbeat (REQ-0028-014): an unfinished row whose
+		// updated_at went stale reads as crashed, not in progress.
+		heartbeatSpamRun(logCtx, st, runID, sum, now())
 	}
 
 	// Wholesale, never incremental: an opt-out detected in this run changes the
@@ -230,6 +264,50 @@ func Run(ctx context.Context, st *store.Store, opts Options) (Summary, error) {
 		"messages", sum.MessagesScanned, "candidates", sum.Candidates,
 		"opt_outs", sum.OptOutsDetected, "duration_ms", sum.DurationMS)
 	return sum, nil
+}
+
+// runRow converts the running Summary into the store row shape.
+func runRow(sum Summary) store.SpamRun {
+	return store.SpamRun{
+		RulesetVersion:  sum.RulesetVersion,
+		ScanEnv:         sum.ScanEnv,
+		AddressBook:     sum.AddressBook,
+		Degraded:        sum.Degraded,
+		Conversations:   sum.Conversations,
+		MessagesScanned: sum.MessagesScanned,
+		Findings:        sum.Findings,
+		Candidates:      sum.Candidates,
+		OptOutsDetected: sum.OptOutsDetected,
+		Senders:         sum.Senders,
+	}
+}
+
+// heartbeatSpamRun refreshes a run's live counters. Best-effort by design: a
+// failed heartbeat write must never abort a scan that is otherwise working,
+// it only degrades the liveness signal for readers.
+func heartbeatSpamRun(ctx context.Context, st *store.Store, id int64, sum Summary, at time.Time) {
+	row := runRow(sum)
+	if err := st.UpdateSpamRunProgress(ctx, id, row.Conversations,
+		row.MessagesScanned, row.Findings, row.Candidates, row.OptOutsDetected,
+		row.Senders, at); err != nil {
+		slog.Debug("spam: run heartbeat failed", "err", err)
+	}
+}
+
+// finishSpamRun stamps the terminal state on a run's row. Best-effort: a
+// terminal write failure cannot change the scan's outcome, but without it
+// the row would read as crashed when the process exits cleanly.
+func finishSpamRun(ctx context.Context, st *store.Store, id int64, start, end time.Time, sum Summary, runErr error) {
+	row := runRow(sum)
+	row.ID = id
+	row.FinishedAt = end
+	row.DurationMS = end.Sub(start).Milliseconds()
+	if runErr != nil {
+		row.Error = runErr.Error()
+	}
+	if err := st.FinishSpamRun(ctx, row); err != nil {
+		slog.Debug("spam: finish run log failed", "err", err)
+	}
 }
 
 type convStats struct {
