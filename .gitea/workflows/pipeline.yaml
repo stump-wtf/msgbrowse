@@ -181,3 +181,152 @@ jobs:
       working_directory: docs-site
       source_dir: docs-site/build
     secrets: inherit
+
+  # ---- 8. Homebrew tap bump (tags only) -----------------------------------
+  # The Bump Runs Here, Not On The GitHub Mirror
+  #
+  # This job used to be a step in .github/workflows/desktop.yml, on a
+  # GitHub-hosted runner. gitea.stump.rocks is an RFC1918 address, so that
+  # runner could never reach it: the step died at curl exit 28 on its first
+  # call to the Gitea API on every tag from v0.6.0 on. The failure was easy to
+  # miss because the GitHub Release itself published fine, so the automated
+  # bump never once succeeded — every version in stump.wtf/homebrew-tap was
+  # pasted in by hand, and Casks/msgbrowse-desktop.rb silently sat at 0.5.0 for
+  # three releases while the formula moved on without it.
+  #
+  # This runner is the only host that can reach BOTH sides: Gitea over the LAN
+  # and github.com outbound. So the bump belongs here. The darwin .app is still
+  # built on the mirror because no macOS runner exists on this instance, so the
+  # job waits for that release to publish, then bumps the tap from its assets.
+  #
+  # @joestump 08/28/2026 - Moved here from desktop.yml. Two ordering fixes came
+  # with it: the tap bump now runs BEFORE the (optional, best-effort) mirror of
+  # assets back onto the Gitea release, and a missing token FAILS rather than
+  # skipping. The old step did the reverse on both counts — one `set -e` block
+  # with the bump last, gated on `if: env.GITEA_PAT != ''` — which is precisely
+  # how three releases shipped with nobody noticing.
+  tap-bump:
+    needs: [build]
+    if: ${{ github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') }}
+    runs-on: ubuntu-latest
+    env:
+      TAP_PUSH_TOKEN: ${{ secrets.TAP_PUSH_TOKEN }}
+      # Public, unauthenticated reads — the release and its assets are public.
+      GH_REPO_URL: https://github.com/stump-wtf/msgbrowse
+    steps:
+      - name: Require the tap push token
+        # Deliberately fatal. A silent skip here is the exact failure mode this
+        # job exists to end: the release goes green, the tap never moves, and
+        # the gap only surfaces weeks later as "brew won't update".
+        run: |
+          set -euo pipefail
+          if [ -z "${TAP_PUSH_TOKEN:-}" ]; then
+            echo "::error::TAP_PUSH_TOKEN is not set. Create a Gitea PAT with" \
+                 "write:repository on stump.wtf/homebrew-tap and add it as an" \
+                 "org or repo Actions secret named TAP_PUSH_TOKEN."
+            exit 1
+          fi
+
+      - name: Wait for the GitHub release assets
+        # The darwin leg of desktop.yml takes ~6-8 min on the mirror, and the
+        # Gitea tag push and the GitHub one land at essentially the same moment,
+        # so this job is always early. HEAD the download URLs rather than the
+        # API: asset URLs are not subject to the 60/hr unauthenticated API rate
+        # limit, and a 200 means the bytes are actually fetchable, which is what
+        # the tap needs to be true.
+        run: |
+          set -euo pipefail
+          TAG="${GITHUB_REF_NAME}"
+          VER="${TAG#v}"
+          SRC_URL="$GH_REPO_URL/releases/download/$TAG/msgbrowse-v${VER}-source.tar.gz"
+          ZIP_URL="$GH_REPO_URL/releases/download/$TAG/msgbrowse-desktop_darwin_universal.zip"
+          {
+            echo "SRC_URL=$SRC_URL"
+            echo "ZIP_URL=$ZIP_URL"
+            echo "TAG=$TAG"
+            echo "VER=$VER"
+          } >> "$GITHUB_ENV"
+          for i in $(seq 1 60); do
+            if curl -sfIL --max-time 30 -o /dev/null "$SRC_URL" \
+               && curl -sfIL --max-time 30 -o /dev/null "$ZIP_URL"; then
+              echo "both assets present after $(( (i - 1) * 30 ))s"
+              exit 0
+            fi
+            sleep 30
+          done
+          echo "::error::$TAG assets never appeared on $GH_REPO_URL after 30m." \
+               "Check the Desktop workflow on the mirror."
+          exit 1
+
+      - name: Download assets and checksum
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          curl -sfL --retry 3 --retry-all-errors -o "dist/src.tar.gz" "$SRC_URL"
+          curl -sfL --retry 3 --retry-all-errors -o "dist/desktop.zip" "$ZIP_URL"
+          echo "SHA_SRC=$(sha256sum dist/src.tar.gz | cut -d' ' -f1)" >> "$GITHUB_ENV"
+          echo "SHA_ZIP=$(sha256sum dist/desktop.zip | cut -d' ' -f1)" >> "$GITHUB_ENV"
+
+      - name: Bump the Homebrew tap
+        run: |
+          set -euo pipefail
+          git clone -q "https://gitea.stump.rocks/stump.wtf/homebrew-tap.git" tap
+          cd tap
+          F="Formula/msgbrowse.rb"; C="Casks/msgbrowse-desktop.rb"
+
+          # The formula pins an explicit tag in its url; the cask interpolates
+          # v#{version}, so rewriting its `version` line moves the url with it.
+          sed -i -E "s|releases/download/v[0-9.]+/msgbrowse-v[0-9.]+-source\.tar\.gz|releases/download/${TAG}/msgbrowse-v${VER}-source.tar.gz|" "$F"
+          sed -i -E "s|^(  sha256 )\"[0-9a-f]{64}\"|\1\"${SHA_SRC}\"|" "$F"
+          sed -i -E "s|^(  version )\"[0-9.]+\"|\1\"${VER}\"|" "$C"
+          sed -i -E "s|^(  sha256 )\"[0-9a-f]{64}\"|\1\"${SHA_ZIP}\"|" "$C"
+
+          # Assert every rewrite landed. sed exits 0 when a pattern does not
+          # match, so without this a drifted formula would commit unchanged.
+          grep -q "releases/download/${TAG}/msgbrowse-v${VER}-source.tar.gz" "$F"
+          grep -q "sha256 \"${SHA_SRC}\"" "$F"
+          grep -q "version \"${VER}\"" "$C"
+          grep -q "sha256 \"${SHA_ZIP}\"" "$C"
+
+          git config user.name "joestump-agent"
+          git config user.email "joestump-agent@noreply.stump.rocks"
+          if git diff --quiet; then
+            echo "tap already at v${VER} — nothing to push"
+          else
+            git commit -aqm "toil(msgbrowse): bump formula + cask to v${VER} (automated tap bump)"
+            git -c http.extraheader="Authorization: token ${TAP_PUSH_TOKEN}" \
+              push -q origin HEAD:main
+            echo "tap bumped to v${VER}" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Mirror assets onto the Gitea release
+        # Best-effort and explicitly non-fatal: the tap installs from the GitHub
+        # release, so this only keeps the canonical release page from looking
+        # empty. It must never be able to cost a release its tap bump again,
+        # which is why it runs last and cannot fail the job.
+        continue-on-error: true
+        run: |
+          set -uo pipefail
+          # jq is not guaranteed on the act_runner image, and this step must not
+          # fail quietly for want of it.
+          command -v jq >/dev/null 2>&1 || sudo apt-get install -y -qq jq
+          API="https://gitea.stump.rocks/api/v1"
+          AUTH="Authorization: token ${TAP_PUSH_TOKEN}"
+          if ! RID=$(curl -sf --max-time 30 -H "$AUTH" \
+              "$API/repos/stump.wtf/msgbrowse/releases/tags/$TAG" | jq -r '.id'); then
+            echo "could not read the Gitea release for $TAG — skipping asset mirror"
+            exit 0
+          fi
+          upload() { # $1 = local file, $2 = asset name
+            OLD=$(curl -sf --max-time 30 -H "$AUTH" \
+              "$API/repos/stump.wtf/msgbrowse/releases/$RID/assets?limit=50" \
+              | jq -r ".[] | select(.name == \"$2\") | .id")
+            [ -z "$OLD" ] || curl -sf --max-time 60 -X DELETE -H "$AUTH" \
+              "$API/repos/stump.wtf/msgbrowse/releases/$RID/assets/$OLD" || true
+            curl -sf --max-time 900 -X POST -H "$AUTH" \
+              "$API/repos/stump.wtf/msgbrowse/releases/$RID/assets?name=$2" \
+              -F "attachment=@$1" > /dev/null \
+              && echo "attached $2" || echo "could not attach $2"
+          }
+          upload "dist/src.tar.gz" "msgbrowse-v${VER}-source.tar.gz"
+          upload "dist/desktop.zip" "msgbrowse-desktop_darwin_universal.zip"
