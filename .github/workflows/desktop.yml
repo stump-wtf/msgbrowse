@@ -555,6 +555,17 @@ jobs:
 
   # Publish a real GitHub Release when a v* tag is pushed (issue #219).
   #
+  # This release is what stump.wtf/homebrew-tap installs from, so its assets are
+  # load-bearing rather than a convenience copy. The bump of that tap is NOT done
+  # here: it lives in .gitea/workflows/pipeline.yaml, on a runner that can reach
+  # both gitea.stump.rocks (an RFC1918 address, unroutable from a GitHub-hosted
+  # runner) and github.com. A step that tried to do it from here failed at curl
+  # exit 28 on every tag from v0.6.0 on, silently, for three releases.
+  #
+  # @joestump 08/28/2026 - Removed the unreachable Gitea mirror + tap-bump step;
+  # added the deterministic source tarball to the published assets so the tap has
+  # a stable, public url to pin.
+  #
   # Before this job the tag trigger built the matrix and stopped at
   # actions/upload-artifact — output that needs a GitHub login to download, is
   # buried under the Actions tab, and expires after 30 days, while README.md
@@ -570,10 +581,16 @@ jobs:
     # Scoped to this job so the build jobs keep the read-only token.
     permissions:
       contents: write
-    # Job-level so the tap-bump step's `if:` guard can see it (see that step).
-    env:
-      GITEA_PAT: ${{ secrets.GITEA_PAT }}
     steps:
+      # fetch-depth: 0 brings the tag object `git archive` needs for the source
+      # tarball packaged below. Checked out into repo/ rather than the workspace
+      # root: actions/checkout defaults to clean: true (`git clean -ffdx`), which
+      # at the root would delete the artifacts/ and dist/ trees this job builds.
+      - uses: actions/checkout@v4
+        with:
+          path: repo
+          fetch-depth: 0
+
       - uses: actions/download-artifact@v4
         with:
           path: artifacts
@@ -591,6 +608,16 @@ jobs:
           chmod +x artifacts/msgbrowse-desktop_linux_amd64/msgbrowse
           tar -czf dist/msgbrowse-desktop_linux_amd64.tar.gz \
             -C artifacts/msgbrowse-desktop_linux_amd64 msgbrowse
+
+          # Deterministic source tarball — the same bytes every run for a tag,
+          # so the Homebrew formula's sha256 is stable. Published as a release
+          # asset rather than leaning on GitHub's on-the-fly /archive/refs/tags
+          # endpoint, whose bytes have shifted under projects before and would
+          # invalidate a pinned checksum.
+          VER="${GITHUB_REF_NAME#v}"
+          git -C repo archive --format=tar.gz --prefix="msgbrowse/" \
+            -o "$PWD/dist/msgbrowse-v${VER}-source.tar.gz" "$GITHUB_REF_NAME"
+
           ls -l dist
 
       - name: Publish release
@@ -606,7 +633,15 @@ jobs:
           body: |
             ## Install
 
-            **macOS** — download `msgbrowse-desktop_darwin_universal.zip`, unzip, then:
+            **Homebrew** (macOS, both the CLI and the desktop app):
+
+            ```
+            brew tap stump-wtf/tap
+            brew install msgbrowse            # CLI
+            brew install --cask msgbrowse-desktop
+            ```
+
+            **macOS, by hand** — download `msgbrowse-desktop_darwin_universal.zip`, unzip, then:
 
             ```
             xattr -dr com.apple.quarantine msgbrowse.app
@@ -623,102 +658,3 @@ jobs:
             ```
             sudo apt-get install libgtk-3-0 libwebkit2gtk-4.1-0
             ```
-
-
-      # --- Canonical-host asset mirror + Homebrew tap bump ----------------------
-      # The tap (stump.wtf/homebrew-tap, canonical on Gitea) installs from
-      # Gitea release-download URLs, NOT from this mirror — the Gitea→GitHub
-      # push mirror has lagged or broken outright in the past, so nothing that
-      # users `brew install` may depend on this host staying current. This step
-      # therefore, after publishing here:
-      #   1. attaches the desktop zip + a deterministic source tarball
-      #      (git archive of the tag) to the Gitea release for this tag, and
-      #   2. bumps Formula/msgbrowse.rb + Casks/msgbrowse-desktop.rb in the
-      #      tap with the new versions and sha256s, and pushes to the tap's
-      #      main on Gitea.
-      # Gated on GITEA_PAT (scoped write:repository token) so the job stays
-      # green if the secret is ever absent.
-      #
-      # @joestump-agent 08/20/2026 - Review fixes. The block originally landed
-      # BETWEEN `prerelease:` and `body:` inside the Publish release step's
-      # `with:` mapping. Because `body:` sits at the same indent as the new
-      # step's `run: |` content, YAML folded the whole release-notes markdown
-      # into the shell script: Publish release silently lost its install
-      # instructions, and this step would have run `body: |` under `set -e`.
-      # Gitea never caught it — pipeline.yaml shadows .github/workflows, so
-      # nothing on a PR parses this file. Also moved the checkout into repo/
-      # (it was wiping dist/), hoisted GITEA_PAT to job env, and made a
-      # no-change tap re-run a no-op instead of a failure.
-      # Checked out into repo/ rather than the workspace root: this job's
-      # earlier steps have already populated artifacts/ and dist/, and
-      # actions/checkout defaults to clean: true (`git clean -ffdx`), which
-      # would delete the very zip this step uploads. fetch-depth: 0 brings
-      # the tag object `git archive` needs.
-      - uses: actions/checkout@v4
-        with:
-          path: repo
-          fetch-depth: 0
-
-      - name: Mirror release assets to Gitea + bump Homebrew tap
-        # GITEA_PAT comes from the job-level env above, not a step-level one:
-        # a step's own `env:` is not reliably visible to that step's `if:`, and
-        # the failure mode is a silent skip — the release publishes, the tap
-        # never moves, and nothing is red.
-        env:
-          GITEA_URL: https://gitea.stump.rocks
-        if: ${{ env.GITEA_PAT != '' }}
-        run: |
-          set -euo pipefail
-          TAG="$GITHUB_REF_NAME"          # e.g. v0.5.1
-          VER="${TAG#v}"                   # e.g. 0.5.1
-          API="$GITEA_URL/api/v1"
-          AUTH="Authorization: token $GITEA_PAT"
-          SRC_ASSET="msgbrowse-v${VER}-source.tar.gz"
-          ZIP="msgbrowse-desktop_darwin_universal.zip"
-
-          # Deterministic source tarball — same bytes every run for a tag, so
-          # the formula sha256 is stable (on-the-fly archive endpoints are not).
-          git -C repo archive --format=tar.gz --prefix="msgbrowse/" \
-            -o "$PWD/dist/$SRC_ASSET" "$TAG"
-
-          # The release object is created on Gitea by the release flow; require it.
-          RID=$(curl -sf -H "$AUTH" "$API/repos/stump.wtf/msgbrowse/releases/tags/$TAG" | jq -r '.id')
-          [ "$RID" != "null" ] || { echo "no Gitea release for $TAG"; exit 1; }
-
-          upload_asset() { # $1 = file, $2 = name
-            OLD=$(curl -sf -H "$AUTH" "$API/repos/stump.wtf/msgbrowse/releases/$RID/assets?limit=50" \
-              | jq -r ".[] | select(.name == \"$2\") | .id")
-            [ -z "$OLD" ] || curl -sf -X DELETE -H "$AUTH" \
-              "$API/repos/stump.wtf/msgbrowse/releases/$RID/assets/$OLD"
-            curl -sf -X POST -H "$AUTH" \
-              "$API/repos/stump.wtf/msgbrowse/releases/$RID/assets?name=$2" \
-              -F "attachment=@$1" > /dev/null
-            echo "attached $2 to Gitea release $RID"
-          }
-
-          upload_asset "dist/$SRC_ASSET" "$SRC_ASSET"
-          upload_asset "dist/$ZIP" "$ZIP"
-          SHA_SRC=$(sha256sum "dist/$SRC_ASSET" | cut -d' ' -f1)
-          SHA_ZIP=$(sha256sum "dist/$ZIP" | cut -d' ' -f1)
-
-          # --- bump the tap -------------------------------------------------
-          git clone -q "$GITEA_URL/stump.wtf/homebrew-tap.git" tap
-          cd tap
-          F="Formula/msgbrowse.rb"; C="Casks/msgbrowse-desktop.rb"
-          sed -i "s|releases/download/v[0-9.]*/msgbrowse-v[0-9.]*-source.tar.gz|releases/download/$TAG/$SRC_ASSET|" "$F"
-          sed -i "s|sha256 \"[0-9a-f]*\"|sha256 \"$SHA_SRC\"|" "$F"
-          sed -i "s|version \"[0-9.]*\"|version \"$VER\"|" "$C"
-          sed -i "s|sha256 \"[0-9a-f]*\"|sha256 \"$SHA_ZIP\"|" "$C"
-          grep -q "$TAG/$SRC_ASSET" "$F" && grep -q "$SHA_SRC" "$F" \
-            && grep -q "version \"$VER\"" "$C" && grep -q "$SHA_ZIP" "$C"
-          git config user.name "joestump-agent"
-          git config user.email "joestump-agent@noreply.stump.rocks"
-          # A re-run of the same tag leaves the tap already correct; committing
-          # nothing exits 1 under `set -e` and would fail an otherwise fine release.
-          if git diff --quiet; then
-            echo "tap already at v${VER} — nothing to push"
-          else
-            git commit -aqm "msgbrowse + msgbrowse-desktop v${VER} (automated tap bump)"
-            git -c http.extraheader="$AUTH" push -q origin main
-            echo "tap bumped to v${VER}"
-          fi
