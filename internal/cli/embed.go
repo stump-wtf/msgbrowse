@@ -27,6 +27,10 @@ func newEmbedCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			batchSize, err := cmd.Flags().GetInt("batch-size")
+			if err != nil {
+				return err
+			}
 
 			st, err := openStore(cfg)
 			if err != nil {
@@ -36,6 +40,7 @@ func newEmbedCommand() *cobra.Command {
 
 			sum, err := embed.Run(cmd.Context(), st, newLLMClient(cfg), embed.Options{
 				EmbedModel: cfg.LLM.EmbedModel,
+				BatchSize:  batchSize,
 				Prune:      prune,
 			})
 			if err != nil {
@@ -48,5 +53,6 @@ func newEmbedCommand() *cobra.Command {
 		},
 	}
 	cmd.Flags().Bool("prune", false, "remove embeddings whose message no longer exists before embedding")
+	cmd.Flags().Int("batch-size", 0, "messages per embeddings request (0 = default 32; some backends reject larger batches)")
 	return cmd
 }

@@ -25,12 +25,20 @@ import (
 // embedding models (bge-m3, text-embedding-3-large).
 const maxInputChars = 6500
 
+// defaultBatchSize is used when Options.BatchSize is unset. The 512 clamp in
+// run() still allows an explicit larger setting for backends that permit it.
+const defaultBatchSize = 32
+
 // Options configures an embedding run.
 type Options struct {
 	// EmbedModel names the embedding model; recorded with each vector so a model
 	// change re-embeds. Required.
 	EmbedModel string
 	// BatchSize is how many messages are sent per /embeddings request.
+	// Zero or negative falls back to defaultBatchSize (32): several common
+	// OpenAI-compatible embedding backends (vLLM-served bge-m3 behind
+	// LiteLLM, among others) reject batches larger than 32 with a 422, so
+	// the default must stay within the most conservative cap.
 	BatchSize int
 	// Prune removes embeddings whose message no longer exists before embedding.
 	Prune bool
@@ -107,7 +115,7 @@ func Run(ctx context.Context, st *store.Store, client llm.Client, opts Options) 
 func run(ctx context.Context, st *store.Store, client llm.Client, opts Options, model string, runID int64, start time.Time, log *slog.Logger) (Summary, error) {
 	batch := opts.BatchSize
 	if batch <= 0 || batch > 512 {
-		batch = 64
+		batch = defaultBatchSize
 	}
 	var sum Summary
 

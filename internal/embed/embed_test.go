@@ -21,11 +21,13 @@ import (
 type fakeClient struct {
 	calls    int
 	embedded int
+	sizes    []int
 }
 
 func (f *fakeClient) Embed(_ context.Context, inputs []string) ([][]float32, error) {
 	f.calls++
 	f.embedded += len(inputs)
+	f.sizes = append(f.sizes, len(inputs))
 	out := make([][]float32, len(inputs))
 	for i, s := range inputs {
 		out[i] = []float32{float32(len(s)), 1}
@@ -130,6 +132,39 @@ func TestRunRespectsBatchSize(t *testing.T) {
 	// 10 messages / batch 4 = 3 batches (4+4+2).
 	if sum.Batches != 3 || fc.calls != 3 {
 		t.Errorf("batches = %d, calls = %d, want 3/3", sum.Batches, fc.calls)
+	}
+}
+
+// TestRunDefaultBatchSize: an unset BatchSize falls back to 32, not the old
+// 64 — several OpenAI-compatible backends (vLLM-served bge-m3 behind LiteLLM)
+// reject batches larger than 32 with a 422, which wedged both `msgbrowse
+// embed` and the web Reset-&-rebuild on such setups.
+func TestRunDefaultBatchSize(t *testing.T) {
+	st := newStore(t)
+	ctx := context.Background()
+	conv, _ := st.UpsertConversation(ctx, source.Signal, "Big")
+	var msgs []signal.Message
+	for i := 0; i < 40; i++ {
+		parsed, _ := time.Parse(signal.TimestampLayout, "2022-03-01 09:00:00")
+		msgs = append(msgs, signal.Message{
+			Conversation: "Big", Timestamp: parsed.Add(time.Duration(i) * time.Minute),
+			TimestampRaw: "2022-03-01 09:00:00", Sender: "X", Body: padBody(i),
+		})
+	}
+	if _, err := st.ReplaceConversationMessages(ctx, conv, source.Signal, msgs); err != nil {
+		t.Fatal(err)
+	}
+	fc := &fakeClient{}
+	sum, err := Run(ctx, st, fc, Options{EmbedModel: "m", Logger: slog.New(slog.NewTextHandler(io.Discard, nil))})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sum.Embedded != 40 || sum.Batches != 2 {
+		t.Errorf("embedded = %d in %d batches, want 40 in 2", sum.Embedded, sum.Batches)
+	}
+	want := []int{defaultBatchSize, 40 - defaultBatchSize}
+	if len(fc.sizes) != 2 || fc.sizes[0] != want[0] || fc.sizes[1] != want[1] {
+		t.Errorf("request sizes = %v, want %v", fc.sizes, want)
 	}
 }
 
