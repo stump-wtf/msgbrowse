@@ -2,7 +2,7 @@ module github.com/joestump/msgbrowse/cmd/msgbrowse-desktop
 
 go 1.25.8
 
-toolchain go1.27.0
+toolchain go1.27.1
 
 replace github.com/joestump/msgbrowse => ../..
 
