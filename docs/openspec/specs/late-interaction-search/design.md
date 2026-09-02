@@ -5,7 +5,7 @@
 Today `internal/store/vector.go` stores one float32 blob per `(message_hash,
 model)` and ranks by brute-force cosine (`SemanticSearch`); `internal/embed`
 drives incremental embedding runs against the OpenAI-compatible gateway. See
-SPEC-0019 for requirements and [ADR-0025](../../../adr/0025-late-interaction-retrieval.md)
+SPEC-0019 for requirements and [ADR-0030](../../../adr/0030-late-interaction-retrieval.md)
 for the decision rationale and rejected alternatives (rerank-only, no-op).
 
 ## Goals / Non-Goals

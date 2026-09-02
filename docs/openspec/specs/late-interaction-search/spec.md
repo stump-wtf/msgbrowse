@@ -1,7 +1,7 @@
 ---
 status: draft
 date: 2026-08-26
-implements: [ADR-0025]
+implements: [ADR-0030]
 extends: [SPEC-0002]
 ---
 
@@ -14,7 +14,7 @@ extends: [SPEC-0002]
 - **Extends:** [SPEC-0002 (Search)](../search/spec.md) — replaces the retrieval
   mechanism behind REQ-0002-004/005; keyword search, hybrid fusion, and the
   web/MCP result contract are unchanged.
-- See [ADR-0025](../../../adr/0025-late-interaction-retrieval.md) for the why.
+- See [ADR-0030](../../../adr/0030-late-interaction-retrieval.md) for the why.
 
 ## Overview
 

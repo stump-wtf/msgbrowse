@@ -1,8 +1,8 @@
-# 25. Late-interaction retrieval for semantic search
+# ADR-0030: Late-interaction retrieval for semantic search
 
-- Status: proposed
-- Date: 2026-08-26
-- Related: [ADR-0002](0002-vector-backend.md) (vector backend), [ADR-0013](0013-pure-go-sqlite-driver.md) (pure-Go driver), [SPEC-0002](../openspec/specs/search/spec.md) (Search)
+- **Status:** Proposed
+- **Date:** 2026-08-26
+- **Related:** [ADR-0002](0002-vector-backend.md) (vector backend), [ADR-0013](0013-pure-go-sqlite-driver.md) (pure-Go driver), [SPEC-0002](../openspec/specs/search/spec.md) (Search)
 
 ## Context and Problem Statement
 
