@@ -100,8 +100,11 @@ sequenceDiagram
 
 ## Risks / Trade-offs
 
-- **Storage growth (~2–10×)** → cap tokens per message at 256; verify-mode
-  reports bytes; revisit compression only if it actually hurts.
+- **Storage growth on long messages** (int8 costs ~130 B/token, so anything over
+  ~47 tokens exceeds today's flat 6 KiB pooled vector) → cap tokens per message
+  at 256, bounding a blob at ~32 KiB; verify-mode reports bytes; revisit
+  compression only if it actually hurts. Short messages — most of the archive —
+  cost less than the index they replace.
 - **Local model operational burden** (download, updates) → pinned model version
   in config; endpoint health surfaced on Status; embed runs fail loudly rather
   than silently skipping.

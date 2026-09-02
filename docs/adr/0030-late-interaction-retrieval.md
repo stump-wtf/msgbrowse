@@ -46,12 +46,19 @@ Should msgbrowse switch?
 Chosen option: **(2) a self-hosted late-interaction encoder**, because it is the
 only option that improves recall (not just reranking) and yields token-level
 explainability, while staying within the local-first, one-file constraints at
-personal-archive scale. Storage is the classic objection but quantized
-multi-vectors cost ~2–10× today's footprint (~1 KB vs ~150 B–6 KB per message),
-which SQLite absorbs without complaint at hundreds of thousands of messages.
-Cross-encoder reranking (option 3) is explicitly deferred as the fallback if the
-indexing cost proves annoying — it is a strictly smaller change and composes
-with either backend.
+personal-archive scale. Storage is the classic objection, and the honest
+numbers are better than the objection assumes. At int8 a token vector costs
+~130 B (128 dimensions plus per-vector norm bookkeeping), so a message costs
+that times its token count — against today's *flat* 6 KiB pooled 1536-dim
+float32 vector, paid on every message regardless of length. Break-even is around
+47 tokens: on a message archive, where most messages are far shorter, the
+multi-vector index is **smaller** than the pooled one it replaces, and only long
+messages cost more (capped at ~32 KiB by the 256-token limit). Binary 1-bit
+packing would cut this eightfold to 16 B/token and was considered, but rejected:
+retrieval quality is the entire point of this change, and storage was never the
+binding constraint. Cross-encoder reranking (option 3) is explicitly deferred
+as the fallback if the indexing cost proves annoying — it is a strictly smaller
+change and composes with either backend.
 
 ### Consequences
 

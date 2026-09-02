@@ -31,9 +31,10 @@ filters, caps, provenance, and observability surfaces from SPEC-0002 carry over.
 The store MUST persist per-token embeddings as a quantized multi-vector blob
 keyed by `(message_hash, model)`, exactly mirroring the schema-v3 coexistence
 rule: switching models MUST NOT require deleting the previous model's vectors.
-Each token vector MUST be stored at reduced precision (at most 16 bytes/token)
-with a documented layout. Messages whose embeddings are missing or stale for a
-model MUST be discoverable the same way `MessagesNeedingEmbedding` does today.
+Each token vector MUST be stored at **int8** precision per dimension (~130 B per
+token at 128 dimensions, including per-vector norm bookkeeping) with a documented
+layout. Messages whose embeddings are missing or stale for a model MUST be
+discoverable the same way `MessagesNeedingEmbedding` does today.
 
 #### Scenario: Model switch keeps both indexes
 
@@ -45,8 +46,12 @@ model MUST be discoverable the same way `MessagesNeedingEmbedding` does today.
 
 - **Given** a message of at most 256 tokens
 - **When** its multi-vector is written
-- **Then** the blob is at most 4 KiB (16 B/token), versus 6 KiB for today's
-  single 1536-dim float32 vector.
+- **Then** the blob is at most 32 KiB (~130 B/token at 128 dimensions).
+
+Per-message cost tracks token count, where today's pooled vector is a flat 6 KiB
+regardless of length. Break-even is around 47 tokens (6 KiB ÷ ~130 B): shorter
+messages — the large majority of an archive — cost *less* than the index they
+replace, and only long ones cost more.
 
 ### Requirement: Local late-interaction encoder
 
