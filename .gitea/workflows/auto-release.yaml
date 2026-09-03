@@ -1,0 +1,119 @@
+# Automatic dot releases
+#
+# Every push to main on the CANONICAL host (this Gitea repo) tags the next
+# patch version and drives the whole release train deterministically:
+#
+#   1. Tag this repo (vX.Y.Z+1) with a PAT, never the default Actions token —
+#      like GitHub, Gitea does not fire downstream workflows for pushes made
+#      with the built-in token, and a silent tag with no build is the exact
+#      failure this automation exists to end.
+#   2. Push the same tag to the GitHub mirror and workflow_dispatch
+#      desktop.yml on it, so the desktop matrix builds and publishes the
+#      GitHub Release (macOS runners only exist there). This bypasses the
+#      push-mirror's 8h sync interval, which otherwise delays the release by
+#      up to most of a day.
+#   3. workflow_dispatch pipeline.yaml on this repo at the new tag so its
+#      tap-bump job runs: it waits for the GitHub release assets, then bumps
+#      stump.wtf/homebrew-tap (formula + desktop cask) — the only runner
+#      that can reach both forges.
+#
+# Historically tags were cut by hand and the tap was bumped by hand, and
+# whenever either was forgotten `brew` kept serving an old version for days
+# (v0.8.1 shipped with the desktop cask stuck behind for days). Do not
+# reintroduce a manual step anywhere in this chain.
+#
+# This file lives under .gitea/workflows (not .github/workflows) so ONLY the
+# canonical host runs it — the GitHub mirror must never tag independently of
+# this repo, or the two hosts' version counters diverge.
+#
+# @joestump-agent 09/03/2026 - Created. Tags every main push with the next
+#   patch version; minor/major bumps stay manual (`git tag vX.Y.0`).
+
+name: Auto release
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: auto-release
+  cancel-in-progress: false
+
+jobs:
+  tag:
+    name: Tag next patch version
+    runs-on: ubuntu-latest
+    env:
+      GH_MIRROR_URL: https://github.com/stump-wtf/msgbrowse.git
+      GH_API: https://api.github.com/repos/stump-wtf/msgbrowse
+      GITEA_API: https://gitea.stump.rocks/api/v1/repos/stump.wtf/msgbrowse
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Compute and push the next patch tag
+        env:
+          TAP_PUSH_TOKEN: ${{ secrets.TAP_PUSH_TOKEN }}
+          GH_MIRROR_TOKEN: ${{ secrets.GH_MIRROR_TOKEN }}
+        run: |
+          set -euo pipefail
+          [ -n "${TAP_PUSH_TOKEN:-}" ] || {
+            echo "::error::TAP_PUSH_TOKEN is not set. Add a Gitea PAT with" \
+                 "write:repository as an Actions secret. Without it the tag" \
+                 "lands but no build or tap bump runs."
+            exit 1
+          }
+          [ -n "${GH_MIRROR_TOKEN:-}" ] || {
+            echo "::error::GH_MIRROR_TOKEN is not set. Add a GitHub PAT with" \
+                 "contents:write on stump-wtf/msgbrowse as an Actions secret." \
+                 "Without it the desktop build never runs."
+            exit 1
+          }
+          latest=$(git tag -l 'v*' --sort=-v:refname | head -1)
+          latest=${latest#v}
+          IFS=. read -r major minor patch <<< "${latest:-0.0.0}"
+          next="v${major}.${minor}.$((patch + 1))"
+          echo "tagging $next (previous: v${latest:-none})"
+          echo "NEXT_TAG=${next}" >> "$GITHUB_ENV"
+          git config user.name "joestump-agent"
+          git config user.email "joestump-agent@noreply.stump.rocks"
+          git tag -a "$next" -m "Automated release ${next}"
+          # PAT pushes fire downstream workflows; default-token pushes do not.
+          git -c "http.extraheader=Authorization: token ${TAP_PUSH_TOKEN}" \
+            push origin "${next}"
+
+      - name: Push the tag to the GitHub mirror and dispatch the desktop build
+        env:
+          TAP_PUSH_TOKEN: ${{ secrets.TAP_PUSH_TOKEN }}
+          GH_MIRROR_TOKEN: ${{ secrets.GH_MIRROR_TOKEN }}
+        run: |
+          set -euo pipefail
+          TAG="${NEXT_TAG}"
+          git -c "http.extraheader=Authorization: Basic $(printf 'x-access-token:%s' "$GH_MIRROR_TOKEN" | base64)" \
+            push "${GH_MIRROR_URL}" "${TAG}"
+          code=$(curl -s -o /dev/null -w '%{http_code}' -X POST \
+            -H "Authorization: token ${GH_MIRROR_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            "${GH_API}/actions/workflows/desktop.yml/dispatches" \
+            -d "{\"ref\":\"${TAG}\"}")
+          echo "desktop dispatch on ${TAG}: HTTP ${code}"
+          [ "$code" = "204" ]
+
+      - name: Dispatch the tap bump on this host
+        # pipeline.yaml's tap-bump job waits for the GitHub assets and bumps
+        # the Homebrew tap. Dispatching it explicitly rather than relying on
+        # the tag push event keeps the chain deterministic.
+        env:
+          TAP_PUSH_TOKEN: ${{ secrets.TAP_PUSH_TOKEN }}
+        run: |
+          set -euo pipefail
+          TAG="${NEXT_TAG}"
+          code=$(curl -s -o /dev/null -w '%{http_code}' -X POST \
+            -H "Authorization: token ${TAP_PUSH_TOKEN}" \
+            -H "Content-Type: application/json" \
+            "${GITEA_API}/actions/workflows/pipeline.yaml/dispatches" \
+            -d "{\"ref\":\"${TAG}\"}")
+          echo "pipeline dispatch on ${TAG}: HTTP ${code}"
+          [ "$code" = "204" ]

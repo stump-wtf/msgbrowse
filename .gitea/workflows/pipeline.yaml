@@ -27,6 +27,10 @@ on:
   push:
     branches: [main]
     tags: ["v*"]
+  # workflow_dispatch is how auto-release.yaml re-runs this pipeline on a new
+  # tag so tap-bump fires deterministically instead of depending on tag push
+  # event delivery.
+  workflow_dispatch:
   pull_request:
 
 permissions:
@@ -207,7 +211,7 @@ jobs:
   # how three releases shipped with nobody noticing.
   tap-bump:
     needs: [build]
-    if: ${{ github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') }}
+    if: ${{ (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && startsWith(github.ref, 'refs/tags/v') }}
     runs-on: ubuntu-latest
     env:
       TAP_PUSH_TOKEN: ${{ secrets.TAP_PUSH_TOKEN }}
