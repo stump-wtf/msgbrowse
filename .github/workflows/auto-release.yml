@@ -1,0 +1,50 @@
+# Automatic dot releases
+#
+# Every push to main tags the next patch version. The tag push is what
+# drives the rest of the release train: .github/workflows/desktop.yml builds
+# and publishes the release assets on this host, and the Gitea copy's
+# pipeline.yaml tap-bump job (the only runner that can reach both forges)
+# bumps stump.wtf/homebrew-tap from those assets once they appear.
+#
+# Without this trigger nothing releases on its own: tags were cut by hand,
+# and when that step was forgotten the tap never moved and `brew` kept
+# serving an old version for days.
+#
+# @joestump-agent 09/03/2026 - Created. Tags every main push with the next
+#   patch version; minor/major bumps stay manual (`git tag vX.Y.0`).
+
+name: Auto release
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: auto-release
+  cancel-in-progress: false
+
+jobs:
+  tag:
+    name: Tag next patch version
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Compute and push the next patch tag
+        run: |
+          set -euo pipefail
+          latest=$(git tag -l 'v*' --sort=-v:refname | head -1)
+          latest=${latest#v}
+          IFS=. read -r major minor patch <<< "${latest:-0.0.0}"
+          next="v${major}.${minor}.$((patch + 1))"
+          echo "tagging $next (previous: v${latest:-none})"
+          git config user.name "joestump-agent"
+          git config user.email "joestump-agent@noreply.stump.rocks"
+          git tag -a "$next" -m "Automated release ${next}"
+          git push origin "${next}"
