@@ -37,8 +37,20 @@ jobs:
           fetch-depth: 0
 
       - name: Compute and push the next patch tag
+        env:
+          # A tag pushed with the default GITHUB_TOKEN does NOT trigger other
+          # workflows (recursive-run prevention), which silently produced a
+          # tag with no build, no release, and no tap bump. Push with a PAT
+          # instead so desktop.yml fires on the tag event.
+          RELEASE_PUSH_TOKEN: ${{ secrets.RELEASE_PUSH_TOKEN }}
         run: |
           set -euo pipefail
+          if [ -z "${RELEASE_PUSH_TOKEN:-}" ]; then
+            echo "::error::RELEASE_PUSH_TOKEN is not set. Add a GitHub PAT" \
+                 "with contents:write on this repo as an Actions secret." \
+                 "Without it the tag lands but no build or tap bump runs."
+            exit 1
+          fi
           latest=$(git tag -l 'v*' --sort=-v:refname | head -1)
           latest=${latest#v}
           IFS=. read -r major minor patch <<< "${latest:-0.0.0}"
@@ -47,4 +59,5 @@ jobs:
           git config user.name "joestump-agent"
           git config user.email "joestump-agent@noreply.stump.rocks"
           git tag -a "$next" -m "Automated release ${next}"
-          git push origin "${next}"
+          git -c "http.extraheader=AUTHORIZATION: Basic $(printf 'x-access-token:%s' "$RELEASE_PUSH_TOKEN" | base64)" \
+            push "https://github.com/${GITHUB_REPOSITORY}.git" "${next}"
