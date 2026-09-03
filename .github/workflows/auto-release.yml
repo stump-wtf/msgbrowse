@@ -61,3 +61,22 @@ jobs:
           git tag -a "$next" -m "Automated release ${next}"
           git -c "http.extraheader=AUTHORIZATION: Basic $(printf 'x-access-token:%s' "$RELEASE_PUSH_TOKEN" | base64)" \
             push "https://github.com/${GITHUB_REPOSITORY}.git" "${next}"
+
+      - name: Trigger the Desktop build for the new tag
+        # Belt and braces: tag push events have proven unreliable as a
+        # trigger from inside a workflow run (a PAT-pushed tag produced zero
+        # Desktop runs), so dispatch desktop.yml on the tag ref explicitly.
+        # It is idempotent with the push trigger — Desktop is concurrency-
+        # safe per ref and its release job only publishes on tags.
+        env:
+          RELEASE_PUSH_TOKEN: ${{ secrets.RELEASE_PUSH_TOKEN }}
+        run: |
+          set -euo pipefail
+          latest=$(git tag -l 'v*' --sort=-v:refname | head -1)
+          code=$(curl -s -o /dev/null -w '%{http_code}' -X POST \
+            -H "Authorization: token ${RELEASE_PUSH_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/workflows/desktop.yml/dispatches" \
+            -d "{\"ref\":\"${latest}\"}")
+          echo "desktop dispatch on ${latest}: HTTP ${code}"
+          [ "$code" = "204" ]
