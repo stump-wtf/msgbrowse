@@ -76,7 +76,7 @@ func RunDay(ctx context.Context, st *store.Store, client llm.Client, opts Option
 		}
 		if ferr := st.FinishSentimentRun(finishCtx, store.SentimentRun{
 			ID: runID, FinishedAt: time.Now(),
-			DurationMS: time.Since(start).Milliseconds(),
+			DurationMS:    time.Since(start).Milliseconds(),
 			Conversations: sum.Conversations, Messages: sum.MessagesScored,
 			ScoresWritten: sum.RowsWritten, Batches: sum.Batches, Error: msg,
 		}); ferr != nil {
