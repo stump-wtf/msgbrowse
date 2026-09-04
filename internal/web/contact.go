@@ -31,7 +31,7 @@ type contactData struct {
 	// StatHUD is the profile's one derived-stat row (#450)
 	// (message volume, then pace/photos/active-hour), rendered through the
 	// shared "hud" define (#395) instead of hand-rolled markup.
-	StatHUD hudData
+	StatHUD   hudData
 	Bars      []sparkBar // message-volume sparkline (year-rolled), Go-normalized
 	SparkW    int
 	SparkH    int
