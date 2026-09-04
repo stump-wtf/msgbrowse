@@ -60,7 +60,6 @@ type ContactStats struct {
 	Photos           int
 	FirstTSUnix      int64
 	LastTSUnix       int64
-	MessagesPerDay   float64 // derived in Go
 }
 
 // MonthBucket is one "YYYY-MM" message-volume point for the sparkline. Months
@@ -207,7 +206,6 @@ SELECT f.fact, f.category, f.source, f.source_message_hash,
 
 // ContactStats returns the cheap scalar tiles in one scan: total, sent/received
 // (split by the owner sender), the epoch bounds, and photos shared.
-// MessagesPerDay is derived in Go.
 func (s *Store) ContactStats(ctx context.Context, contactID int64) (ContactStats, error) {
 	var st ContactStats
 	err := s.db.QueryRowContext(ctx, `
@@ -226,15 +224,6 @@ SELECT COUNT(*),
 		Scan(&st.TotalMessages, &st.SentMessages, &st.ReceivedMessages, &st.FirstTSUnix, &st.LastTSUnix, &st.Photos)
 	if err != nil {
 		return ContactStats{}, fmt.Errorf("contact stats: %w", err)
-	}
-	if st.TotalMessages > 0 && st.LastTSUnix > st.FirstTSUnix {
-		days := float64(st.LastTSUnix-st.FirstTSUnix) / 86400
-		if days < 1 {
-			days = 1
-		}
-		st.MessagesPerDay = float64(st.TotalMessages) / days
-	} else if st.TotalMessages > 0 {
-		st.MessagesPerDay = float64(st.TotalMessages)
 	}
 	return st, nil
 }

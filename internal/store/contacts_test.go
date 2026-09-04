@@ -104,9 +104,6 @@ func TestContactStatsAndVolume(t *testing.T) {
 	if stt.Photos != 1 {
 		t.Errorf("Photos = %d, want 1", stt.Photos)
 	}
-	if stt.MessagesPerDay <= 0 {
-		t.Errorf("MessagesPerDay = %v, want > 0", stt.MessagesPerDay)
-	}
 
 	vol, err := st.ContactMessageVolume(ctx, cid)
 	if err != nil {
