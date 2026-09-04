@@ -166,5 +166,25 @@ func (s *Server) overviewEmbedding(ctx context.Context) (embedStatusData, error)
 		d.LastError = run.Error
 		d.LastModel = run.Model
 	}
+	// "Last run" means the most recent FINISHED run (issue #443), independent
+	// of whether a newer one is in flight or stalled.
+	if !d.HasLastRun {
+		runs, rerr := s.store.RecentEmbedRuns(ctx, embedRunHistoryLimit)
+		if rerr != nil {
+			return d, rerr
+		}
+		for _, r := range runs {
+			if r.InFlight() {
+				continue
+			}
+			d.HasLastRun = true
+			d.LastFinished = r.FinishedAt.Local().Format(overviewTimeFormat)
+			d.LastEmbedded = r.Embedded
+			d.LastDurationMS = r.DurationMS
+			d.LastError = r.Error
+			d.LastModel = r.Model
+			break
+		}
+	}
 	return d, nil
 }

@@ -192,12 +192,40 @@ func (s *Server) sentimentBuildStatus(ctx context.Context) (sentimentBuildData, 
 		d.LastDurationMS = run.DurationMS
 		d.LastError = run.Error
 	}
+	// "Last run" means the most recent FINISHED run (issue #443), independent
+	// of whether a newer one is in flight or stalled.
+	if !d.HasLastRun {
+		if rerr := s.fillLastFinishedSentimentRun(ctx, &d); rerr != nil {
+			return d, rerr
+		}
+	}
 
 	d.History, err = s.sentimentRunHistory(ctx, sentimentRunHistoryLimit)
 	if err != nil {
 		return d, err
 	}
 	return d, nil
+}
+
+// fillLastFinishedSentimentRun finds the most recent finished scoring pass in
+// the history window and fills the tile from it (issue #443).
+func (s *Server) fillLastFinishedSentimentRun(ctx context.Context, d *sentimentBuildData) error {
+	runs, err := s.store.RecentSentimentRuns(ctx, sentimentRunHistoryLimit)
+	if err != nil {
+		return err
+	}
+	for _, r := range runs {
+		if r.InFlight() {
+			continue
+		}
+		d.HasLastRun = true
+		d.LastFinished = r.FinishedAt.Local().Format(overviewTimeFormat)
+		d.LastScores = r.ScoresWritten
+		d.LastDurationMS = r.DurationMS
+		d.LastError = r.Error
+		return nil
+	}
+	return nil
 }
 
 // sentimentRunHistory returns the most recent scoring passes classified for

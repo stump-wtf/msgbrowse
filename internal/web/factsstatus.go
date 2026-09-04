@@ -137,12 +137,40 @@ func (s *Server) factsBuildStatus(ctx context.Context) (factsBuildData, error) {
 		d.LastDurationMS = run.DurationMS
 		d.LastError = run.Error
 	}
+	// "Last run" means the most recent FINISHED run (issue #443), independent
+	// of whether a newer one is in flight or stalled.
+	if !d.HasLastRun {
+		if rerr := s.fillLastFinishedFactRun(ctx, &d); rerr != nil {
+			return d, rerr
+		}
+	}
 
 	d.History, err = s.factsRunHistory(ctx, factsRunHistoryLimit)
 	if err != nil {
 		return d, err
 	}
 	return d, nil
+}
+
+// fillLastFinishedFactRun finds the most recent finished extraction pass in
+// the history window and fills the tile from it (issue #443).
+func (s *Server) fillLastFinishedFactRun(ctx context.Context, d *factsBuildData) error {
+	runs, err := s.store.RecentFactRuns(ctx, factsRunHistoryLimit)
+	if err != nil {
+		return err
+	}
+	for _, r := range runs {
+		if r.InFlight() {
+			continue
+		}
+		d.HasLastRun = true
+		d.LastFinished = r.FinishedAt.Local().Format(overviewTimeFormat)
+		d.LastFacts = r.FactsAdded
+		d.LastDurationMS = r.DurationMS
+		d.LastError = r.Error
+		return nil
+	}
+	return nil
 }
 
 // factsRunHistory returns the most recent extraction passes classified for
