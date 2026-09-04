@@ -156,6 +156,19 @@ func Run(ctx context.Context, st *store.Store, opts Options) (store.IngestRun, e
 			"identifiers_rewritten", rep.IdentifiersRewritten,
 			"contacts_orphaned", rep.ContactsOrphaned)
 	}
+	// Name handle-minted contacts from the transcript's sender labels (#444):
+	// only contacts whose display_name still byte-equals one of their own
+	// identifiers are touched, so a human-set name is never overwritten.
+	// Best-effort, same as the identity repair above.
+	if nrep, nerr := st.RepairHandleNamedContacts(ctx); nerr != nil {
+		log.Error("handle-named contact repair failed (import committed; will retry next run)", "error", nerr)
+		run.Errors++
+	} else if nrep.Renamed > 0 {
+		log.Info("renamed handle-named contacts",
+			"scanned", nrep.Scanned,
+			"renamed", nrep.Renamed,
+			"renames", nrep.Renames)
+	}
 	if err := st.ReconcileContacts(ctx, nil); err != nil {
 		log.Error("contact reconcile failed (import committed; will retry next run)", "error", err)
 		run.Errors++
