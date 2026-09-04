@@ -30,15 +30,13 @@
         </div>
         {{/* Mirror affordance (#445): the conversation header gained a
              profile button; the profile gets "Open messages" back to the
-             contact's primary conversation. Hidden when the contact has no
-             linked thread. */}}
+             contact's primary conversation, right side of the header.
+             Hidden when the contact has no linked thread. */}}
         {{- if .C.Conversations}}
-        <div class="mt-3">
-          <a href="/c/{{(index .C.Conversations 0).ID}}" class="pin-btn"
-             hx-boost="true" hx-target="#main-content" hx-select="#main-content" hx-swap="outerHTML" hx-push-url="true">
-            <span>Open messages</span>
-          </a>
-        </div>
+        <a href="/c/{{(index .C.Conversations 0).ID}}" class="pin-btn shrink-0 self-center"
+           hx-boost="true" hx-target="#main-content" hx-select="#main-content" hx-swap="outerHTML" hx-push-url="true">
+          <span>Open messages</span>
+        </a>
         {{- end}}
         {{- if .C.Identifiers}}
         <div class="conv-ids mt-3">
@@ -52,8 +50,15 @@
       {{/* Message-volume sparkline — data-driven inline SVG (attributes only, no
            inline style; CSP-safe). Bars rolled up to years, accent-tinted. */}}
       {{- if .Bars}}
-      <section class="mb-8">
-        <div class="stat-cell-label mb-2">Message volume</div>
+      <section>
+        <div class="flex items-baseline justify-between gap-3 mb-2">
+          <div class="stat-cell-label">Message volume</div>
+          {{- if .Reactions}}
+          <div class="flex flex-wrap gap-3" title="Top reactions across this person's threads">
+            {{- range .Reactions}}<span class="flex items-baseline gap-1"><span class="text-base">{{.Emoji}}</span><span class="font-mono opacity-60 text-xs">×{{num .Count}}</span></span>{{- end}}
+          </div>
+          {{- end}}
+        </div>
         <svg class="spark" viewBox="0 0 {{.SparkW}} {{.SparkH}}" width="100%" role="img" aria-label="Messages per year">
           {{- range .Bars}}
           <rect x="{{.X}}" y="{{.Y}}" width="{{.W}}" height="{{.H}}" rx="2" fill="currentColor" fill-opacity="{{.Opacity}}"></rect>
@@ -65,20 +70,7 @@
 
       {{/* Derivable Profile stat tiles (two hud strips, #395). Deferred tiles
            — words, median reply, streak, sentiment, vocabulary — are Phase 2+. */}}
-      {{template "hud" .VolumeHUD}}
-      {{template "hud" .PaceHUD}}
-
-      {{/* Top reactions across all the contact's threads. */}}
-      {{- if .Reactions}}
-      <section class="mb-8">
-        <div class="stat-cell-label mb-2">Top reactions</div>
-        <div class="flex flex-wrap gap-5">
-          {{- range .Reactions}}
-          <span class="flex items-baseline gap-1"><span class="text-xl">{{.Emoji}}</span><span class="font-mono opacity-60 text-sm">×{{num .Count}}</span></span>
-          {{- end}}
-        </div>
-      </section>
-      {{- end}}
+      {{template "hud" .StatHUD}}
 
       {{/* Sentiment over time + the Big Five trait sketch (#367, delivering
            #313's SPEC-0027 surfaces). Additive to this page and rendered inside
@@ -95,12 +87,66 @@
            prints its construct name, its signed score, a direction in words and
            the sample it rests on. The <progress> element carries the same fact
            redundantly and keeps the page CSP-clean (no inline style). */}}
-      {{- if .Sentiment.Rendered}}
-      <section class="mb-8">
-        <div class="flex items-baseline gap-2 mb-2">
-          <h2 class="text-lg font-semibold">Expressed sentiment</h2>
-          {{- if .Sentiment.HasScores}}<span class="badge badge-sm badge-neutral">{{num .Sentiment.ScoredMessages}} scored messages</span>{{end}}
+      {{/* AI-gathered facts, grouped by category, each deep-linking to the
+           message it was drawn from (in that message's own conversation). */}}
+      <section class="mb-4">
+        <div class="flex items-baseline gap-2 mb-4">
+          <h2 class="text-lg font-semibold">AI-gathered facts</h2>
+          {{- if .FactGroups}}<span class="badge badge-sm badge-neutral">{{num .FactCount}} cited</span>{{end}}
         </div>
+        {{- if .FactGroups}}
+        {{- range .FactGroups}}
+        <div class="mb-4">
+          <div class="stat-cell-label mb-2">{{.Category}}</div>
+          <ul class="space-y-1.5">
+            {{- range .Facts}}
+            <li class="flex flex-wrap items-baseline gap-2 text-sm">
+              <span>{{.Fact}}</span>
+              {{- if and (gt .SourceMessageID 0) (gt .SourceConversationID 0)}}
+              <a class="opacity-50 hover:opacity-100 link link-hover text-xs font-mono"
+                 href="/c/{{.SourceConversationID}}/at/{{.SourceMessageID}}#m{{.SourceMessageID}}"
+                 title="Jump to the message this came from">{{dateLabel .SourceTS}}</a>
+              {{- else}}
+              <span class="opacity-40 text-xs font-mono">{{dateLabel .SourceTS}}</span>
+              {{- end}}
+            </li>
+            {{- end}}
+          </ul>
+        </div>
+        {{- end}}
+        <p class="mt-2 text-xs opacity-50">AI-generated from messages — may be incomplete or wrong. Each fact links to its source.</p>
+        {{- else if .FactsExtracted}}
+        {{/* Extraction HAS read this person and produced nothing — a real and
+             common outcome (a thread of pure logistics holds no durable facts).
+             Saying so is the whole point of #366: the identical blank panel
+             below used to render for this case too, so a never-configured
+             archive was indistinguishable from a considered verdict. */}}
+        <div class="notice-card">
+          <p class="link-card-title">No durable facts found.</p>
+          <p class="link-card-sub">Fact extraction has read {{num .FactScanned}} of {{num .FactConvTotal}}
+            conversations with this person and found nothing durable to record. New messages are analyzed on
+            the next run.</p>
+        </div>
+        {{- else}}
+        {{/* Extraction has never looked here. That is a configuration state
+             with a fix, so link to the control rather than leaving a dead end. */}}
+        <div class="notice-card">
+          <p class="link-card-title">Facts have not been extracted yet.</p>
+          <p class="link-card-sub">Nothing about this person has been analyzed. Start extraction on the
+            <a href="/settings/facts" class="link link-hover">Settings &rarr; Facts</a> tab, or run
+            <code class="font-mono">msgbrowse facts</code> from the command line.</p>
+        </div>
+        {{- end}}
+      </section>
+      {{/* Expressed sentiment, COLLAPSED by default (#450): the scores are
+           the least important thing on this page until the reader asks for
+           them, so they live in a native <details> at the bottom — closed,
+           CSP-clean, no JS. The trait-sketch "needs 50" paragraph only ever
+           appears inside the open details, never as an empty card. */}}
+      <details class="status-card">
+      {{- if .Sentiment.Rendered}}
+        <summary class="font-semibold text-sm cursor-pointer">Expressed sentiment
+          {{- if .Sentiment.HasScores}} · <span class="font-mono opacity-60">{{num .Sentiment.ScoredMessages}} scored messages</span>{{end}}</summary>
         {{/* The uncertainty disclaimer sits WITH the numbers, not in a footnote.
              SPEC-0027 requires it, and internal/sentiment/prompt.go frames the
              scoring task the same way ("You are scoring text, not people") — a
@@ -188,60 +234,9 @@
             <a href="/settings/llm" class="link link-hover">Settings &rarr; LLM</a> tab.</p>
         </div>
         {{- end}}
-      </section>
+      </div>
       {{- end}}
-
-      {{/* AI-gathered facts, grouped by category, each deep-linking to the
-           message it was drawn from (in that message's own conversation). */}}
-      <section class="mb-4">
-        <div class="flex items-baseline gap-2 mb-4">
-          <h2 class="text-lg font-semibold">AI-gathered facts</h2>
-          {{- if .FactGroups}}<span class="badge badge-sm badge-neutral">{{num .FactCount}} cited</span>{{end}}
-        </div>
-        {{- if .FactGroups}}
-        {{- range .FactGroups}}
-        <div class="mb-4">
-          <div class="stat-cell-label mb-2">{{.Category}}</div>
-          <ul class="space-y-1.5">
-            {{- range .Facts}}
-            <li class="flex flex-wrap items-baseline gap-2 text-sm">
-              <span>{{.Fact}}</span>
-              {{- if and (gt .SourceMessageID 0) (gt .SourceConversationID 0)}}
-              <a class="opacity-50 hover:opacity-100 link link-hover text-xs font-mono"
-                 href="/c/{{.SourceConversationID}}/at/{{.SourceMessageID}}#m{{.SourceMessageID}}"
-                 title="Jump to the message this came from">{{dateLabel .SourceTS}}</a>
-              {{- else}}
-              <span class="opacity-40 text-xs font-mono">{{dateLabel .SourceTS}}</span>
-              {{- end}}
-            </li>
-            {{- end}}
-          </ul>
-        </div>
-        {{- end}}
-        <p class="mt-2 text-xs opacity-50">AI-generated from messages — may be incomplete or wrong. Each fact links to its source.</p>
-        {{- else if .FactsExtracted}}
-        {{/* Extraction HAS read this person and produced nothing — a real and
-             common outcome (a thread of pure logistics holds no durable facts).
-             Saying so is the whole point of #366: the identical blank panel
-             below used to render for this case too, so a never-configured
-             archive was indistinguishable from a considered verdict. */}}
-        <div class="notice-card">
-          <p class="link-card-title">No durable facts found.</p>
-          <p class="link-card-sub">Fact extraction has read {{num .FactScanned}} of {{num .FactConvTotal}}
-            conversations with this person and found nothing durable to record. New messages are analyzed on
-            the next run.</p>
-        </div>
-        {{- else}}
-        {{/* Extraction has never looked here. That is a configuration state
-             with a fix, so link to the control rather than leaving a dead end. */}}
-        <div class="notice-card">
-          <p class="link-card-title">Facts have not been extracted yet.</p>
-          <p class="link-card-sub">Nothing about this person has been analyzed. Start extraction on the
-            <a href="/settings/facts" class="link link-hover">Settings &rarr; Facts</a> tab, or run
-            <code class="font-mono">msgbrowse facts</code> from the command line.</p>
-        </div>
-        {{- end}}
-      </section>
+      </details>
 
     </div>
   </div>

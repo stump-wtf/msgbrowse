@@ -464,7 +464,7 @@
      hardcoded to .ConversationCount/.TotalMessages/.NewestTS) and
      contact.html's two hand-rolled stat-strips with this one define. */}}
 {{define "hud"}}
-    <div class="hud{{if .Class}} {{.Class}}{{end}}">
+    <div class="hud{{if .Class}} {{.Class}}{{end}}{{if eq .Cols 4}} hud-4{{end}}">
     {{- range .Cells}}
         <div class="stat-cell">
           <div class="stat-cell-label">{{.Label}}</div>

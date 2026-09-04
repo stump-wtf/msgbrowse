@@ -305,3 +305,26 @@ SELECT emoji, COUNT(*) n FROM reactions
 	}
 	return out, rows.Err()
 }
+
+// ContactMostActiveWeekday returns the weekday name (UTC, matching every other
+// day-bucketed surface's ADR-0023 frame) the contact is most active on. ok is
+// false when the contact has no real messages.
+//
+// @joestump-agent 09/04/2026 - Added with #450 (the "Most active" HUD tile).
+func (s *Store) ContactMostActiveWeekday(ctx context.Context, contactID int64) (string, bool, error) {
+	var wd int
+	e := s.db.QueryRowContext(ctx, `
+SELECT CAST(strftime('%w', ts_unix, 'unixepoch') AS INTEGER) AS wd, COUNT(*) n
+  FROM messages
+ WHERE conversation_id IN (SELECT id FROM conversations WHERE contact_id = ?)
+   AND is_system = 0
+ GROUP BY wd ORDER BY n DESC, wd LIMIT 1`, contactID).Scan(&wd)
+	if e == sql.ErrNoRows {
+		return "", false, nil
+	}
+	if e != nil {
+		return "", false, fmt.Errorf("contact most active weekday: %w", e)
+	}
+	names := []string{"Sundays", "Mondays", "Tuesdays", "Wednesdays", "Thursdays", "Fridays", "Saturdays"}
+	return names[wd], true, nil
+}

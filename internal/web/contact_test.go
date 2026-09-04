@@ -87,7 +87,7 @@ func TestContactFullPageRenders(t *testing.T) {
 	body := rec.Body.String()
 	for _, want := range []string{
 		`<main id="main-content"`, "Chelsea", "Message volume", "AI-gathered facts",
-		"Has a brother named Sean", "Messages", "Most active hour",
+		"Has a brother named Sean", "Messages", "Most active",
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("full page missing %q", want)
@@ -157,4 +157,52 @@ func TestContactEscapesFactMarkup(t *testing.T) {
 	if !strings.Contains(body, "&lt;script&gt;alert(1)&lt;/script&gt;") {
 		t.Error("fact markup should appear HTML-escaped")
 	}
+}
+
+// TestContactProfileLayout (#450): one stat row of four tiles, facts before a
+// collapsed sentiment details card, reactions inside the sparkline header —
+// the profile reads calm instead of overwhelming.
+func TestContactProfileLayout(t *testing.T) {
+	srv, st, _ := newTestServer(t)
+	body := get(t, srv, "/contact/"+itoa(contactIDFrom(t, st))).Body.String()
+
+	// One hud, four cells, and no second strip.
+	if got := strings.Count(body, `class="hud`); got != 1 {
+		t.Fatalf("hud count = %d, want exactly 1", got)
+	}
+	for _, want := range []string{"Most active", "You sent", "Received"} {
+		if !contains(body, want) {
+			t.Errorf("stat row missing %q", want)
+		}
+	}
+	if contains(body, "Messages / day") || contains(body, "Photos shared") {
+		t.Error("dropped tiles (messages/day, photos) still render")
+	}
+	// Reactions live in the sparkline header, not their own section.
+	if contains(body, "Top reactions") {
+		t.Error("standalone Top reactions section should be gone")
+	}
+	// Sentiment is a closed <details> BELOW the facts card.
+	sent := strings.Index(body, `<details class="status-card">`)
+	facts := strings.Index(body, "AI-gathered facts")
+	if sent < 0 {
+		t.Fatal("sentiment details card missing")
+	}
+	if facts < 0 || facts > sent {
+		t.Errorf("facts (%d) must render above the sentiment details (%d)", facts, sent)
+	}
+	if !contains(body, "Expressed sentiment") {
+		t.Error("details summary missing its summary line")
+	}
+}
+
+// contactIDFrom resolves the contact linked to the fixture conversation.
+func contactIDFrom(t *testing.T, st *store.Store) int64 {
+	t.Helper()
+	var id int64
+	if err := st.DB().QueryRow(
+		`SELECT c.contact_id FROM conversations c WHERE c.contact_id IS NOT NULL LIMIT 1`).Scan(&id); err != nil {
+		t.Fatalf("linked contact: %v", err)
+	}
+	return id
 }

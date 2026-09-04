@@ -1453,6 +1453,13 @@ a.meta-chip:hover {
   /* The cells carry the padding; the hud is only the frame around them. */
   padding: 0;
 }
+/* Four-cell variant (#450): the contact profile's single stat row carries a
+   fourth tile (Most active). Same frame and dividers; only the column count
+   differs. TestHUDBuildersMatchTheGrid pins builder cell counts to whichever
+   variant the builder emits. */
+.hud.hud-4 {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
 /* Hairline dividers between cells (not on the first). */
 .stat-cell {
   padding: var(--surface-pad);
