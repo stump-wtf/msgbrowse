@@ -66,13 +66,20 @@ desktop and browser modes.
 The desktop app MUST present a native application menu with standard quit
 semantics (Cmd+Q on macOS, and the platform's conventional equivalents), MUST
 appear in the platform's application switcher (macOS Dock presence with the
-app icon), and MUST set a meaningful window title. Open-at-login registration
-MAY be provided.
+app icon), and MUST set a meaningful window title. On macOS the app menu MUST
+carry an About item with the standard Cmd+, accelerator, showing the app
+version, build, and the resolved bundled-tool versions. Open-at-login
+registration MAY be provided.
 
 #### Scenario: Quit from the menu
 
 - **WHEN** the user invokes Quit from the application menu (or Cmd+Q on macOS)
 - **THEN** the window closes and the process exits after the embedded server shuts down cleanly.
+
+#### Scenario: About from the menu (issue #429)
+
+- **WHEN** the user chooses "About msgbrowse" from the app menu (or presses Cmd+,) on macOS
+- **THEN** a native About panel appears showing the app version, build SHA, and the bundled-tool versions the startup integrity check has verified.
 
 ### Requirement: Menubar residency
 
