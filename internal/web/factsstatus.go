@@ -66,6 +66,10 @@ type factsBuildData struct {
 	// Facts and Contacts are the archive-wide totals the card reports.
 	Facts    int
 	Contacts int
+	// OrphanFacts is how many stored facts cite a source message that no
+	// longer exists (#447) — the count the card's reap note reports. They are
+	// removed automatically at the start of the next extraction pass.
+	OrphanFacts int
 
 	InProgress bool // live fact_runs heartbeat
 	Stalled    bool // unfinished run whose heartbeat went cold
@@ -113,6 +117,11 @@ func (s *Server) factsBuildStatus(ctx context.Context) (factsBuildData, error) {
 	}
 	d.Conversations, d.Processed, d.Productive = cov.Conversations, cov.Processed, cov.Productive
 	d.Facts, d.Contacts, d.Remaining = cov.Facts, cov.Contacts, cov.Remaining()
+	if n, oerr := s.store.CountOrphanFacts(ctx); oerr == nil {
+		d.OrphanFacts = n
+	} else {
+		s.log.Warn("facts: could not count orphaned facts", "error", oerr)
+	}
 	if cov.Conversations > 0 {
 		d.Percent = cov.Processed * 100 / cov.Conversations
 	}

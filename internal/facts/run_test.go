@@ -286,3 +286,45 @@ func TestRunRecordsRunLog(t *testing.T) {
 		t.Errorf("run error = %q, want the abort reason", run.Error)
 	}
 }
+
+// TestRunReapsOrphanFactsFirst (issue #447): a run deletes facts citing
+// messages that a re-import invalidated before extracting, reports the count,
+// and folds it into the run record's message.
+func TestRunReapsOrphanFactsFirst(t *testing.T) {
+	st := openStore(t)
+	ctx := context.Background()
+	seed(t, st, source.Signal, "Alex")
+
+	var contactID int64
+	if err := st.DB().QueryRow(`SELECT contact_id FROM conversations WHERE name = 'Alex'`).Scan(&contactID); err != nil {
+		t.Fatal(err)
+	}
+
+	// An orphan: cites a hash no message carries.
+	orphan := store.FactInput{ContactID: contactID, Fact: "stale orphan", Category: "c",
+		Source: source.Signal, SourceMessageHash: "no-such-hash", SourceTS: "2020-01-01 00:00:00", Model: "test"}
+	if added, err := st.PutFact(ctx, orphan); err != nil || !added {
+		t.Fatalf("seed orphan: added=%v err=%v", added, err)
+	}
+
+	client := &fakeClient{resp: `[{"fact":"Likes hiking","category":"preferences","evidence":1}]`}
+	sum, err := Run(ctx, st, client, Options{Model: "test-model", Logger: quietLogger()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sum.FactsReaped != 1 {
+		t.Fatalf("FactsReaped = %d, want 1", sum.FactsReaped)
+	}
+	if n, _ := st.CountOrphanFacts(ctx); n != 0 {
+		t.Fatalf("orphan survived the reap: %d", n)
+	}
+
+	// The run record carries the reap count in its message.
+	runs, err := st.RecentFactRuns(ctx, 1)
+	if err != nil || len(runs) != 1 {
+		t.Fatalf("recent runs: %v (n=%d)", err, len(runs))
+	}
+	if !strings.Contains(runs[0].Error, "1 orphaned facts reaped") {
+		t.Errorf("run record = %q, want the reap count", runs[0].Error)
+	}
+}

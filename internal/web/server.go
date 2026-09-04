@@ -59,6 +59,7 @@ type Store interface {
 	ContactMessageVolume(ctx context.Context, contactID int64) ([]store.MonthBucket, error)
 	ContactMostActiveHour(ctx context.Context, contactID int64) (int, int, bool, error)
 	ContactMostActiveWeekday(ctx context.Context, contactID int64) (string, bool, error)
+	CountOrphanFacts(ctx context.Context) (int, error)
 	ContactTopReactions(ctx context.Context, contactID int64, limit int) ([]store.EmojiCount, error)
 	GetMessages(ctx context.Context, convID, cursorTSUnix, cursorID int64, limit int, desc bool) (*store.Page, error)
 	GetContext(ctx context.Context, messageID int64, window int) ([]store.MessageView, error)

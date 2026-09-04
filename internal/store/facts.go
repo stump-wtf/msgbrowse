@@ -543,3 +543,33 @@ SELECT COUNT(*), COALESCE(SUM(CASE WHEN fs.conversation_id IS NOT NULL THEN 1 EL
 	}
 	return out, nil
 }
+
+// ReapOrphanFacts deletes facts whose source message no longer exists — a
+// re-import can shift timestamps and hashes (DST / export timezone), which
+// invalidates citations and left 51% of the live archive's facts orphaned
+// (issue #447). Runs at the start of every extraction pass; idempotent.
+// Returns how many rows were removed.
+//
+// @joestump-agent 09/04/2026 - Added with #447.
+func (s *Store) ReapOrphanFacts(ctx context.Context) (int64, error) {
+	res, err := s.db.ExecContext(ctx, `
+DELETE FROM contact_facts
+ WHERE source_message_hash <> ''
+   AND source_message_hash NOT IN (SELECT hash FROM messages)`)
+	if err != nil {
+		return 0, fmt.Errorf("reap orphan facts: %w", err)
+	}
+	n, _ := res.RowsAffected()
+	return n, nil
+}
+
+// CountOrphanFacts reports how many facts cite a source message that no longer
+// exists — the number Settings → Facts shows beside the reap note (issue #447).
+func (s *Store) CountOrphanFacts(ctx context.Context) (int, error) {
+	var n int
+	err := s.db.QueryRowContext(ctx, `
+SELECT COUNT(*) FROM contact_facts
+ WHERE source_message_hash <> ''
+   AND source_message_hash NOT IN (SELECT hash FROM messages)`).Scan(&n)
+	return n, err
+}
