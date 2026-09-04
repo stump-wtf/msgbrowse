@@ -62,8 +62,10 @@ func TestFactsOrphanCountSurfaces(t *testing.T) {
 	if err := st.DB().QueryRow(`SELECT id, contact_id FROM conversations WHERE name = 'Harper'`).Scan(&convID, &contactID); err != nil {
 		t.Fatalf("find Harper: %v", err)
 	}
-	orphan := store.FactInput{ContactID: contactID, Fact: "cites a vanished message", Category: "c",
-		Source: source.Signal, SourceMessageHash: "no-such-hash", SourceTS: "2020-01-01 00:00:00", Model: "test"}
+	orphan := store.FactInput{
+		ContactID: contactID, Fact: "cites a vanished message", Category: "c",
+		Source: source.Signal, SourceMessageHash: "no-such-hash", SourceTS: "2020-01-01 00:00:00", Model: "test",
+	}
 	if added, err := st.PutFact(ctx, orphan); err != nil || !added {
 		t.Fatalf("seed orphan: added=%v err=%v", added, err)
 	}
