@@ -68,6 +68,16 @@ func WithExternalOpener(fn func(url string) error) Option {
 	return func(s *web.Server) { s.SetExternalOpener(fn) }
 }
 
+// WithAutostart wires the shell's launch-at-login registration into the
+// settings surface (issue #430): the MCP page renders its toggle and owns
+// the POST. The registration itself is pure Go (internal/autostart) — a
+// LaunchAgent plist on macOS, an XDG autostart entry on Linux — both boots
+// passing --hidden (menubar-only). Unsupported platforms never pass one, so
+// the toggle renders nowhere it cannot work.
+func WithAutostart(a web.Autostarter) Option {
+	return func(s *web.Server) { s.SetAutostart(a) }
+}
+
 // desktopChromeFor reports whether served pages should carry the
 // desktop-chrome presentation flag (issue #165) for the given GOOS: only
 // macOS hides the native title bar (mac.TitleBarHiddenInset in main.go) and

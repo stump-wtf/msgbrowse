@@ -217,6 +217,10 @@ type Server struct {
 	// Wired via SetExternalOpener by the shell only; nil (browser mode) leaves
 	// POST /desktop/open-url answering 404.
 	externalOpener func(url string) error
+	// autostart is the desktop shell's launch-at-login registration (issue
+	// #430). Wired via SetAutostart by the shell only; nil (browser mode)
+	// renders no toggle and leaves POST /settings/autostart unregistered.
+	autostart Autostarter
 	// llmConfig is the live LLM settings source behind the Settings → LLM tab
 	// (#191): serve and the desktop shell wire an llm.Applier over the shared
 	// llm.Holder via SetLLMConfig. nil renders the tab from llmBoot and makes
@@ -648,6 +652,12 @@ func (s *Server) routes() http.Handler {
 	// desktop-chrome flag and the Setup POSTs' same-origin rigor inside.
 	if s.externalOpener != nil {
 		mux.HandleFunc("POST /desktop/open-url", s.handleOpenURL)
+	}
+	// Launch-at-login toggle (issue #430): same registration-only-when-wired
+	// contract as the open-url bridge above — browser mode never sees the
+	// route, and the settings page never sees a dead toggle.
+	if s.autostart != nil {
+		mux.HandleFunc("POST /settings/autostart", s.handleAutostart)
 	}
 
 	return gzipMiddleware(securityHeaders(mux))

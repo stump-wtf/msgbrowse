@@ -101,6 +101,37 @@
     </section>
 {{end}}
 
+{{/* autostart_card (issue #430): the desktop shell's launch-at-login
+     toggle. Rendered ONLY when the shell wired a registration
+     (.AutostartAvailable) — browser mode never sees the card, and the POST
+     route it submits to does not exist there. The form carries the same
+     hidden setup_token gate as the pair form; boots are menubar-only
+     (--hidden), per SPEC-0010 "Menubar residency". */}}
+{{define "autostart_card"}}
+  {{if .AutostartAvailable}}
+    {{if eq .AutostartResult "ok"}}
+        {{template "status_banner" dict "variant" "success" "title" "Launch at login updated." "body" "The change takes effect the next time you log in."}}
+    {{else if eq .AutostartResult "error"}}
+        {{template "status_banner" dict "variant" "error" "title" "Could not update launch at login." "body" "See Logs for details and try again."}}
+    {{end}}
+    <section class="status-card space-y-4" aria-labelledby="settings-autostart-heading">
+      <h2 id="settings-autostart-heading" class="status-card-title">Desktop app</h2>
+      <p class="status-note">Start msgbrowse automatically when you log in, hidden up in the
+        menubar — no window opens until you choose View Messages.</p>
+      <form method="post" action="/settings/autostart" class="flex items-center gap-3">
+        <input type="hidden" name="setup_token" value="{{.SetupToken}}">
+        <input type="hidden" name="enabled" value="{{if .AutostartEnabled}}off{{else}}on{{end}}">
+        <button type="submit" class="btn{{if .AutostartEnabled}} btn-secondary{{end}}">
+          {{if .AutostartEnabled}}Disable launch at login{{else}}Enable launch at login{{end}}
+        </button>
+        <span class="status-note">
+          {{if .AutostartEnabled}}Enabled{{else}}Off{{end}}
+        </span>
+      </form>
+    </section>
+  {{end}}
+{{end}}
+
 {{/* settings_content is the boosted-swap unit (SPEC-0008 REQ-0008-006, the
      *_content pattern): <title> keeps history entries titled; the define owns
      <main id="main-content"> so partial responses carry no shell.
@@ -133,6 +164,7 @@
          in the page shell (page_end, #14) — no per-page region needed. */}}
 
     {{template "mcp_connect_card" .}}
+    {{template "autostart_card" .}}
 
     {{/* Device sync (SPEC-0014 REQ "Pairing via Device ID and QR"): the QR and
          manual code carry this node's PUBLIC Syncthing device ID + folder
