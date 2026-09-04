@@ -361,7 +361,12 @@ func gridAndLegend(t *testing.T, body string) (grid, legend string) {
 	t.Helper()
 	gridStart := strings.Index(body, `class="journal-cal-grid"`)
 	legendStart := strings.Index(body, `class="journal-cal-legend"`)
-	legendEnd := strings.Index(body, `class="journal-stats"`)
+	// #442 moved the (year-scoped) stats strip above the calendar, so the
+	// legend now runs to the day card rather than to the stats strip.
+	legendEnd := strings.Index(body, `id="journal-day-card"`)
+	if legendEnd < 0 {
+		legendEnd = len(body)
+	}
 	if gridStart < 0 || legendStart <= gridStart || legendEnd <= legendStart {
 		t.Fatalf("could not locate the grid and legend regions (grid %d, legend %d, end %d)", gridStart, legendStart, legendEnd)
 	}

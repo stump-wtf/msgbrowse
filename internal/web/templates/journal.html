@@ -43,6 +43,20 @@
         {{- end}}
       </header>
 
+      {{/* Year stats strip (#442): JournalStats is a YEAR rollup, so it lives
+           beside the year tabs — above the calendar, labelled with the year in
+           view — instead of between the month grid and the day card, where it
+           read as if it described the selected day. */}}
+      {{- if .Years}}
+      <div class="journal-stats mb-5">
+        <div class="journal-stat"><span class="journal-stat-value">{{.ActiveYear}}</span><span class="journal-stat-label">year in view</span></div>
+        <div class="journal-stat"><span class="journal-stat-value">{{num .Stats.DaysWithEntries}}</span><span class="journal-stat-label">days with entries</span></div>
+        <div class="journal-stat"><span class="journal-stat-value">{{num .Stats.LongestStreakDays}}</span><span class="journal-stat-label">longest streak</span></div>
+        {{- if .WeekdayLabel}}<div class="journal-stat"><span class="journal-stat-value">{{.WeekdayLabel}}</span><span class="journal-stat-label">most active</span></div>{{- end}}
+        {{- if .PeakHourLabel}}<div class="journal-stat"><span class="journal-stat-value">{{.PeakHourLabel}}</span><span class="journal-stat-label">peak hour</span></div>{{- end}}
+      </div>
+      {{- end}}
+
       {{/* Empty state (#238): the Journal is now a header tab, so this is a
            destination a user lands on deliberately — it has to say what the
            surface is and how to fill it. Build controls live on the
@@ -114,12 +128,6 @@
           <span class="journal-legend-item" title="No editorial digest and no sentiment scores for this day yet"><span class="cal-dot cal-day--unanalyzed"></span>not analysed yet</span>
           <span class="journal-legend-item" title="This day&rsquo;s digest predates later messages on the same day"><span class="cal-dot cal-day--stale"></span>out of date</span>
           <span class="journal-legend-item"><span class="cal-dot cal-day--none"></span>no messages</span>
-        </div>
-        <div class="journal-stats">
-          <div class="journal-stat"><span class="journal-stat-value">{{num .Stats.DaysWithEntries}}</span><span class="journal-stat-label">days with entries</span></div>
-          <div class="journal-stat"><span class="journal-stat-value">{{num .Stats.LongestStreakDays}}</span><span class="journal-stat-label">longest streak</span></div>
-          {{- if .WeekdayLabel}}<div class="journal-stat"><span class="journal-stat-value">{{.WeekdayLabel}}</span><span class="journal-stat-label">most active</span></div>{{- end}}
-          {{- if .PeakHourLabel}}<div class="journal-stat"><span class="journal-stat-value">{{.PeakHourLabel}}</span><span class="journal-stat-label">peak hour</span></div>{{- end}}
         </div>
       </section>
 

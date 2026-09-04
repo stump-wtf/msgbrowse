@@ -85,3 +85,29 @@ func tagContaining(t *testing.T, body, marker string) string {
 	}
 	return body[start : start+end+1]
 }
+
+// TestJournalYearStatsStripPlacement (issue #442): the stats strip is a YEAR
+// rollup, so it must (a) carry the year label, (b) sit above the month grid —
+// never between the grid and the selected day's card, where it read as if it
+// described the day.
+func TestJournalYearStatsStripPlacement(t *testing.T) {
+	srv, st := newJournalServer(t)
+	seedJournalDays(t, st, "Alex", []string{"2023-05-01", "2023-05-02", "2023-05-03"})
+
+	body := get(t, srv, "/journal").Body.String()
+	if !strings.Contains(body, "year in view") || !strings.Contains(body, ">2023<") {
+		t.Error("stats strip missing its year label")
+	}
+	stats := strings.Index(body, `class="journal-stats`)
+	grid := strings.Index(body, `class="journal-cal-grid"`)
+	card := strings.Index(body, `id="journal-day-card"`)
+	if stats < 0 || grid < 0 || card < 0 {
+		t.Fatalf("missing regions: stats %d grid %d card %d", stats, grid, card)
+	}
+	if stats > grid {
+		t.Errorf("stats strip (%d) must sit above the month grid (%d)", stats, grid)
+	}
+	if stats > card && card >= 0 {
+		t.Error("stats strip must not sit between the grid and the day card")
+	}
+}
