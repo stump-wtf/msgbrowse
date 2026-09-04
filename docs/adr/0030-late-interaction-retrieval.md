@@ -1,6 +1,6 @@
 # ADR-0030: Late-interaction retrieval for semantic search
 
-- **Status:** Proposed
+- **Status:** Accepted (not yet implemented — tracked in #412)
 - **Date:** 2026-08-26
 - **Related:** [ADR-0002](0002-vector-backend.md) (vector backend), [ADR-0013](0013-pure-go-sqlite-driver.md) (pure-Go driver), [SPEC-0002](../openspec/specs/search/spec.md) (Search)
 
@@ -93,3 +93,9 @@ flowchart LR
 - ColBERT paper: https://arxiv.org/abs/2004.12832 · ColBERTv2: https://arxiv.org/abs/2112.01488
 - Weaviate overview that prompted this: https://weaviate.io/blog/late-interaction-overview
 - Formalized in [SPEC-0019](../openspec/specs/late-interaction-search/spec.md).
+- Accepted 2026-09-04. Implementation is tracked by epic #412: #413 (store
+  migration + blob codec), #414 (encoder + backfill), #415 (MaxSim + cutover),
+  #424 (Settings → LLM encoder picker). Note for #414: the current gateway
+  serves `bge-m3` only through the OpenAI-compatible `/v1/embeddings` route,
+  which returns pooled vectors — the encoder endpoint has to be a native
+  late-interaction API, not that route.
