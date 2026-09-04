@@ -306,7 +306,7 @@ func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 	base.NavTab = navTabMessages
 	data := indexData{
 		baseData:       base,
-		ArchiveHUD:     archiveHUD(convCount, base.TotalMessages, newest, "mb-4"),
+		ArchiveHUD:     archiveHUD(convCount, base.TotalMessages, newest, ""),
 		HasArchive:     convCount > 0,
 		OnThisDay:      onThisDay,
 		JumpBack:       jumpBack,

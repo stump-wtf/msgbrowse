@@ -111,3 +111,27 @@ func TestJournalYearStatsStripPlacement(t *testing.T) {
 		t.Error("stats strip must not sit between the grid and the day card")
 	}
 }
+
+// TestHomeSpacingRhythm (issue #432): the Home column is one .stack with a
+// single 32px hero break — no hand-rolled margin utilities, no extra
+// stack-gap/section-gap modifiers on the siblings.
+func TestHomeSpacingRhythm(t *testing.T) {
+	srv, st := newJournalServer(t)
+	seedJournalDays(t, st, "Alex", []string{"2023-05-01"})
+
+	body := get(t, srv, "/").Body.String()
+	i := strings.Index(body, `class="screen-col stack"`)
+	if i < 0 {
+		t.Fatal("Home column is not a .stack")
+	}
+	tail := body[i:]
+	for _, bad := range []string{"mb-4", "mt-2", "stack-gap-after", "page-section-gap-before"} {
+		if strings.Contains(tail, bad) {
+			t.Errorf("Home column still carries hand-rolled spacing %q", bad)
+		}
+	}
+	// Exactly one 32px break: the hero's page-section-gap-after.
+	if got := strings.Count(tail, "page-section-gap-after"); got != 1 {
+		t.Errorf("page-section-gap-after count = %d, want exactly 1 (hero break)", got)
+	}
+}

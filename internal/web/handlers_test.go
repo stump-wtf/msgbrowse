@@ -101,7 +101,7 @@ func TestHomeStatStrip(t *testing.T) {
 	body := get(t, srv, "/").Body.String()
 	for _, want := range []string{
 		"home-hero-title",   // hero wordmark
-		`class="hud mb-4"`,  // 3-cell hud container
+		`class="hud"`,       // 3-cell hud container (Home .stack supplies spacing, #432),  // 3-cell hud container
 		"stat-cell-value",   // mono tabular stat value
 		"Newest message",    // the third stat cell label
 		"home-hero-tagline", // tagline present
