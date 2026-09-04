@@ -292,6 +292,9 @@ const (
 	SentimentScopeArchive = ""
 	// SentimentScopeReset is a wipe-and-rescore pass.
 	SentimentScopeReset = "reset"
+	// SentimentScopeDayPrefix marks a per-day re-score run (#441); the stored
+	// token is the prefix plus the UTC day (day:YYYY-MM-DD).
+	SentimentScopeDayPrefix = "day:"
 	// SentimentScopeConversation is a single-conversation run (the CLI's
 	// --conversation flag; the web controls never produce one).
 	SentimentScopeConversation = "conversation"

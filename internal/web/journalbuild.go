@@ -44,6 +44,12 @@ type JournalBuilder interface {
 	// the web layer calls it in a detached background goroutine. ctx is NOT the
 	// request context — the job outlives the HTTP request.
 	RunJournal(ctx context.Context, day string, regenerate bool) error
+	// RescoreDay re-derives exactly one UTC day's sentiment scores (issue
+	// #441) — the affect half of the day card's Refresh, which the digest
+	// rebuild alone did not cover. Same detached-context contract as
+	// RunJournal. Optional capability: implementors without a sentiment
+	// engine return an error and the chain (#453) surfaces it.
+	RescoreDay(ctx context.Context, day string) error
 }
 
 // SetJournalBuilder wires the journal job runner. Call it after NewServer and

@@ -7,6 +7,7 @@ import (
 
 	"github.com/joestump/msgbrowse/internal/config"
 	"github.com/joestump/msgbrowse/internal/llm"
+	"github.com/joestump/msgbrowse/internal/sentiment"
 	"github.com/joestump/msgbrowse/internal/store"
 )
 
@@ -67,5 +68,17 @@ func (b *Builder) RunJournal(ctx context.Context, day string, regenerate bool) e
 		Regenerate:    regenerate,
 		Logger:        b.log,
 	})
+	return err
+}
+
+// RescoreDay re-derives exactly one UTC day's sentiment scores (issue #441) —
+// the affect half of the day card's Refresh. It runs over the same live
+// holder/client as the digest pass, so a Settings → LLM save applies here too.
+func (b *Builder) RescoreDay(ctx context.Context, day string) error {
+	_, err := sentiment.RunDay(ctx, b.store, b.holder, sentiment.Options{
+		Model:   strings.TrimSpace(b.holder.ChatModel()),
+		Exclude: b.cfg.ExcludeConversations,
+		Logger:  b.log,
+	}, day)
 	return err
 }

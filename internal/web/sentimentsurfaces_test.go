@@ -649,3 +649,18 @@ func TestJournalDayHasExactlyOneMoodChip(t *testing.T) {
 		t.Errorf("chip tooltip lost the fold provenance:\n%s", body[max(0, len(body)-500):])
 	}
 }
+
+// TestSentimentDayScopeLabel (issue #441): a day-scoped run renders as
+// "Day YYYY-MM-DD" in the history's Scope column — the date reaches the page
+// only through the fixed prefix + shape check.
+func TestSentimentDayScopeLabel(t *testing.T) {
+	if got := sentimentScopeLabel("day:2023-05-01"); got != "Day 2023-05-01" {
+		t.Errorf("day scope label = %q", got)
+	}
+	if got := sentimentScopeLabel("day:not-a-day"); got != "Single day" {
+		t.Errorf("malformed day scope label = %q", got)
+	}
+	if got := sentimentScopeLabel("weird-token"); got != "Whole archive" {
+		t.Errorf("unknown scope must not print verbatim, got %q", got)
+	}
+}

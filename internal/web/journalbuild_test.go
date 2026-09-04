@@ -19,18 +19,21 @@ import (
 // touches the network: RunJournal blocks on a release channel so a test can hold
 // a job "in flight" and prove the single-flight guard coalesces a second start.
 type fakeJournalBuilder struct {
-	model    string
-	digestOn bool
-	release  chan struct{}
-	started  int32
-	lastDay  atomic.Value // string: day arg of the most recent RunJournal
-	lastRegn atomic.Bool
-	finished sync.WaitGroup
+	model          string
+	digestOn       bool
+	release        chan struct{}
+	started        int32
+	lastDay        atomic.Value // string: day arg of the most recent RunJournal
+	lastRegn       atomic.Bool
+	rescored       int32
+	lastRescoreDay atomic.Value // string: day arg of the most recent RescoreDay
+	finished       sync.WaitGroup
 }
 
 func newFakeJournalBuilder(model string, digestOn bool) *fakeJournalBuilder {
 	b := &fakeJournalBuilder{model: model, digestOn: digestOn, release: make(chan struct{})}
 	b.lastDay.Store("")
+	b.lastRescoreDay.Store("")
 	return b
 }
 
@@ -565,4 +568,12 @@ func TestJournalRefreshCardBadDayAndUnavailable(t *testing.T) {
 	if strings.Contains(body, "Refresh this day") {
 		t.Error("no builder wired — the card must not render a dead Refresh form")
 	}
+}
+
+func (f *fakeJournalBuilder) RescoreDay(ctx context.Context, day string) error {
+	atomic.AddInt32(&f.rescored, 1)
+	f.lastRescoreDay.Store(day)
+	<-f.release
+	f.finished.Done()
+	return nil
 }

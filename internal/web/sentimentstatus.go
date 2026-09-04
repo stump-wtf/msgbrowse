@@ -34,6 +34,7 @@ package web
 
 import (
 	"context"
+	"strings"
 	"time"
 
 	"github.com/joestump/msgbrowse/internal/sentiment"
@@ -268,11 +269,19 @@ func (s *Server) sentimentRunHistory(ctx context.Context, n int) ([]pipelineRunV
 // than being printed verbatim: the column must never become a channel for text
 // this code did not author.
 func sentimentScopeLabel(scope string) string {
-	switch scope {
-	case store.SentimentScopeReset:
+	switch {
+	case scope == store.SentimentScopeReset:
 		return "Reset & rescore"
-	case store.SentimentScopeConversation:
+	case scope == store.SentimentScopeConversation:
 		return "Single conversation"
+	case strings.HasPrefix(scope, store.SentimentScopeDayPrefix):
+		// The suffix is a server-generated day stamp (#441), but the display
+		// rule stays conservative: the date reaches the page only through the
+		// fixed prefix + shape check, never verbatim.
+		if day, ok := strings.CutPrefix(scope, store.SentimentScopeDayPrefix); ok && len(day) == 10 {
+			return "Day " + day
+		}
+		return "Single day"
 	default:
 		return "Whole archive"
 	}
