@@ -107,6 +107,14 @@ func TestRetryDelaysRespectCeiling(t *testing.T) {
 			t.Fatalf("delay %v after failure %d outside ceiling±25%% jitter", d, failure)
 		}
 	}
+	// An absurd attempt count must not overflow the doubling negative and
+	// panic rand.Int63n — it just saturates at the ceiling.
+	for _, failure := range []int{40, 64, 100, 1000} {
+		d := r.delay(failure)
+		if d > r.MaxDelay || d < r.MaxDelay*3/4 {
+			t.Fatalf("delay %v after failure %d outside ceiling±25%% jitter", d, failure)
+		}
+	}
 }
 
 func TestRetryableClassification(t *testing.T) {

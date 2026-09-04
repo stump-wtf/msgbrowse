@@ -58,7 +58,18 @@ func (r RetryConfig) withDefaults() RetryConfig {
 // 2^n with ±25% jitter, capped at MaxDelay AFTER jitter so the ceiling is
 // never exceeded.
 func (r RetryConfig) delay(failure int) time.Duration {
-	d := r.BaseDelay << failure // overflow-safe for any sane attempt count
+	// Clamp the doubling: a misconfigured attempt count must not overflow
+	// the shift negative and panic rand.Int63n below. 2^20 × a sane base
+	// delay stays inside int64 nanoseconds; anything past it just saturates
+	// at the ceiling.
+	const maxShift = 20
+	if failure > maxShift {
+		failure = maxShift
+	}
+	d := r.BaseDelay << failure
+	if d <= 0 {
+		return r.MaxDelay
+	}
 	jitter := d / 4
 	d = d - jitter + time.Duration(rand.Int63n(int64(2*jitter+1)))
 	if d <= 0 || d > r.MaxDelay {
