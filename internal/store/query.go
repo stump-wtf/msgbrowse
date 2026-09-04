@@ -101,9 +101,12 @@ type Page struct {
 // #80 adversarial review's substr-starvation finding). Deliberately NOT a
 // window function: the ROW_NUMBER() variant measured
 // 2.1s on the same archive (see SPEC-0008 design.md's measured rejects).
+// ListConversations returns the sidebar's summaries. Name prefers the linked
+// contact's display_name over the raw conversation handle (#444): the sidebar
+// must show what the transcript shows. Unlinked conversations keep c.name.
 func (s *Store) ListConversations(ctx context.Context) ([]ConversationSummary, error) {
 	const q = `
-SELECT c.id, c.name, c.source, c.pinned,
+SELECT c.id, COALESCE(NULLIF(ct.display_name, ''), c.name) AS name, c.source, c.pinned,
        COALESCE(ms.msg_count, 0)             AS msg_count,
        COALESCE(fm.ts, '')                   AS first_ts,
        COALESCE(lm.ts, '')                   AS last_ts,
@@ -125,7 +128,8 @@ SELECT c.id, c.name, c.source, c.pinned,
                FROM attachments GROUP BY conversation_id) ac ON ac.conversation_id = c.id
   LEFT JOIN (SELECT conversation_id, COUNT(*) link_count
                FROM links GROUP BY conversation_id) lc ON lc.conversation_id = c.id
- ORDER BY COALESCE(ms.last_unix, 0) DESC, c.name ASC`
+  LEFT JOIN contacts ct ON ct.id = c.contact_id
+ ORDER BY COALESCE(ms.last_unix, 0) DESC, name ASC`
 	rows, err := s.db.QueryContext(ctx, q)
 	if err != nil {
 		return nil, fmt.Errorf("list conversations: %w", err)
@@ -314,7 +318,7 @@ func (s *Store) GetConversation(ctx context.Context, name string) (*Conversation
 func (s *Store) GetConversationByID(ctx context.Context, id int64) (*ConversationSummary, error) {
 	cs := ConversationSummary{ID: id}
 	err := s.db.QueryRowContext(ctx,
-		`SELECT c.name, c.source, c.pinned, COALESCE(c.contact_id, 0),
+		`SELECT COALESCE(NULLIF(ct.display_name, ''), c.name), c.source, c.pinned, COALESCE(c.contact_id, 0),
 		        (SELECT COUNT(*) FROM messages m WHERE m.conversation_id = c.id),
 		        COALESCE((SELECT m.ts FROM messages m WHERE m.conversation_id = c.id
 		                   ORDER BY m.ts_unix ASC,  m.id ASC  LIMIT 1), ''),
@@ -323,6 +327,7 @@ func (s *Store) GetConversationByID(ctx context.Context, id int64) (*Conversatio
 		        COALESCE((SELECT m.ts_unix FROM messages m WHERE m.conversation_id = c.id
 		                   ORDER BY m.ts_unix DESC, m.id DESC LIMIT 1), 0)
 		   FROM conversations c
+		  LEFT JOIN contacts ct ON ct.id = c.contact_id
 		  WHERE c.id = ?`, id).
 		Scan(&cs.Name, &cs.Source, &cs.Pinned, &cs.ContactID, &cs.MessageCount, &cs.FirstTS, &cs.LastTS, &cs.LastTSUnix)
 	if err == sql.ErrNoRows {

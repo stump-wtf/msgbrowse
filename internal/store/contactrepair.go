@@ -24,8 +24,10 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"strings"
 
 	"github.com/joestump/msgbrowse/internal/contacts"
+	"github.com/joestump/msgbrowse/internal/signal"
 )
 
 // RepairReport counts what a repair pass changed, so the caller can log it and
@@ -265,4 +267,110 @@ SELECT
 	}
 	d.RealHandles = len(withHandle)
 	return d, nil
+}
+
+// Handle-Named Contacts — Naming What The Transcript Already Knows
+//
+// A 1:1 conversation whose contact was minted from the handle shows a raw
+// "+14252413911" in the sidebar while the transcript prints the real name:
+// messages.sender carries the address-book resolution the export made, but
+// nothing ever gave the contact row a name (the address-book hint is off on
+// machines without the macOS Contacts provider, #235/#236). 427 conversations
+// on the live DB carry a usable sender label; this pass copies it onto the
+// contact.
+//
+// It can never overwrite a human-set name: it only ever touches contacts
+// whose display_name IS one of their own identifiers. Handle-shaped senders
+// are ignored — a raw handle is not a name — and the new name must clear the
+// old one's length, so a truncated handle never replaces a longer label with
+// something less informative.
+//
+// @joestump-agent 09/04/2026 - Added for issue #444.
+
+// NameRepairReport counts what one RepairHandleNamedContacts pass did.
+type NameRepairReport struct {
+	// Scanned is how many handle-named contacts had a candidate sender label.
+	Scanned int
+	// Renamed is how many contacts received a real name.
+	Renamed int
+	// Renames records each rename as "old → new".
+	Renames []string
+}
+
+// handleShaped reports whether s looks like a raw identifier (phone or email)
+// rather than a human name. Such strings are never used as display names.
+func handleShaped(s string) bool {
+	id := contacts.Normalize(s)
+	return id.Kind == contacts.KindPhone || id.Kind == contacts.KindEmail
+}
+
+// RepairHandleNamedContacts renames handle-named contacts from their dominant
+// non-owner sender label. Idempotent: a renamed contact no longer matches the
+// handle-named shape, so a second pass finds nothing to do. Run it after
+// imports/syncs; it is a pure UPDATE pass and never merges or deletes.
+func (s *Store) RepairHandleNamedContacts(ctx context.Context) (NameRepairReport, error) {
+	var report NameRepairReport
+
+	// Candidates: contacts whose display_name byte-equals one of their own
+	// identifiers (minted from the handle, never named), with their dominant
+	// non-owner, non-system sender label across all their conversations.
+	rows, err := s.db.QueryContext(ctx, `
+WITH candidates AS (
+    SELECT ct.id, ct.display_name,
+           (SELECT m.sender
+              FROM messages m
+              JOIN conversations cv ON cv.id = m.conversation_id
+             WHERE cv.contact_id = ct.id
+               AND m.sender <> ?
+               AND m.is_system = 0
+               AND TRIM(m.body) <> ''
+             GROUP BY m.sender
+             ORDER BY COUNT(*) DESC, m.sender ASC
+             LIMIT 1) AS dominant
+      FROM contacts ct
+     WHERE EXISTS (
+           SELECT 1 FROM contact_identifiers ci
+            WHERE ci.contact_id = ct.id AND ci.identifier = ct.display_name)
+)
+SELECT id, display_name, dominant FROM candidates
+ WHERE dominant IS NOT NULL AND TRIM(dominant) <> ''`, signal.OwnerSender)
+	if err != nil {
+		return report, fmt.Errorf("contact name repair: %w", err)
+	}
+	defer rows.Close()
+
+	type candidate struct {
+		id       int64
+		old      string
+		dominant string
+	}
+	var updates []candidate
+	for rows.Next() {
+		var c candidate
+		if err := rows.Scan(&c.id, &c.old, &c.dominant); err != nil {
+			return report, fmt.Errorf("contact name repair: scan: %w", err)
+		}
+		report.Scanned++
+		dominant := strings.TrimSpace(c.dominant)
+		if handleShaped(dominant) {
+			continue // a raw handle is not a name
+		}
+		if len(dominant) <= len(c.old) {
+			continue // must clear the existing name's floor
+		}
+		updates = append(updates, candidate{c.id, c.old, dominant})
+	}
+	if err := rows.Err(); err != nil {
+		return report, fmt.Errorf("contact name repair: %w", err)
+	}
+
+	for _, u := range updates {
+		if _, err := s.db.ExecContext(ctx,
+			`UPDATE contacts SET display_name = ? WHERE id = ?`, u.dominant, u.id); err != nil {
+			return report, fmt.Errorf("contact name repair: rename %d: %w", u.id, err)
+		}
+		report.Renamed++
+		report.Renames = append(report.Renames, u.old+" → "+u.dominant)
+	}
+	return report, nil
 }
