@@ -487,7 +487,7 @@ func TestJournalDayMoodStripRenders(t *testing.T) {
 	seedScoredConversation(t, st, "Harper", affectMsgs("2023-05-01 09:00:00", 1, 0.8))
 
 	body := get(t, srv, "/journal?day=2023-05-01").Body.String()
-	for _, want := range []string{"Expressed affect", "upbeat", "Cheerfulness", "from 3 scores"} {
+	for _, want := range []string{"Expressed affect", "upbeat", "Cheerfulness", "3 scores"} {
 		if !contains(body, want) {
 			t.Errorf("journal day view missing %q", want)
 		}
@@ -605,5 +605,28 @@ func TestSentimentReadsPinToGeneration(t *testing.T) {
 	}
 	if !contains(body, "No sentiment has been scored yet") {
 		t.Error("the generation change did not fall back to the empty state")
+	}
+}
+
+// TestJournalAffectBlockIsCollapsedDetails (issue #437): when a scored day
+// renders, its affect block is a native <details> whose summary carries the
+// score/construct counts; the facet bars and IPIP disclaimer live inside it.
+func TestJournalAffectBlockIsCollapsedDetails(t *testing.T) {
+	srv, st := newSentimentServer(t)
+	seedScoredConversation(t, st, "Harper", affectMsgs("2023-05-01 09:00:00", 1, 0.8))
+
+	body := get(t, srv, "/journal?day=2023-05-01").Body.String()
+	i := strings.Index(body, `<details class="journal-affect">`)
+	if i < 0 {
+		t.Fatalf("scored day has no collapsed affect details block:\n%s", body[max(0, len(body)-600):])
+	}
+	if j := strings.Index(body, "Expressed affect"); j < 0 || j < i {
+		t.Errorf("summary label (%d) not inside the details block (%d)", j, i)
+	}
+	if !strings.Contains(body, "3 scores across 3 constructs") && !strings.Contains(body, "scores across") {
+		t.Errorf("summary missing the scores/construct counts:\n%s", body[max(0, len(body)-600):])
+	}
+	if !contains(body, "not an assessment of anyone who wrote them") {
+		t.Error("the IPIP disclaimer must stay inside the collapsed block")
 	}
 }

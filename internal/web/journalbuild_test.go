@@ -367,8 +367,8 @@ func TestJournalStaleDayCard(t *testing.T) {
 	if !contains(body, "Out of date") {
 		t.Error("a digest whose day has grown should be marked out of date")
 	}
-	if !contains(body, "28 more messages") {
-		t.Errorf("expected the new-message count in the staleness note:\n%s", body)
+	if !contains(body, "28 new messages") {
+		t.Errorf("expected the new-message count in the staleness chip:\n%s", body)
 	}
 	if contains(body, `action="/journal/rebuild/day"`) {
 		t.Error("the journal day card no longer carries a rebuild form (controls live on Status)")
@@ -440,5 +440,37 @@ func TestJournalRebuildAllStatesTheCount(t *testing.T) {
 	body := get(t, srv, "/settings/journal").Body.String()
 	if !contains(body, "Rebuild all 3 digests") {
 		t.Errorf("the rebuild control should state how many digests it will regenerate:\n%s", body)
+	}
+}
+
+// TestJournalDayCardOrder (issue #437): the day card leads with the summary —
+// the one-paragraph editorial read — and the affect facets collapse into a
+// <details> BELOW it; the staleness chip sits in the meta line before any of
+// it. Progress bars and disclaimers must never precede the prose again.
+func TestJournalDayCardOrder(t *testing.T) {
+	srv, st, _ := newTestServer(t)
+	srv.SetJournalBuilder(newFakeJournalBuilder("test-chat", true))
+	seedJournalDay(t, st, "2026-06-02", 40, 12) // stale: 28 messages arrived since
+
+	body := get(t, srv, "/journal?day=2026-06-02").Body.String()
+	idx := func(s string) int { return strings.Index(body, s) }
+	summary := idx(`class="journal-summary"`)
+	affect := idx("Expressed affect")
+	stale := idx("Out of date")
+	if summary < 0 {
+		t.Fatal("day card has no summary paragraph")
+	}
+	if affect >= 0 && affect < summary {
+		t.Errorf("affect block (%d) renders above the summary (%d)", affect, summary)
+	}
+	if stale >= 0 && stale > summary {
+		t.Errorf("staleness chip (%d) renders below the summary (%d); it belongs in the meta line", stale, summary)
+	}
+	links := idx("Notable links")
+	if links >= 0 && links < affect {
+		t.Errorf("notable links (%d) render above the collapsed affect block (%d)", links, affect)
+	}
+	if affect >= 0 && !contains(body, "<details") {
+		t.Error("affect block must be a native <details> (CSP-clean, closed by default)")
 	}
 }

@@ -137,12 +137,41 @@
           {{- if .Mood}} · <span class="journal-mood {{.MoodClass}}{{if .MoodInferred}} cal-day--inferred{{end}}"
             {{- if .MoodInferred}} title="Folded from this day&rsquo;s sentiment scores — it has no editorial digest yet"{{end}}>{{.Mood}}
             {{- if .MoodInferred}} <span class="opacity-60">from sentiment</span>{{end}}</span>{{end}}
+          {{/* Staleness (#240, restyled by #437): this digest was written
+               BEFORE later messages landed on the day. A meta-line chip, not a
+               paragraph — the reader should not wade through a disclaimer to
+               reach the summary. Shown only when the captured count is known —
+               a digest predating the count column reads as unknown, not stale. */}}
+          {{- if .Stale}} <a class="sync-badge sync-badge-warn" href="/settings/journal" title="This day&rsquo;s messages changed after its digest was written{{if gt .NewMessages 0}} ({{num .NewMessages}} newer messages){{end}}. Rebuild it from Settings → Journal.">Out of date{{if gt .NewMessages 0}} · {{num .NewMessages}} new messages{{end}}</a>{{end}}
         </div>
-        {{/* Per-day mood strip from sentiment scores (#367, delivering
-             SPEC-0027's per-day mood requirement from #313).
+        {{- if .Digest}}
+        <p class="journal-summary">{{.Digest.Summary}}</p>
+        {{- if .Digest.Highlights}}
+        <div class="journal-section-label">Highlights</div>
+        <ul class="journal-highlights">
+          {{- range .Digest.Highlights}}<li>{{.Text}}{{if .Time}} <span class="font-mono opacity-50">{{.Time}}</span>{{end}}</li>{{- end}}
+        </ul>
+        {{- end}}
+        {{- if .DigestPeople}}<div class="journal-chips"><span class="journal-section-label">People</span>{{range .DigestPeople}}{{if .ContactID}}<a class="journal-chip" href="/contact/{{.ContactID}}" title="Open {{.Name}}&rsquo;s contact page">{{.Name}}</a>{{else}}<span class="journal-chip">{{.Name}}</span>{{end}}{{end}}</div>{{- end}}
+        {{- if .Digest.StandoutMedia}}<div class="journal-chips"><span class="journal-section-label">Media</span>{{range .Digest.StandoutMedia}}<span class="journal-chip font-mono">{{.}}</span>{{end}}</div>{{- end}}
+        {{- if .Digest.Themes}}<div class="journal-chips"><span class="journal-section-label">Themes</span>{{range .Digest.Themes}}<span class="journal-chip">{{.}}</span>{{end}}</div>{{- end}}
+        {{- else if .Body}}
+        <p class="journal-summary">{{.Body}}</p>
+        {{- else}}
+        <p class="journal-day-mechanical">
+          {{- if .TopSenders}}Most with {{range $i, $s := .TopSenders}}{{if $i}}, {{end}}{{humanName $s.Name}}{{end}}.
+          {{- else}}A quiet day.{{end}}
+          <span class="opacity-50">Build the journal from
+            <a href="/settings/journal" class="link link-hover">Settings → Journal</a> to editorialize this day.</span>
+        </p>
+        {{- end}}
+        {{/* Expressed affect (#367, collapsed below the editorial content by
+             #437): the facet bars and the IPIP disclaimer are reference
+             material, not the point of the card, so they live in a native
+             <details> — closed by default, CSP-clean (no JS).
 
              ADDITIVE, and that word is load-bearing: a day with no affect scores
-             renders this block not at all and the card below is exactly what it
+             renders this block not at all and the card above is exactly what it
              was, so nothing here touches SPEC-0016's mechanical rollup or the
              digest. It is bucketed on the SAME UTC day frame the rollup uses
              (ADR-0023: date(ts_unix,'unixepoch'), never 'localtime'), so a
@@ -161,10 +190,9 @@
              bar length alone. */}}
         {{- with .Sentiment}}
         {{- if .Rendered}}
-        <div class="journal-day-meta">
-          Expressed affect · <span class="journal-mood {{.MoodClass}}">{{.Mood}}</span>
-          <span class="font-mono opacity-60">from {{num .Scores}} scores</span>
-        </div>
+        <details class="journal-affect">
+          <summary>Expressed affect · <span class="journal-mood {{.MoodClass}}">{{.Mood}}</span>
+            <span class="font-mono opacity-60">{{num .Scores}} scores{{if .Facets}} across {{len .Facets}} constructs{{end}}</span></summary>
         {{- if .Facets}}
         <ul class="mb-3">
           {{- range .Facets}}
@@ -184,29 +212,10 @@
         <p class="text-xs opacity-50 mb-4">AI-generated from message text against the public-domain IPIP item
           pool — what this day&rsquo;s messages expressed, not an assessment of anyone who wrote them. Contacts
           who opted out of scoring are excluded entirely.</p>
+        </details>
         {{- end}}
-        {{- end}}
-        {{/* Staleness (#240): this digest was written BEFORE later messages
-             landed on the day, so it is describing an incomplete day. Shown only
-             when the captured count is known — a digest predating the count
-             column reads as unknown, not stale. */}}
-        {{- if .Stale}}
-        <p class="status-note"><span class="sync-badge sync-badge-warn">Out of date</span>
-          {{if gt .NewMessages 0}}{{num .NewMessages}} more messages have landed on this day since its
-          digest was written.{{else}}This day&rsquo;s messages have changed since its digest was
-          written.{{end}} Rebuild it from <a href="/settings/journal" class="link link-hover">Settings → Journal</a>.</p>
         {{- end}}
         {{- if .Digest}}
-        <p class="journal-summary">{{.Digest.Summary}}</p>
-        {{- if .Digest.Highlights}}
-        <div class="journal-section-label">Highlights</div>
-        <ul class="journal-highlights">
-          {{- range .Digest.Highlights}}<li>{{.Text}}{{if .Time}} <span class="font-mono opacity-50">{{.Time}}</span>{{end}}</li>{{- end}}
-        </ul>
-        {{- end}}
-        {{- if .DigestPeople}}<div class="journal-chips"><span class="journal-section-label">People</span>{{range .DigestPeople}}{{if .ContactID}}<a class="journal-chip" href="/contact/{{.ContactID}}" title="Open {{.Name}}&rsquo;s contact page">{{.Name}}</a>{{else}}<span class="journal-chip">{{.Name}}</span>{{end}}{{end}}</div>{{- end}}
-        {{- if .Digest.Themes}}<div class="journal-chips"><span class="journal-section-label">Themes</span>{{range .Digest.Themes}}<span class="journal-chip">{{.}}</span>{{end}}</div>{{- end}}
-        {{- if .Digest.StandoutMedia}}<div class="journal-chips"><span class="journal-section-label">Media</span>{{range .Digest.StandoutMedia}}<span class="journal-chip font-mono">{{.}}</span>{{end}}</div>{{- end}}
         {{- if .NotableLinks}}
         <div class="journal-section-label">Notable links</div>
         {{/* Each entry links ONLY when it matched a link the archive actually
@@ -217,15 +226,6 @@
              with no affordance (REQ-0016-016). */}}
         <ul class="journal-links">{{range .NotableLinks}}{{if .URL}}<li class="font-mono"><a href="{{.URL}}" target="_blank" rel="noopener noreferrer nofollow">{{.Text}}</a></li>{{else}}<li class="font-mono">{{.Text}}</li>{{end}}{{end}}</ul>
         {{- end}}
-        {{- else if .Body}}
-        <p class="journal-summary">{{.Body}}</p>
-        {{- else}}
-        <p class="journal-day-mechanical">
-          {{- if .TopSenders}}Most with {{range $i, $s := .TopSenders}}{{if $i}}, {{end}}{{humanName $s.Name}}{{end}}.
-          {{- else}}A quiet day.{{end}}
-          <span class="opacity-50">Build the journal from
-            <a href="/settings/journal" class="link link-hover">Settings → Journal</a> to editorialize this day.</span>
-        </p>
         {{- end}}
       </section>
       {{- else}}
