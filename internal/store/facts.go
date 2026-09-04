@@ -573,3 +573,141 @@ SELECT COUNT(*) FROM contact_facts
    AND source_message_hash NOT IN (SELECT hash FROM messages)`).Scan(&n)
 	return n, err
 }
+
+// NearDuplicate — Similarity threshold and helpers for the insert-time
+// paraphrase collapse (issue #449): "Owns a Google Pixel 3 smartphone" and
+// "Owns a Pixel 3 phone" are one fact. Pure Go, no model call; the comparison
+// set is one contact's facts in one category, which is small.
+const (
+	nearDupJaccard     = 0.6 // token-set overlap floor
+	nearDupContainment = 0.8 // one side nearly contained in the other
+	nearDupMinTokens   = 2   // shorter than this, exact-hash dedup is enough
+)
+
+// stopwords strips the filler that carries no identity, so "owns a pixel 3
+// phone" and "pixel 3 phone" share a token set.
+var stopwords = map[string]struct{}{
+	"a": {}, "an": {}, "the": {}, "and": {}, "or": {}, "of": {}, "in": {},
+	"on": {}, "at": {}, "to": {}, "for": {}, "with": {}, "is": {}, "was": {},
+	"has": {}, "have": {}, "had": {}, "his": {}, "her": {}, "their": {},
+	"he": {}, "she": {}, "they": {}, "it": {}, "its": {}, "uses": {},
+	"very": {}, "really": {}, "into": {},
+}
+
+// factTokens returns the normalised comparison token set for a fact.
+func factTokens(fact string) map[string]struct{} {
+	out := map[string]struct{}{}
+	for _, tok := range strings.Fields(strings.ToLower(fact)) {
+		tok = strings.Trim(tok, ".,!?'\";:")
+		if tok == "" {
+			continue
+		}
+		if _, stop := stopwords[tok]; stop {
+			continue
+		}
+		out[tok] = struct{}{}
+	}
+	return out
+}
+
+// nearDuplicate reports whether a and b are paraphrases of the same subject:
+// Jaccard similarity of the token sets ≥ 0.6, or containment ≥ 0.8 (the
+// shorter set is nearly inside the longer). Category equality is checked by
+// the caller — the boundary is per contact AND per category.
+// tokenIntersect counts sa's tokens that also appear in sb, tolerating
+// morphological variants by substring: "smartphone" contains "phone", so the
+// Pixel-3 pair is one subject while "dog" vs "cat" never match.
+func tokenIntersect(sa, sb map[string]struct{}) int {
+	inter := 0
+	for t := range sa {
+		if _, hit := sb[t]; hit {
+			inter++
+			continue
+		}
+		if len(t) < 5 {
+			continue
+		}
+		for u := range sb {
+			if len(u) >= 5 && (strings.Contains(t, u) || strings.Contains(u, t)) {
+				inter++
+				break
+			}
+		}
+	}
+	return inter
+}
+
+func nearDuplicate(a, b string) bool {
+	if strings.EqualFold(strings.TrimSpace(a), strings.TrimSpace(b)) {
+		return true
+	}
+	sa, sb := factTokens(a), factTokens(b)
+	if len(sa) < nearDupMinTokens || len(sb) < nearDupMinTokens {
+		return false
+	}
+	inter := tokenIntersect(sa, sb)
+	union := len(sa) + len(sb) - inter
+	if union == 0 {
+		return false
+	}
+	if float64(inter)/float64(union) >= nearDupJaccard {
+		return true
+	}
+	minLen := len(sa)
+	if len(sb) < minLen {
+		minLen = len(sb)
+	}
+	if minLen == 0 {
+		return false
+	}
+	return float64(inter)/float64(minLen) >= nearDupContainment
+}
+
+// PutFactNearDupAware is PutFact with the paraphrase collapse (#449): before
+// inserting, the new fact is compared against the contact's existing facts in
+// the SAME category. On a near-duplicate hit the existing row wins (kept, its
+// source updated only if the new citation is newer) and inserted=false comes
+// back. The exact-hash dedup inside PutFact still runs first — it is free.
+func (s *Store) PutFactNearDupAware(ctx context.Context, in FactInput) (bool, error) {
+	existing, err := s.factsForContactCategory(ctx, in.ContactID, in.Category)
+	if err != nil {
+		return false, err
+	}
+	for _, f := range existing {
+		if nearDuplicate(f.Fact, in.Fact) {
+			// Keep the existing row; refresh its citation when the new one is
+			// newer, so provenance tracks the most recent evidence.
+			if in.SourceTSUnix > f.SourceTSUnix {
+				if _, err := s.db.ExecContext(ctx,
+					`UPDATE contact_facts SET source_ts = ?, source_ts_unix = ?, source_message_hash = ?
+					  WHERE contact_id = ? AND fact_hash = ?`,
+					in.SourceTS, in.SourceTSUnix, in.SourceMessageHash, in.ContactID, factHash(f.Fact)); err != nil {
+					return false, fmt.Errorf("put fact: refresh near-dup source: %w", err)
+				}
+			}
+			return false, nil
+		}
+	}
+	return s.PutFact(ctx, in)
+}
+
+// factsForContactCategory loads the contact's existing facts in one category
+// for the near-duplicate comparison.
+func (s *Store) factsForContactCategory(ctx context.Context, contactID int64, category string) ([]ContactFact, error) {
+	rows, err := s.db.QueryContext(ctx, `
+SELECT fact, source_ts_unix FROM contact_facts
+ WHERE contact_id = ? AND category = ?`, contactID, category)
+	if err != nil {
+		return nil, fmt.Errorf("put fact: load existing: %w", err)
+	}
+	defer rows.Close()
+	var out []ContactFact
+	for rows.Next() {
+		var f ContactFact
+		if err := rows.Scan(&f.Fact, &f.SourceTSUnix); err != nil {
+			return nil, err
+		}
+		out = append(out, f)
+	}
+	return out, rows.Err()
+}

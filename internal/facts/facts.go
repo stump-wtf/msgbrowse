@@ -201,8 +201,11 @@ type Summary struct {
 	// FactsReaped is how many orphaned facts (citing re-imported messages)
 	// the pass deleted before extracting (#447).
 	FactsReaped int
-	Batches     int
-	DurationMS  int64
+	// NearDupsCollapsed is how many extracted facts were paraphrases of an
+	// existing fact for the same contact+category and were not stored (#449).
+	NearDupsCollapsed int
+	Batches           int
+	DurationMS        int64
 }
 
 // Run extracts facts from every eligible conversation (incrementally, honoring
@@ -358,6 +361,7 @@ func Run(ctx context.Context, st *store.Store, client llm.Client, opts Options) 
 				sum.Conversations++
 				sum.MessagesParsed += cs.MessagesParsed
 				sum.FactsAdded += cs.FactsAdded
+				sum.NearDupsCollapsed += cs.NearDupsCollapsed
 				sum.Batches += cs.Batches
 				doneConvs, doneFacts := sum.Conversations, sum.FactsAdded
 				mu.Unlock()
@@ -395,9 +399,10 @@ feed:
 
 // convStats is the per-conversation tally aggregated into the run Summary.
 type convStats struct {
-	MessagesParsed int
-	FactsAdded     int
-	Batches        int
+	MessagesParsed    int
+	FactsAdded        int
+	NearDupsCollapsed int
+	Batches           int
 }
 
 // processConversation walks one conversation from its stored cursor, extracting
@@ -450,7 +455,7 @@ func processConversation(ctx context.Context, st *store.Store, client llm.Client
 			case err == nil:
 				stats.MessagesParsed += len(included)
 				for _, pf := range parsed {
-					ok, err := st.PutFact(ctx, store.FactInput{
+					ok, err := st.PutFactNearDupAware(ctx, store.FactInput{
 						ContactID:         fc.ContactID,
 						Fact:              pf.Fact,
 						Category:          pf.Category,
@@ -465,6 +470,8 @@ func processConversation(ctx context.Context, st *store.Store, client llm.Client
 					}
 					if ok {
 						added++
+					} else {
+						stats.NearDupsCollapsed++
 					}
 				}
 				stats.FactsAdded += added

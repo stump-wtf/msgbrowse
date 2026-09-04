@@ -328,3 +328,44 @@ func TestRunReapsOrphanFactsFirst(t *testing.T) {
 		t.Errorf("run record = %q, want the reap count", runs[0].Error)
 	}
 }
+
+// TestRunReportsNearDupCollapses (#449): a paraphrase of an existing fact is
+// not stored and shows up in the run summary's collapse count.
+func TestRunReportsNearDupCollapses(t *testing.T) {
+	st := openStore(t)
+	ctx := context.Background()
+	seed(t, st, source.Signal, "Alex")
+
+	var contactID int64
+	if err := st.DB().QueryRow(`SELECT contact_id FROM conversations WHERE name = 'Alex'`).Scan(&contactID); err != nil {
+		t.Fatal(err)
+	}
+	// Pre-existing fact; the canned response paraphrases it.
+	var seedHash string
+	if err := st.DB().QueryRow(`SELECT hash FROM messages WHERE conversation_id = (SELECT id FROM conversations WHERE name = 'Alex') LIMIT 1`).Scan(&seedHash); err != nil {
+		t.Fatal(err)
+	}
+	pre := store.FactInput{ContactID: contactID, Fact: "Really loves hiking in the mountains", Category: "preferences",
+		Source: source.Signal, SourceMessageHash: seedHash, SourceTS: "2023-05-01 09:00:00", Model: "test"}
+	if added, err := st.PutFact(ctx, pre); err != nil || !added {
+		t.Fatalf("seed fact: added=%v err=%v", added, err)
+	}
+
+	client := &fakeClient{resp: `[{"fact":"Loves hiking in the mountains often","category":"preferences","evidence":1}]`}
+	sum, err := Run(ctx, st, client, Options{Model: "test-model", Logger: quietLogger()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sum.NearDupsCollapsed != 1 {
+		var fact, cat string
+		_ = st.DB().QueryRow(`SELECT fact, category FROM contact_facts LIMIT 1`).Scan(&fact, &cat)
+		t.Fatalf("NearDupsCollapsed = %d; stored fact %q cat %q; summary %+v", sum.NearDupsCollapsed, fact, cat, sum)
+	}
+	total, err := st.CountFacts(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if total != 1 {
+		t.Errorf("stored facts = %d, want 1 (paraphrase collapsed)", total)
+	}
+}
