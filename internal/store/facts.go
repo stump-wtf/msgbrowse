@@ -40,7 +40,7 @@ type FactInput struct {
 // SourceConversationID is the conversation that owns the supporting message
 // (0 when the message is gone) — the contact page spans multiple conversations,
 // so a fact's jump-to-context link must target the message's OWN conversation,
-// not a single active one. It is left 0 by ContactFactsByConversation (whose
+// not a single active one. It is left 0 by the by-conversation fact reader (whose
 // caller already knows the conversation).
 type ContactFact struct {
 	Fact                 string
@@ -194,7 +194,10 @@ ON CONFLICT(contact_id, fact_hash) DO NOTHING`,
 // ContactFactsByConversation returns the facts known about the contact linked to
 // the given conversation, ordered by category then chronology, with each fact's
 // supporting message resolved to its current rowid (0 if gone). Returns nil for
-// a conversation with no linked contact.
+// a conversation with no linked contact. No web surface calls it since #446
+// moved facts to the profile (which reads by contact), but it remains the
+// provenance-resolving read the facts tests pin their dedup/re-ingest
+// guarantees on.
 func (s *Store) ContactFactsByConversation(ctx context.Context, convID int64) ([]ContactFact, error) {
 	rows, err := s.db.QueryContext(ctx, `
 SELECT f.fact, f.category, f.source, f.source_message_hash,

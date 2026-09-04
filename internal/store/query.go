@@ -34,10 +34,6 @@ type ConversationSummary struct {
 	// own source-side identity. Populated for the single-conversation view
 	// (GetConversationByID); nil in the sidebar list.
 	Identifiers []ContactIdentifier
-	// Facts are the AI-extracted, cited facts about the contact. Populated for
-	// the single-conversation view (GetConversationByID); nil in the sidebar
-	// list. Empty until `msgbrowse facts` has run.
-	Facts []ContactFact
 }
 
 // MessageView is a single message rendered for the transcript, with its
@@ -343,19 +339,16 @@ func (s *Store) GetConversationByID(ctx context.Context, id int64) (*Conversatio
 			return nil, err
 		}
 	}
-	// Cross-source handles and AI facts travel with the single-conversation view
-	// so every render path (transcript, jump-to-context) gets them without each
-	// handler remembering a separate fetch.
+	// Cross-source handles travel with the single-conversation view so every
+	// render path (transcript, jump-to-context) gets them without each handler
+	// remembering a separate fetch. Facts no longer do (#446): the messages
+	// view dropped its "What the AI has learned" panel — they live on the
+	// contact profile, reached through the header's profile button.
 	idents, err := s.ConversationIdentifiers(ctx, id)
 	if err != nil {
 		return nil, err
 	}
 	cs.Identifiers = idents
-	facts, err := s.ContactFactsByConversation(ctx, id)
-	if err != nil {
-		return nil, err
-	}
-	cs.Facts = facts
 	return &cs, nil
 }
 
