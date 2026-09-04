@@ -293,15 +293,20 @@ func (s *Server) renderJournalPage(w http.ResponseWriter, r *http.Request, journ
 	s.render(w, r, "journal", data)
 }
 
-// journalRunFresh reports whether a journal run is in flight right now: a
-// journal_runs row with no terminal write and a heartbeat inside the stale
-// window — the same cross-process signal the build guard uses. The day card
-// polls on it (#440) so a Refresh click swaps in the fresh digest without a
-// manual reload.
+// journalRunFresh reports whether any AI job behind the day card's Refresh is
+// in flight right now: the digest run (journal_runs, fresh heartbeat) OR a
+// day-scoped sentiment re-score (#453 — the poll must outlive the digest and
+// keep going until the scores land too). The day card polls on it (#440) so a
+// Refresh click swaps in the fresh content without a manual reload.
 func (s *Server) journalRunFresh(ctx context.Context) bool {
-	run, err := s.store.LatestJournalRun(ctx)
+	if run, err := s.store.LatestJournalRun(ctx); err == nil && run != nil &&
+		run.InFlight() && time.Since(run.UpdatedAt) <= journalRunStaleAfter {
+		return true
+	}
+	run, err := s.store.LatestSentimentRun(ctx)
 	return err == nil && run != nil &&
-		run.InFlight() && time.Since(run.UpdatedAt) <= journalRunStaleAfter
+		run.InFlight() && time.Since(run.UpdatedAt) <= sentimentRunStaleAfter &&
+		strings.HasPrefix(run.Scope, store.SentimentScopeDayPrefix)
 }
 
 // journalContext resolves the (year, month) to show from the selected day, the

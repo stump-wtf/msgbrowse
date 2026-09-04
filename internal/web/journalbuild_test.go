@@ -26,8 +26,16 @@ type fakeJournalBuilder struct {
 	lastDay        atomic.Value // string: day arg of the most recent RunJournal
 	lastRegn       atomic.Bool
 	rescored       int32
+	journalSeq     int32        // invocation counter shared by both job kinds
 	lastRescoreDay atomic.Value // string: day arg of the most recent RescoreDay
-	finished       sync.WaitGroup
+	// callOrder records "journal" / "rescore" in invocation order; read only
+	// after the jobs complete, so no lock is needed.
+	callOrder []string
+	// rescoreUnavailable simulates "no sentiment generation configured".
+	rescoreUnavailable atomic.Bool
+	// rescoreFails makes RescoreDay return an error without blocking.
+	rescoreFails atomic.Bool
+	finished     sync.WaitGroup
 }
 
 func newFakeJournalBuilder(model string, digestOn bool) *fakeJournalBuilder {
@@ -44,12 +52,18 @@ func (f *fakeJournalBuilder) RunJournal(ctx context.Context, day string, regener
 	atomic.AddInt32(&f.started, 1)
 	f.lastDay.Store(day)
 	f.lastRegn.Store(regenerate)
+	f.callOrder = append(f.callOrder, "journal")
 	<-f.release
 	f.finished.Done()
 	return nil
 }
 
 func (f *fakeJournalBuilder) starts() int { return int(atomic.LoadInt32(&f.started)) }
+
+// rescoreErr is the failure the sentiment-failure test injects.
+type rescoreErr struct{}
+
+func (rescoreErr) Error() string          { return "sentiment day re-score failed" }
 func (f *fakeJournalBuilder) day() string { return f.lastDay.Load().(string) }
 
 // journalPOST issues a privileged POST to a /journal/* route with the given
@@ -503,7 +517,9 @@ func TestJournalDayCardOrder(t *testing.T) {
 // the JOURNAL page (not the settings tab) with the fixed-enum day banner.
 func TestJournalRefreshFromCardRendersJournal(t *testing.T) {
 	srv, st, _ := newTestServer(t)
-	srv.SetJournalBuilder(newFakeJournalBuilder("test-chat", true))
+	fb := newFakeJournalBuilder("test-chat", true)
+	fb.finished.Add(2) // #453: digest + rescore
+	srv.SetJournalBuilder(fb)
 	seedJournalDay(t, st, "2026-06-02", 12, 12)
 
 	body := get(t, srv, "/journal?day=2026-06-02").Body.String()
@@ -515,6 +531,8 @@ func TestJournalRefreshFromCardRendersJournal(t *testing.T) {
 	tok = tok[:strings.Index(tok, `"`)]
 
 	rec := journalPOSTMulti(t, srv, "/journal/rebuild/day", selfOrigin, tok, map[string]string{"day": "2026-06-02", "from": "card"}, nil)
+	close(fb.release)
+	fb.finished.Wait()
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d", rec.Code)
 	}
@@ -533,7 +551,7 @@ func TestJournalRefreshFromCardRendersJournal(t *testing.T) {
 func TestJournalRefreshCardSingleFlight(t *testing.T) {
 	srv, st, _ := newTestServer(t)
 	fb := newFakeJournalBuilder("test-chat", true)
-	fb.finished.Add(1)
+	fb.finished.Add(2) // #453: digest + rescore for the one admitted POST
 	srv.SetJournalBuilder(fb)
 	seedJournalDay(t, st, "2026-06-02", 12, 12)
 
@@ -571,9 +589,95 @@ func TestJournalRefreshCardBadDayAndUnavailable(t *testing.T) {
 }
 
 func (f *fakeJournalBuilder) RescoreDay(ctx context.Context, day string) error {
+	if f.rescoreUnavailable.Load() {
+		return nil // no sentiment generation configured: skipped silently
+	}
+	if f.rescoreFails.Load() {
+		atomic.AddInt32(&f.rescored, 1)
+		f.lastRescoreDay.Store(day)
+		f.callOrder = append(f.callOrder, "rescore")
+		return rescoreErr{}
+	}
 	atomic.AddInt32(&f.rescored, 1)
 	f.lastRescoreDay.Store(day)
+	f.callOrder = append(f.callOrder, "rescore")
 	<-f.release
 	f.finished.Done()
 	return nil
+}
+
+// --- Refresh rescores the day too (#453) -----------------------------------
+
+// TestJournalRefreshRescoresDay: one card Refresh drives BOTH AI surfaces for
+// the day — digest first, rescore second — and the journal page still renders
+// its both-surfaces banner.
+func TestJournalRefreshRescoresDay(t *testing.T) {
+	srv, st, _ := newTestServer(t)
+	fb := newFakeJournalBuilder("test-chat", true)
+	fb.finished.Add(2)
+	srv.SetJournalBuilder(fb)
+	seedJournalDay(t, st, "2026-06-02", 12, 12)
+
+	rec := journalPOSTMulti(t, srv, "/journal/rebuild/day", selfOrigin, mintToken(t, srv), map[string]string{"day": "2026-06-02", "from": "card"}, nil)
+	close(fb.release)
+	fb.finished.Wait()
+	if fb.starts() != 1 || atomic.LoadInt32(&fb.rescored) != 1 {
+		t.Fatalf("digest starts=%d rescores=%d; want 1 and 1", fb.starts(), fb.rescored)
+	}
+	if len(fb.callOrder) != 2 || fb.callOrder[0] != "journal" || fb.callOrder[1] != "rescore" {
+		t.Fatalf("call order = %v, want [journal rescore]", fb.callOrder)
+	}
+	if !strings.Contains(rec.Body.String(), "sentiment scores will replace themselves") {
+		t.Error("banner must name both surfaces")
+	}
+}
+
+// TestJournalRefreshSkipsRescoreWithoutGeneration: with no sentiment
+// generation configured, only the digest call happens and the rescore is
+// skipped silently — same banner, no error, no second job.
+func TestJournalRefreshSkipsRescoreWithoutGeneration(t *testing.T) {
+	srv, st, _ := newTestServer(t)
+	fb := newFakeJournalBuilder("test-chat", true)
+	fb.rescoreUnavailable.Store(true)
+	fb.finished.Add(1)
+	srv.SetJournalBuilder(fb)
+	seedJournalDay(t, st, "2026-06-02", 12, 12)
+
+	rec := journalPOSTMulti(t, srv, "/journal/rebuild/day", selfOrigin, mintToken(t, srv), map[string]string{"day": "2026-06-02", "from": "card"}, nil)
+	close(fb.release)
+	fb.finished.Wait()
+	if fb.starts() != 1 {
+		t.Fatalf("digest starts=%d, want 1", fb.starts())
+	}
+	if atomic.LoadInt32(&fb.rescored) != 0 {
+		t.Fatalf("rescore attempted without a configured generation: %d", fb.rescored)
+	}
+	if !contains(rec.Body.String(), "sentiment scores will replace themselves") {
+		t.Error("banner copy stays the same either way; the skip is silent")
+	}
+}
+
+// TestJournalDigestSurvivesRescoreFailure: a failing rescore must not mark the
+// digest rebuild failed — the handler already returned, the digest landed, and
+// the failure surfaces through the sentiment run row instead.
+func TestJournalDigestSurvivesRescoreFailure(t *testing.T) {
+	srv, st, _ := newTestServer(t)
+	fb := newFakeJournalBuilder("test-chat", true)
+	fb.rescoreFails.Store(true)
+	fb.finished.Add(1)
+	srv.SetJournalBuilder(fb)
+	seedJournalDay(t, st, "2026-06-02", 12, 12)
+
+	rec := journalPOSTMulti(t, srv, "/journal/rebuild/day", selfOrigin, mintToken(t, srv), map[string]string{"day": "2026-06-02", "from": "card"}, nil)
+	close(fb.release)
+	fb.finished.Wait()
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 — a rescore failure must not fail the POST", rec.Code)
+	}
+	if !contains(rec.Body.String(), "Rebuilding") {
+		t.Error("digest rebuild banner must render even though the rescore stage failed")
+	}
+	if atomic.LoadInt32(&fb.rescored) != 1 || len(fb.callOrder) != 2 {
+		t.Fatalf("rescore must still be attempted once: rescored=%d order=%v", fb.rescored, fb.callOrder)
+	}
 }

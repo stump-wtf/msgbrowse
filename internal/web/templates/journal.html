@@ -131,7 +131,7 @@
            reader knows what will change. */}}
       {{- if .JournalResult}}
       {{- if eq .JournalResult "day"}}
-      {{template "status_banner" dict "variant" "info" "title" (printf "Rebuilding %s." .Selected.DateLabel) "body" "The digest will replace itself when the run finishes — this card refreshes on its own."}}
+      {{template "status_banner" dict "variant" "info" "title" (printf "Rebuilding %s." .Selected.DateLabel) "body" "Digest and sentiment scores will replace themselves when they finish — this card refreshes on its own."}}
       {{- else if eq .JournalResult "inprogress"}}
       {{template "status_banner" dict "variant" "info" "title" "A journal run is already in progress." "body" "Nothing new was started — the running job continues."}}
       {{- else if eq .JournalResult "nomodel"}}

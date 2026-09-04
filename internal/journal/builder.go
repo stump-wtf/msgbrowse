@@ -75,6 +75,13 @@ func (b *Builder) RunJournal(ctx context.Context, day string, regenerate bool) e
 // the affect half of the day card's Refresh. It runs over the same live
 // holder/client as the digest pass, so a Settings → LLM save applies here too.
 func (b *Builder) RescoreDay(ctx context.Context, day string) error {
+	// No chat model = no sentiment generation configured: skip quietly rather
+	// than failing the refresh (#453). The digest half already handled the
+	// model-missing story on its own.
+	if strings.TrimSpace(b.holder.ChatModel()) == "" {
+		b.log.Info("sentiment: day re-score skipped — no chat model configured", "day", day)
+		return nil
+	}
 	_, err := sentiment.RunDay(ctx, b.store, b.holder, sentiment.Options{
 		Model:   strings.TrimSpace(b.holder.ChatModel()),
 		Exclude: b.cfg.ExcludeConversations,

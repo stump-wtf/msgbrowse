@@ -105,7 +105,7 @@ func (s *Server) journalJobRunning() bool {
 //
 // This matters more here than for the index: digests are BILLABLE outbound LLM
 // calls, so a raced double-start costs real money, not just duplicated work.
-func (s *Server) startJournal(ctx context.Context, day string, regenerate bool) string {
+func (s *Server) startJournal(ctx context.Context, day string, regenerate, rescore bool) string {
 	b := s.journalBuilder
 	if b == nil {
 		return journalResultUnavailable
@@ -137,6 +137,16 @@ func (s *Server) startJournal(ctx context.Context, day string, regenerate bool) 
 		if err := b.RunJournal(context.Background(), day, regenerate); err != nil {
 			s.log.Error("journal job failed", "error", err, "day", day, "regenerate", regenerate)
 		}
+		// Refresh-this-day (#453): one click redoes BOTH AI surfaces for the
+		// day — the digest above and the affect scores here. Scoped to the
+		// card's POST (rescore) so Settings' bulk passes stay digest-only. A
+		// rescore failure must not fail the digest rebuild (it already
+		// landed); it surfaces through the sentiment run row instead.
+		if rescore && day != "" {
+			if err := b.RescoreDay(context.Background(), day); err != nil {
+				s.log.Warn("sentiment day re-score failed after digest rebuild", "day", day, "error", err)
+			}
+		}
 	}()
 
 	// The job IS running by now; these outcomes describe what it will do, and
@@ -159,14 +169,14 @@ func (s *Server) startJournal(ctx context.Context, day string, regenerate bool) 
 // The day must parse as a date AND already exist in journal_days, so a typo or
 // a hand-crafted POST can never spawn a job over an arbitrary or unbounded
 // range. Returns journalResultBadDay without starting a job otherwise.
-func (s *Server) startJournalDay(ctx context.Context, day string) string {
+func (s *Server) startJournalDay(ctx context.Context, day string, rescore bool) string {
 	if !isValidDay(day) {
 		return journalResultBadDay
 	}
 	if _, ok, err := s.store.GetJournalDay(ctx, day); err != nil || !ok {
 		return journalResultBadDay
 	}
-	return s.startJournal(ctx, day, true)
+	return s.startJournal(ctx, day, true, rescore)
 }
 
 // journalCardData drives the journal build card fragment on the Settings →
@@ -217,7 +227,7 @@ func (s *Server) handleJournalBuild(w http.ResponseWriter, r *http.Request) {
 	if !s.checkSetupPOST(w, r) {
 		return // 403 already written; no job started, no LLM call made
 	}
-	s.renderJournalSettings(w, r, s.startJournal(r.Context(), "", false))
+	s.renderJournalSettings(w, r, s.startJournal(r.Context(), "", false, false))
 }
 
 // handleJournalRebuildAll is POST /journal/rebuild — clear every cached digest
@@ -226,7 +236,7 @@ func (s *Server) handleJournalRebuildAll(w http.ResponseWriter, r *http.Request)
 	if !s.checkSetupPOST(w, r) {
 		return
 	}
-	s.renderJournalSettings(w, r, s.startJournal(r.Context(), "", true))
+	s.renderJournalSettings(w, r, s.startJournal(r.Context(), "", true, false))
 }
 
 // handleJournalRebuildDay is POST /journal/rebuild/day — regenerate exactly one
@@ -236,7 +246,8 @@ func (s *Server) handleJournalRebuildDay(w http.ResponseWriter, r *http.Request)
 	if !s.checkSetupPOST(w, r) {
 		return
 	}
-	result := s.startJournalDay(r.Context(), strings.TrimSpace(r.PostFormValue("day")))
+	fromCard := r.PostFormValue("from") == "card"
+	result := s.startJournalDay(r.Context(), strings.TrimSpace(r.PostFormValue("day")), fromCard)
 	// The day card's Refresh button (#440) posts with from=card and expects
 	// the JOURNAL page back — banner on the day it acted on, not the settings
 	// tab. The settings form omits the field and gets its own tab re-rendered.
