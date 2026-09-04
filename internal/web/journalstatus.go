@@ -113,12 +113,42 @@ func (s *Server) journalBuildStatus(ctx context.Context) (journalBuildData, erro
 		d.LastDurationMS = run.DurationMS
 		d.LastError = run.Error
 	}
+	// "Last run" means the most recent FINISHED run (issue #443), independent
+	// of whether a newer one is in flight or stalled — the tile and the
+	// history table beneath it must never contradict each other.
+	if !d.HasLastRun {
+		if rerr := s.fillLastFinishedJournalRun(ctx, &d); rerr != nil {
+			return d, rerr
+		}
+	}
 
 	d.History, err = s.journalRunHistory(ctx, journalRunHistoryLimit)
 	if err != nil {
 		return d, err
 	}
 	return d, nil
+}
+
+// fillLastFinishedJournalRun finds the most recent finished journal run in the
+// history window and fills the tile from it (issue #443). No-op when a finished
+// run is already on the tile.
+func (s *Server) fillLastFinishedJournalRun(ctx context.Context, d *journalBuildData) error {
+	runs, err := s.store.RecentJournalRuns(ctx, journalRunHistoryLimit)
+	if err != nil {
+		return err
+	}
+	for _, r := range runs {
+		if r.InFlight() {
+			continue
+		}
+		d.HasLastRun = true
+		d.LastFinished = r.FinishedAt.Local().Format(overviewTimeFormat)
+		d.LastDigested = r.Digested
+		d.LastDurationMS = r.DurationMS
+		d.LastError = r.Error
+		return nil
+	}
+	return nil
 }
 
 // journalRunHistory returns the most recent journal passes classified for
