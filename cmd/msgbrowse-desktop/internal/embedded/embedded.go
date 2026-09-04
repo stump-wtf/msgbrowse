@@ -312,6 +312,11 @@ func newLLMClient(cfg *config.Config) llm.Client {
 		ChatModel:  cfg.LLM.ChatModel,
 		EmbedModel: cfg.LLM.EmbedModel,
 		Timeout:    cfg.LLM.Timeout,
+		Retry: &llm.RetryConfig{
+			Attempts:  cfg.LLM.Retry.Attempts,
+			BaseDelay: cfg.LLM.Retry.BaseDelay,
+			MaxDelay:  cfg.LLM.Retry.MaxBackoff,
+		},
 	})
 }
 

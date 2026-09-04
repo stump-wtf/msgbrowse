@@ -164,6 +164,19 @@ type LLMConfig struct {
 	EmbedModel     string        `mapstructure:"embed_model"`
 	MaxConcurrency int           `mapstructure:"max_concurrency"`
 	Timeout        time.Duration `mapstructure:"timeout"`
+
+	// Retry bounds transient-failure retries (429/502/503/504 and client
+	// timeouts) so one bad gateway response no longer aborts a multi-hour
+	// embed/journal/sentiment pass (issue #452). Zero fields mean the client
+	// defaults: 3 attempts, 2s base delay, 30s ceiling. attempts=1 disables.
+	Retry LLMRetryConfig `mapstructure:"retry"`
+}
+
+// LLMRetryConfig is the llm.retry block. See LLMConfig.Retry.
+type LLMRetryConfig struct {
+	Attempts   int           `mapstructure:"attempts"`
+	BaseDelay  time.Duration `mapstructure:"base_delay"`
+	MaxBackoff time.Duration `mapstructure:"max_backoff"`
 }
 
 // JournalConfig configures `msgbrowse journal`.
@@ -344,6 +357,10 @@ func SetDefaults(v *viper.Viper) {
 	v.SetDefault("llm.embed_model", "local-embed")
 	v.SetDefault("llm.max_concurrency", 4)
 	v.SetDefault("llm.timeout", 60*time.Second)
+	// llm.retry zero-values mean the client's own defaults (issue #452); only
+	// the ceiling needs an explicit default so a misconfigured base delay
+	// cannot sleep unbounded.
+	v.SetDefault("llm.retry.max_backoff", 30*time.Second)
 
 	// Providers auto-refresh: re-import each Enabled source's delta on this
 	// cadence. 6h keeps archives current without hammering the exporters; set
