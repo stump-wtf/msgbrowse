@@ -28,11 +28,10 @@ type contactData struct {
 	FactScanned    int
 	FactConvTotal  int
 	Stats          store.ContactStats
-	// VolumeHUD and PaceHUD are the profile's two derived-stat strips
+	// StatHUD is the profile's one derived-stat row (#450)
 	// (message volume, then pace/photos/active-hour), rendered through the
 	// shared "hud" define (#395) instead of hand-rolled markup.
-	VolumeHUD hudData
-	PaceHUD   hudData
+	StatHUD hudData
 	Bars      []sparkBar // message-volume sparkline (year-rolled), Go-normalized
 	SparkW    int
 	SparkH    int
@@ -52,33 +51,24 @@ type factGroup struct {
 	Facts    []store.ContactFact
 }
 
-// contactVolumeHUD builds the profile's first stat strip (Messages / You
-// sent / Received) through the shared "hud" define (#395), replacing what
-// used to be a hand-rolled copy of Home/Status's stat-strip markup.
-func contactVolumeHUD(stats store.ContactStats) hudData {
+// contactHUD builds the profile's ONE stat row (#450): Messages / You sent /
+// Received / Most active ("11 PM · Tuesdays"). The old second strip's
+// messages/day and photos tiles could read "0" on thin histories and read as
+// broken; they are dropped per the issue. Through the shared "hud" define
+// (#395).
+func contactHUD(stats store.ContactStats, activeLabel string) hudData {
+	active := "—"
+	if activeLabel != "" {
+		active = activeLabel
+	}
 	return hudData{
-		Class: "mb-3",
+		Class: "mb-2",
+		Cols:  4,
 		Cells: []hudCell{
 			{Label: "Messages", Value: commaInt(int64(stats.TotalMessages))},
 			{Label: "You sent", Value: commaInt(int64(stats.SentMessages))},
 			{Label: "Received", Value: commaInt(int64(stats.ReceivedMessages))},
-		},
-	}
-}
-
-// contactPaceHUD builds the profile's second stat strip (Messages/day /
-// Photos shared / Most active hour) through the shared "hud" define (#395).
-func contactPaceHUD(pace, photos int, activeHourLabel string) hudData {
-	hour := "—"
-	if activeHourLabel != "" {
-		hour = activeHourLabel
-	}
-	return hudData{
-		Class: "mb-8",
-		Cells: []hudCell{
-			{Label: "Messages / day", Value: commaInt(int64(pace))},
-			{Label: "Photos shared", Value: commaInt(int64(photos))},
-			{Label: "Most active hour", Value: hour, Small: true},
+			{Label: "Most active", Value: active, Small: true},
 		},
 	}
 }
@@ -171,16 +161,23 @@ func (s *Server) handleContact(w http.ResponseWriter, r *http.Request) {
 	base.NavTitle = humanName(c.DisplayName)
 	// A contact is a global surface — neither the Messages nor Media header tab.
 
+	// "Most active" (#450): the peak hour plus, when known, the peak weekday —
+	// "11 PM · Tuesdays" reads as a habit; "11 PM" alone reads as a fluke.
 	activeHourLabel := ""
 	if hasHour {
 		activeHourLabel = hourLabel(hour)
+		weekday, ok, werr := s.store.ContactMostActiveWeekday(ctx, id)
+		if werr != nil {
+			s.log.Warn("contact: most-active weekday unavailable", "error", werr)
+		} else if ok {
+			activeHourLabel += " · " + weekday
+		}
 	}
 	primarySource := ""
 	if len(c.Conversations) > 0 {
 		primarySource = c.Conversations[0].Source
 	}
 	bars, sw, sh := buildSparkline(vol)
-	pace := int(stats.MessagesPerDay + 0.5)
 	s.render(w, r, "contact", contactData{
 		baseData:       base,
 		C:              c,
@@ -191,8 +188,7 @@ func (s *Server) handleContact(w http.ResponseWriter, r *http.Request) {
 		FactScanned:    scan.Scanned,
 		FactConvTotal:  scan.Total,
 		Stats:          stats,
-		VolumeHUD:      contactVolumeHUD(stats),
-		PaceHUD:        contactPaceHUD(pace, stats.Photos, activeHourLabel),
+		StatHUD:        contactHUD(stats, activeHourLabel),
 		Bars:           bars,
 		SparkW:         sw,
 		SparkH:         sh,

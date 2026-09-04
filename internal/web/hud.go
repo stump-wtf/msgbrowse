@@ -42,6 +42,11 @@ type hudData struct {
 	Cells []hudCell
 	// Class is the caller's spacing utility for the outer frame (e.g. "mb-4").
 	Class string
+	// Cols is the grid column count the frame should use; 0 means the 3-column
+	// default. Only 4 is defined beyond the default (hud-4, #450) — a builder
+	// wanting another width widens input.css and TestHUDBuildersMatchTheGrid
+	// together, per the cell-count rule.
+	Cols int
 }
 
 // archiveHUD builds the 3-cell archive-freshness strip shared by Home and

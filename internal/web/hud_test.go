@@ -114,18 +114,21 @@ func TestHUDBuildersMatchTheGrid(t *testing.T) {
 	for _, tc := range []struct {
 		name string
 		data hudData
+		want int
 	}{
-		{"archiveHUD", archiveHUD(12, 3400, "2026-08-22", "mb-4")},
-		{"contactVolumeHUD", contactVolumeHUD(store.ContactStats{
+		{"archiveHUD", archiveHUD(12, 3400, "2026-08-22", "mb-4"), cols},
+		{"contactHUD", contactHUD(store.ContactStats{
 			TotalMessages: 100, SentMessages: 60, ReceivedMessages: 40,
-		})},
-		{"contactPaceHUD", contactPaceHUD(7, 12, "11 PM")},
+		}, "11 PM · Tuesdays"), 4},
 	} {
-		if got := len(tc.data.Cells); got != cols {
-			t.Errorf("%s emits %d cells but .hud is a %d-column grid — the "+
+		if got := len(tc.data.Cells); got != tc.want {
+			t.Errorf("%s emits %d cells but its hud variant is %d columns — the "+
 				"extra cells wrap onto a second row (carrying the stat-cell "+
 				"hairline rule) or leave dead columns inside the border; widen "+
-				"grid in input.css and this test together", tc.name, got, cols)
+				"grid in input.css and this test together", tc.name, got, tc.want)
+		}
+		if tc.want != cols && tc.data.Cols != tc.want {
+			t.Errorf("%s wants %d columns but did not set hudData.Cols", tc.name, tc.want)
 		}
 	}
 }
