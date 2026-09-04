@@ -484,13 +484,20 @@ func TestOptedOutContactStillRendersTheRestOfTheProfile(t *testing.T) {
 // strip carrying its mood, its sample, and the facets behind it.
 func TestJournalDayMoodStripRenders(t *testing.T) {
 	srv, st := newSentimentServer(t)
-	seedScoredConversation(t, st, "Harper", affectMsgs("2023-05-01 09:00:00", 1, 0.8))
+	// Three messages: each facet clears MinFacetScores and is listed (#435).
+	seedScoredConversation(t, st, "Harper", affectMsgs("2023-05-01 09:00:00", 3, 0.8))
 
 	body := get(t, srv, "/journal?day=2023-05-01").Body.String()
-	for _, want := range []string{"Expressed affect", "upbeat", "Cheerfulness", "3 scores"} {
+	for _, want := range []string{"Expressed affect", "upbeat", "Cheerfulness", "9 scores"} {
 		if !contains(body, want) {
 			t.Errorf("journal day view missing %q", want)
 		}
+	}
+	if contains(body, "leans positive") {
+		t.Error(`a facet row must never read "leans positive" (issue #434)`)
+	}
+	if !contains(body, "expressed") {
+		t.Error("facet rows must use the expressed/absent/mixed wording family")
 	}
 	if !contains(body, "not an assessment of anyone who wrote them") {
 		t.Error("the day strip is missing its AI-generated framing")
@@ -613,7 +620,7 @@ func TestSentimentReadsPinToGeneration(t *testing.T) {
 // score/construct counts; the facet bars and IPIP disclaimer live inside it.
 func TestJournalAffectBlockIsCollapsedDetails(t *testing.T) {
 	srv, st := newSentimentServer(t)
-	seedScoredConversation(t, st, "Harper", affectMsgs("2023-05-01 09:00:00", 1, 0.8))
+	seedScoredConversation(t, st, "Harper", affectMsgs("2023-05-01 09:00:00", 3, 0.8))
 
 	body := get(t, srv, "/journal?day=2023-05-01").Body.String()
 	i := strings.Index(body, `<details class="journal-affect">`)
@@ -662,5 +669,79 @@ func TestSentimentDayScopeLabel(t *testing.T) {
 	}
 	if got := sentimentScopeLabel("weird-token"); got != "Whole archive" {
 		t.Errorf("unknown scope must not print verbatim, got %q", got)
+	}
+}
+
+// TestSentimentBarWordingModes (issue #434): the two wording families share
+// thresholds and flags; facets must never say "leans".
+func TestSentimentBarWordingModes(t *testing.T) {
+	cases := []struct {
+		mean     float64
+		valence  string // newSentimentBar expectation
+		facet    string // newFacetBar expectation
+		pos, neg bool
+	}{
+		{0.60, "leans positive", "expressed", true, false},
+		{-0.60, "leans negative", "absent", false, true},
+		{0.05, "about even", "mixed", false, false},
+		{sentiment.MoodThreshold, "leans positive", "expressed", true, false},
+		{-sentiment.MoodThreshold, "leans negative", "absent", false, true},
+	}
+	for _, c := range cases {
+		vb := newSentimentBar("Anger", c.mean, 2)
+		if vb.Direction != c.valence {
+			t.Errorf("valence bar(%+.2f) = %q, want %q", c.mean, vb.Direction, c.valence)
+		}
+		fb := newFacetBar("Anger", c.mean, 2)
+		if fb.Direction != c.facet {
+			t.Errorf("facet bar(%+.2f) = %q, want %q", c.mean, fb.Direction, c.facet)
+		}
+		if fb.Positive != c.pos || fb.Negative != c.neg {
+			t.Errorf("facet bar(%+.2f) flags pos=%v neg=%v", c.mean, fb.Positive, fb.Negative)
+		}
+	}
+}
+
+// TestJournalFacetsOrderedByEvidence (issue #435): one dramatic score on X
+// must not outrank ten moderate scores on Y, and sub-threshold facets are
+// omitted from the list while still counting toward the total.
+func TestJournalFacetsOrderedByEvidence(t *testing.T) {
+	srv, st := newSentimentServer(t)
+	msgs := []scoredMsg{}
+	// Ten moderate Cheerfulness scores.
+	for i := range 10 {
+		msgs = append(msgs, scoredMsg{
+			ts:     fmt.Sprintf("2023-05-01 %02d:00:00", i),
+			scores: map[string]float64{"Cheerfulness": 0.5},
+		})
+	}
+	// One dramatic score on Vulnerability (sub-threshold) and three moderate
+	// Anxiety scores (listed, below Cheerfulness by evidence weight).
+	msgs = append(msgs, scoredMsg{ts: "2023-05-01 23:00:00", scores: map[string]float64{"Vulnerability": 0.9}})
+	for i := range 3 {
+		msgs = append(msgs, scoredMsg{
+			ts:     fmt.Sprintf("2023-05-01 1%d:00:00", i),
+			scores: map[string]float64{"Anxiety": 0.6},
+		})
+	}
+	seedScoredConversation(t, st, "Harper", msgs)
+
+	body := get(t, srv, "/journal?day=2023-05-01").Body.String()
+	c, a := strings.Index(body, "Cheerfulness"), strings.Index(body, "Anxiety")
+	if c < 0 || a < 0 {
+		t.Fatalf("expected Cheerfulness and Anxiety listed; c=%d a=%d", c, a)
+	}
+	if c > a {
+		t.Error("Cheerfulness (10 scores) must outrank Anxiety (3 scores) by evidence weight")
+	}
+	if contains(body, "Vulnerability") {
+		t.Error("a 1-score facet must not be listed (folded into the total instead)")
+	}
+	if !contains(body, "folded into the total but not listed") {
+		t.Error("the threshold rule must be printed once under the list")
+	}
+	// The total still counts every score: 10 + 1 + 3 = 14.
+	if !contains(body, "14 scores") {
+		t.Error("sub-threshold facets must still count toward the day's total")
 	}
 }

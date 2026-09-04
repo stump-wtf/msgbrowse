@@ -72,4 +72,9 @@ const (
 	// reporting one would be exactly the false confidence SPEC-0027's uncertainty
 	// requirement exists to prevent.
 	MinScores = 3
+	// MinFacetScores is how many scores a single construct needs before the day
+	// card lists it as a facet row (#435). Below it the construct still counts
+	// toward the day's total and mood fold — it is just too thin a reed to be
+	// listed beside constructs that actually characterised the day.
+	MinFacetScores = 3
 )

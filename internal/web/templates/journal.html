@@ -232,6 +232,7 @@
           <summary>Expressed affect ·
             <span class="font-mono opacity-60">{{num .Scores}} scores{{if .Facets}} across {{len .Facets}} constructs{{end}}</span></summary>
         {{- if .Facets}}
+        <p class="text-xs opacity-50 mb-1">Facets with fewer than {{num 3}} scores are folded into the total but not listed.</p>
         <ul class="mb-3">
           {{- range .Facets}}
           <li class="mb-3">

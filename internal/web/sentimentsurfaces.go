@@ -60,6 +60,7 @@ package web
 import (
 	"context"
 	"fmt"
+	"math"
 	"sort"
 
 	"github.com/joestump/msgbrowse/internal/sentiment"
@@ -113,6 +114,49 @@ type sentimentBar struct {
 // <progress> element (zero sits at the midpoint).
 const progressSpan = 200
 
+// sentimentBarWords returns the three-state reading for a bar. modeValence
+// selects the wording family: the profile's valence rows read "leans
+// positive/negative/about even" (a valence direction), while per-construct
+// facet rows read "expressed/absent/mixed" (issue #434: +0.60 on Anger is
+// anger EXPRESSED — "leans positive" is actively wrong there). Both families
+// share the same threshold and flag semantics.
+func sentimentBarWords(mean float64, valence bool) (dir string, pos, neg, neutral bool) {
+	switch {
+	case mean >= sentiment.MoodThreshold:
+		if valence {
+			return "leans positive", true, false, false
+		}
+		return "expressed", true, false, false
+	case mean <= -sentiment.MoodThreshold:
+		if valence {
+			return "leans negative", false, true, false
+		}
+		return "absent", false, true, false
+	default:
+		if valence {
+			return "about even", false, false, true
+		}
+		return "mixed", false, false, true
+	}
+}
+
+// newFacetBar is newSentimentBar with the facet wording family (#434).
+func newFacetBar(label string, mean float64, n int) sentimentBar {
+	b := newSentimentBar(label, mean, n)
+	b.Direction, b.Positive, b.Negative, b.Neutral = sentimentBarWords(clamp01(mean), false)
+	return b
+}
+
+func clamp01(m float64) float64 {
+	if m > 1 {
+		return 1
+	}
+	if m < -1 {
+		return -1
+	}
+	return m
+}
+
 // newSentimentBar maps a signed mean in [-1,+1] onto a labelled row.
 func newSentimentBar(label string, mean float64, n int) sentimentBar {
 	clamped := mean
@@ -133,14 +177,7 @@ func newSentimentBar(label string, mean float64, n int) sentimentBar {
 	} else {
 		b.Detail = fmt.Sprintf("%d scores", n)
 	}
-	switch {
-	case clamped >= sentiment.MoodThreshold:
-		b.Positive, b.Direction = true, "leans positive"
-	case clamped <= -sentiment.MoodThreshold:
-		b.Negative, b.Direction = true, "leans negative"
-	default:
-		b.Neutral, b.Direction = true, "about even"
-	}
+	b.Direction, b.Positive, b.Negative, b.Neutral = sentimentBarWords(clamped, true)
 	return b
 }
 
@@ -409,22 +446,38 @@ func (s *Server) journalDayMood(ctx context.Context, day string) (dayMoodStrip, 
 	for name := range facetSums {
 		names = append(names, name)
 	}
-	// Strongest MEAN magnitude first, name breaking ties so the order is stable
-	// across renders rather than following map iteration.
-	sort.Slice(names, func(i, j int) bool {
-		mi := abs(facetSums[names[i]] / float64(facetCounts[names[i]]))
-		mj := abs(facetSums[names[j]] / float64(facetCounts[names[j]]))
-		if mi != mj {
-			return mi > mj
-		}
-		return names[i] < names[j]
-	})
+	// Evidence-weighted order (#435): |mean| × sqrt(n), so a construct that
+	// actually characterised the day outranks a single dramatic score, with
+	// the name breaking ties so the order is stable across renders rather
+	// than following map iteration. Facets under MinFacetScores are not
+	// listed at all — they still count toward the total and mood fold, and
+	// the card says so in one line.
+	type facet struct {
+		name   string
+		weight float64
+	}
+	var listed []facet
 	for _, name := range names {
+		n := facetCounts[name]
+		if n < sentiment.MinFacetScores {
+			continue
+		}
+		mean := facetSums[name] / float64(n)
+		listed = append(listed, facet{name, abs(mean) * math.Sqrt(float64(n))})
+	}
+	sort.Slice(listed, func(i, j int) bool {
+		if listed[i].weight != listed[j].weight {
+			return listed[i].weight > listed[j].weight
+		}
+		return listed[i].name < listed[j].name
+	})
+	for _, f := range listed {
 		if len(strip.Facets) == dayMoodFacetLimit {
 			break
 		}
+		n := facetCounts[f.name]
 		strip.Facets = append(strip.Facets,
-			newSentimentBar(name, facetSums[name]/float64(facetCounts[name]), facetCounts[name]))
+			newFacetBar(f.name, facetSums[f.name]/float64(n), n))
 	}
 	return strip, nil
 }
