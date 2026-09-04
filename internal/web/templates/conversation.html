@@ -24,12 +24,10 @@
       <div class="min-w-0 flex-1">
         {{/* The name links to the person's Contact + AI Facts profile when the
              conversation is linked to a contact (groups/unlinked have none). */}}
-        <h1 class="conv-title">
-          {{- if gt .Active.ContactID 0}}<a href="/contact/{{.Active.ContactID}}" class="link link-hover"
-             hx-boost="true" hx-target="#main-content" hx-select="#main-content" hx-swap="outerHTML" hx-push-url="true"
-             title="View {{humanName .Active.Name}}'s profile">{{humanName .Active.Name}}</a>
-          {{- else}}{{humanName .Active.Name}}{{end}}
-        </h1>
+        {{/* The name is PLAIN TEXT (#445): a hover-underline on your own
+             correspondent read as accidental. The route to the profile is the
+             explicit icon button in the actions row instead. */}}
+        <h1 class="conv-title">{{humanName .Active.Name}}</h1>
         {{- if .Active.Identifiers}}
         <div class="conv-ids">
           {{- range .Active.Identifiers}}
@@ -43,6 +41,17 @@
            pin-btn styling (no new CSS) and is boosted like the shell nav so the
            reorder swaps only #main-content. aria-pressed reflects whether the
            "Oldest first" order is engaged. */}}
+      {{/* Profile icon button (#445): the explicit route to the contact's
+           profile, replacing the title-as-link affordance. Only for threads
+           linked to a contact; groups and unlinked threads get nothing.
+           Boosted like the sort toggle so the swap stays in #main-content. */}}
+      {{- if gt .Active.ContactID 0}}
+      <a href="/contact/{{.Active.ContactID}}" class="pin-btn shrink-0"
+         title="Profile — what the AI has learned"
+         hx-boost="true" hx-target="#main-content" hx-select="#main-content" hx-swap="outerHTML" hx-push-url="true">
+        {{template "icon-id-card" $}}<span class="sr-only">Profile</span>
+      </a>
+      {{- end}}
       {{- $asc := eq .List.Sort "asc"}}
       <a href="/c/{{.Active.ID}}{{if not $asc}}?sort=asc{{end}}"
          class="pin-btn shrink-0{{if $asc}} pin-btn-active{{end}}"
