@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"mime/multipart"
 	"net/http"
 	"strings"
@@ -27,6 +28,8 @@ type OpenAIClient struct {
 	chatModel  string
 	embedModel string
 	httpClient *http.Client
+	retry      RetryConfig
+	log        *slog.Logger
 }
 
 // Options configures an OpenAIClient.
@@ -37,6 +40,11 @@ type Options struct {
 	EmbedModel string
 	Timeout    time.Duration
 	HTTPClient *http.Client // optional; for tests
+	// Retry bounds transient-failure retries (issue #452); nil applies
+	// DefaultRetry. Set Attempts=1 to disable retrying.
+	Retry *RetryConfig
+	// Logger receives one info line per retry; defaults to slog.Default().
+	Logger *slog.Logger
 }
 
 // New constructs an OpenAIClient. BaseURL and the model names are required for
@@ -51,12 +59,23 @@ func New(opts Options) *OpenAIClient {
 		}
 		hc = &http.Client{Timeout: timeout}
 	}
+	retryCfg := DefaultRetry()
+	if opts.Retry != nil {
+		retryCfg = *opts.Retry
+	}
+	retryCfg = retryCfg.withDefaults()
+	lg := opts.Logger
+	if lg == nil {
+		lg = slog.Default()
+	}
 	return &OpenAIClient{
 		baseURL:    strings.TrimRight(opts.BaseURL, "/"),
 		apiKey:     opts.APIKey,
 		chatModel:  opts.ChatModel,
 		embedModel: opts.EmbedModel,
 		httpClient: hc,
+		retry:      retryCfg,
+		log:        lg,
 	}
 }
 
@@ -115,13 +134,14 @@ type modelsResponse struct {
 
 // ListModels implements Client.
 func (c *OpenAIClient) ListModels(ctx context.Context) ([]string, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+"/models", nil)
-	if err != nil {
-		return nil, err
-	}
-	c.setAuth(req)
-
-	respBody, err := c.do(req)
+	respBody, err := c.doWithRetry(ctx, "/models", func() (*http.Request, error) {
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+"/models", nil)
+		if err != nil {
+			return nil, err
+		}
+		c.setAuth(req)
+		return req, nil
+	})
 	if err != nil {
 		// A 404 means the endpoint doesn't support model listing.
 		var se *statusError
@@ -268,21 +288,24 @@ func (c *OpenAIClient) Vision(ctx context.Context, image []byte, mimeType, promp
 
 // --- HTTP plumbing ---
 
-// postJSON marshals body to JSON, POSTs it to baseURL+path, and decodes the
-// response into out.
+// postJSON marshals body to JSON, POSTs it to baseURL+path with transient
+// failure retry, and decodes the response into out.
 func (c *OpenAIClient) postJSON(ctx context.Context, path string, body, out any) error {
 	data, err := json.Marshal(body)
 	if err != nil {
 		return err
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+path, bytes.NewReader(data))
-	if err != nil {
-		return err
-	}
-	req.Header.Set("Content-Type", "application/json")
-	c.setAuth(req)
-
-	respBody, err := c.do(req)
+	respBody, err := c.doWithRetry(ctx, path, func() (*http.Request, error) {
+		// A fresh request per attempt: the body reader is consumed by the
+		// first send.
+		req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+path, bytes.NewReader(data))
+		if err != nil {
+			return nil, err
+		}
+		req.Header.Set("Content-Type", "application/json")
+		c.setAuth(req)
+		return req, nil
+	})
 	if err != nil {
 		return err
 	}
@@ -290,6 +313,44 @@ func (c *OpenAIClient) postJSON(ctx context.Context, path string, body, out any)
 		return fmt.Errorf("llm: decode response from %s: %w", path, err)
 	}
 	return nil
+}
+
+// doWithRetry executes buildReq→do up to the configured attempt count,
+// retrying only retryable failures (429/502/503/504 and client timeouts) with
+// exponential backoff + jitter, logging each retry at info. Non-retryable
+// errors return immediately; a cancelled context never schedules another
+// attempt.
+//
+// @joestump-agent 09/04/2026 - Added with #452: transient-failure retry so
+// one bad gateway response no longer aborts a multi-hour pass.
+func (c *OpenAIClient) doWithRetry(ctx context.Context, path string, buildReq func() (*http.Request, error)) ([]byte, error) {
+	var lastErr error
+	for attempt := 0; attempt < c.retry.Attempts; attempt++ {
+		if attempt > 0 {
+			d := c.retry.delay(attempt - 1)
+			c.log.Info("retrying LLM request", "path", path, "attempt", attempt+1, "of", c.retry.Attempts, "delay", d.String(), "error", lastErr)
+			timer := time.NewTimer(d)
+			select {
+			case <-ctx.Done():
+				timer.Stop()
+				return nil, ctx.Err()
+			case <-timer.C:
+			}
+		}
+		req, err := buildReq()
+		if err != nil {
+			return nil, err
+		}
+		body, err := c.do(req)
+		if err == nil {
+			return body, nil
+		}
+		lastErr = err
+		if !retryable(err) || req.Context().Err() != nil {
+			return nil, err
+		}
+	}
+	return nil, lastErr
 }
 
 func (c *OpenAIClient) setAuth(req *http.Request) {

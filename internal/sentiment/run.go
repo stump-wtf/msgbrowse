@@ -46,14 +46,24 @@ type Summary struct {
 	Batches         int
 	SkippedOptedOut int
 	DurationMS      int64
+	// Errors carries one entry per conversation that failed after the LLM
+	// client's retries were exhausted (issue #452). Such a conversation no
+	// longer aborts the run — the remaining conversations still get scored —
+	// but the failures must not be silent: the entries surface in the run log
+	// and the returned Summary.
+	Errors []string
 }
 
 // Run scores every eligible conversation incrementally, honoring the exclude
 // list and per-contact opt-outs, using bounded concurrency.
 //
-// A transport/LLM failure aborts the run. Because the cursor is persisted after
-// each batch — in the same transaction as that batch's scores — the next run
-// resumes exactly where this one stopped rather than from the top.
+// A transport/LLM failure aborts the current CONVERSATION; after the LLM
+// client's retries are exhausted the conversation is recorded in Summary.Errors
+// and the run continues with the next one (issue #452) — one dead conversation
+// must not take down a pass that has been healthy for hours. Because the cursor
+// is persisted after each batch — in the same transaction as that batch's
+// scores — the next run resumes the failed conversation exactly where this one
+// stopped rather than from the top. A cancelled context still aborts the run.
 func Run(ctx context.Context, st *store.Store, client llm.Client, opts Options) (sum Summary, err error) {
 	log := opts.Logger
 	if log == nil {
@@ -123,6 +133,12 @@ func Run(ctx context.Context, st *store.Store, client llm.Client, opts Options) 
 		msg := ""
 		if err != nil {
 			msg = err.Error()
+		}
+		if len(sum.Errors) > 0 {
+			if msg != "" {
+				msg += "; "
+			}
+			msg += fmt.Sprintf("%d conversation(s) failed: %s", len(sum.Errors), strings.Join(sum.Errors, "; "))
 		}
 		if ferr := st.FinishSentimentRun(finishCtx, store.SentimentRun{
 			ID: runID, FinishedAt: time.Now(),
@@ -202,6 +218,16 @@ func Run(ctx context.Context, st *store.Store, client llm.Client, opts Options) 
 	fail := func(err error) {
 		once.Do(func() { firstEr = err; cancel() })
 	}
+	// recordFailure captures a conversation-level failure (issue #452): the
+	// entry lands in Summary.Errors and the run moves on. Only a cancelled
+	// outer context — the user stopping the run — still aborts everything.
+	recordFailure := func(sc store.SentimentConversation, err error) {
+		mu.Lock()
+		sum.Errors = append(sum.Errors, fmt.Sprintf("conversation %q (%s): %v", sc.Name, sc.Source, err))
+		mu.Unlock()
+		log.Warn("sentiment: conversation failed after retries; continuing with the next",
+			"conversation", sc.Name, "source", sc.Source, "error", err)
+	}
 
 	jobs := make(chan store.SentimentConversation)
 	var wg sync.WaitGroup
@@ -212,8 +238,14 @@ func Run(ctx context.Context, st *store.Store, client llm.Client, opts Options) 
 			for sc := range jobs {
 				cs, err := scoreConversation(runCtx, st, client, lex, gen, batch, opts, sc, log)
 				if err != nil {
-					fail(err)
-					return
+					if ctx.Err() != nil {
+						// The run is being shut down (not a conversation
+						// failure); abort as before.
+						fail(err)
+						return
+					}
+					recordFailure(sc, err)
+					continue
 				}
 				mu.Lock()
 				sum.Conversations++
@@ -249,6 +281,11 @@ feed:
 	sum.SkippedOptedOut = skipped
 	if firstEr != nil {
 		return sum, firstEr
+	}
+	// Every conversation failed: that is a run failure, not a partial success
+	// — surface it so callers (and exit codes) treat it like one.
+	if len(sum.Errors) > 0 && sum.Conversations == 0 {
+		return sum, fmt.Errorf("sentiment: every conversation failed: %s", sum.Errors[0])
 	}
 	sum.DurationMS = time.Since(start).Milliseconds()
 	log.Info("sentiment complete", "rows_written", sum.RowsWritten, "messages_scored", sum.MessagesScored,

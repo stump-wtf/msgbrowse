@@ -598,3 +598,45 @@ func countRows(t *testing.T, st *store.Store) int {
 	}
 	return n
 }
+
+// TestRunContinuesAfterConversationFailure (issue #452): after the client's
+// retries are exhausted, one failing conversation is recorded in Summary.Errors
+// and the run continues — the surviving conversation still gets scored, and the
+// failed one keeps its cursor for the next run.
+func TestRunContinuesAfterConversationFailure(t *testing.T) {
+	st := openStore(t)
+	ctx := context.Background()
+	dead := seedN(t, st, source.Signal, "Failing", 8)
+	alive := seedN(t, st, source.Signal, "Surviving", 4)
+
+	opts := baseOpts()
+	opts.BatchSize = 4
+	opts.Concurrency = 1
+
+	client := &fakeClient{respFn: func(p string) (string, error) {
+		// Fail only batches belonging to the "Failing" conversation.
+		if strings.Contains(p, "Failing") {
+			return "", errors.New("simulated transport failure")
+		}
+		return scoreEveryMessage(p)
+	}}
+	sum, err := Run(ctx, st, client, opts)
+	if err != nil {
+		t.Fatalf("one dead conversation must not abort the run: %v", err)
+	}
+	if len(sum.Errors) != 1 || !strings.Contains(sum.Errors[0], "Failing") {
+		t.Fatalf("Errors = %v, want exactly the failing conversation", sum.Errors)
+	}
+	if sum.MessagesScored != 4 {
+		t.Fatalf("MessagesScored = %d, want the surviving conversation's 4", sum.MessagesScored)
+	}
+	// The failed conversation must have no persisted state at all: its first
+	// batch failed, so nothing was written and the next run starts it from
+	// the top. The surviving conversation is unaffected.
+	if _, _, ok, err := st.GetSentimentState(ctx, dead); err != nil || ok {
+		t.Fatalf("failed conversation must have no cursor state: ok %v err %v", ok, err)
+	}
+	if got, _, ok, err := st.GetSentimentState(ctx, alive); err != nil || !ok || got == "" {
+		t.Fatalf("surviving conversation state: hash %q ok %v err %v", got, ok, err)
+	}
+}
