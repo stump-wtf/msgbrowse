@@ -445,8 +445,8 @@
 
      Dot is a hudData{Cells, Class} (internal/web/hud.go): Cells is an
      ordered []hudCell{Label, Value, Small}, Class is the caller's spacing
-     utility for the outer frame (callers differ — Home/Status want mb-4,
-     the contact profile's two strips want mb-3 and mb-8). Values arrive
+     utility for the outer frame (callers differ — Home/Status want mb-space-4,
+     the contact profile's two strips want mb-space-3 and mb-space-7). Values arrive
      pre-formatted (comma grouping already applied in Go) so this define
      stays a pure renderer with no notion of which fields are numeric. Small
      switches a cell to the compact value style long strings need (a
@@ -492,8 +492,8 @@
 {{define "pipeline_run_history"}}
 {{- if .rows}}
 {{- $scoped := false}}{{range .rows}}{{if .Scope}}{{$scoped = true}}{{end}}{{end}}
-        <div class="status-subtable mt-5">
-          <div class="status-metric-label mb-2">Recent runs</div>
+        <div class="status-subtable mt-space-5">
+          <div class="status-metric-label mb-space-2">Recent runs</div>
           <div class="overflow-x-auto">
             <table class="w-full text-sm">
               <thead>

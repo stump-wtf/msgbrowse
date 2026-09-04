@@ -20,7 +20,7 @@
          htmx's localStorage history cache — the same opt-out the Settings
          pairing page uses. */}}
     <main id="main-content" class="flex-1" tabindex="0" hx-history="false">
-  <div class="px-6 lg:px-8 py-8 max-w-4xl space-y-5">
+  <div class="px-6 lg:px-8 py-8 max-w-4xl stack-gap-5">
     <h1 class="screen-h1">Settings</h1>
     {{template "settings_subnav" "llm"}}
     <p class="screen-sub">The OpenAI-compatible endpoint behind semantic search and AI features.
@@ -62,7 +62,7 @@
     {{template "status_banner" dict "variant" "warning" "title" "Nothing was saved." "body" "Fix the highlighted fields below and save again."}}
     {{- end}}
 
-    <section class="status-card space-y-4" aria-labelledby="settings-llm-heading">
+    <section class="status-card stack-gap-4" aria-labelledby="settings-llm-heading">
       <h2 id="settings-llm-heading" class="status-card-title">AI endpoint</h2>
 
       {{/* Discovery-down banner (SPEC-0004 REQ-0004-011). Distinct from the
@@ -83,11 +83,11 @@
       {{- end}}
       {{- end}}
 
-      <form method="post" action="/settings/llm" class="space-y-4"
+      <form method="post" action="/settings/llm" class="stack-gap-4"
             hx-boost="true" hx-target="#main-content" hx-select="#main-content" hx-swap="outerHTML">
         <input type="hidden" name="setup_token" value="{{.SetupToken}}">
 
-        <div class="space-y-1">
+        <div class="stack-gap-1">
           <label class="eyebrow block" for="llm-base-url">Base URL</label>
           <input id="llm-base-url" name="base_url" type="text" class="filter-input w-full font-mono"
                  value="{{.BaseURL}}" autocomplete="off" spellcheck="false"
@@ -104,7 +104,7 @@
             Ollama proxy, or a hosted provider's API base.</p>
         </div>
 
-        <div class="space-y-1">
+        <div class="stack-gap-1">
           <label class="eyebrow block" for="llm-embed-model">Embed model</label>
           {{template "llm_model_select" dict "id" "llm-embed-model" "name" "embed_model" "options" .EmbedOptions "available" .ModelsAvailable "err" .ErrEmbedModel}}
           {{- if .ErrEmbedModel}}
@@ -121,7 +121,7 @@
           {{- end}}
         </div>
 
-        <div class="space-y-1">
+        <div class="stack-gap-1">
           <label class="eyebrow block" for="llm-facts-model">Chat model</label>
           {{template "llm_model_select" dict "id" "llm-facts-model" "name" "facts_model" "options" .FactsOptions "available" .ModelsAvailable "err" .ErrFactsModel}}
           {{- if .ErrFactsModel}}
@@ -134,7 +134,7 @@
             stored as <code class="font-mono">llm.chat_model</code>.</p>
         </div>
 
-        <div class="space-y-1">
+        <div class="stack-gap-1">
           <label class="eyebrow block" for="llm-api-key">API key</label>
           {{/* Secret field: type=password, autocomplete="new-password" so the
                browser never offers to autofill a saved login here, and the value

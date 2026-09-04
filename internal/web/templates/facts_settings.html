@@ -20,7 +20,7 @@
      localStorage history cache. */}}
 {{define "facts_settings_content"}}<title>{{.Title}}</title>
     <main id="main-content" class="flex-1" tabindex="0" hx-history="false">
-  <div class="px-6 lg:px-8 py-8 max-w-4xl space-y-5">
+  <div class="px-6 lg:px-8 py-8 max-w-4xl stack-gap-5">
     <h1 class="screen-h1">Settings</h1>
     {{template "settings_subnav" "facts"}}
 
@@ -66,7 +66,7 @@
            replacement omits the trigger once the run ends, so the polling stops
            on its own. No aria-live on the CARD — the live region is scoped to
            the one line that actually changes, below. */}}
-      <div id="facts-build-card" class="status-card mb-6"
+      <div id="facts-build-card" class="status-card mb-space-6"
            {{- if .Build.Busy}} hx-get="/facts/run/progress" hx-trigger="every 2s" hx-target="#facts-build-card" hx-swap="outerHTML"{{end}}>
         <div class="status-card-title">Contact facts</div>
         {{- if not .Build.Available}}
@@ -76,14 +76,14 @@
         {{- else}}
 
         {{- if .Build.InProgress}}
-        <p class="status-note mb-3" role="status" aria-live="polite"><span class="sync-badge sync-badge-info">Extracting…</span>
+        <p class="status-note mb-space-3" role="status" aria-live="polite"><span class="sync-badge sync-badge-info">Extracting…</span>
           {{num .Build.RunConversations}} conversations read and {{num .Build.RunFacts}} facts extracted so far
           in the current run.</p>
         {{- else if .Build.Running}}
-        <p class="status-note mb-3" role="status" aria-live="polite"><span class="sync-badge sync-badge-info">Extracting…</span>
+        <p class="status-note mb-space-3" role="status" aria-live="polite"><span class="sync-badge sync-badge-info">Extracting…</span>
           The run has just started.</p>
         {{- else if .Build.Stalled}}
-        <p class="status-note mb-3"><span class="sync-badge sync-badge-warn">Interrupted</span>
+        <p class="status-note mb-space-3"><span class="sync-badge sync-badge-warn">Interrupted</span>
           The last extraction stopped before finishing — running again resumes from each conversation's stored
           cursor, so nothing already paid for is re-read.</p>
         {{- end}}
@@ -91,7 +91,7 @@
         {{/* Extraction coverage over the eligible conversations. <progress> (not
              an inline-styled div) keeps this CSP-clean. */}}
         {{- if gt .Build.Conversations 0}}
-        <div class="index-progress-row mb-4">
+        <div class="index-progress-row mb-space-4">
           <progress class="index-progress" value="{{.Build.Processed}}" max="{{.Build.Conversations}}"></progress>
           <span class="index-progress-pct mono">{{.Build.Percent}}%</span>
         </div>
@@ -101,7 +101,7 @@
         {{/* Orphaned citations (#447): re-imports shift timestamps and hashes,
              leaving facts pointing at messages that no longer exist. They are
              reaped automatically at the start of the next extraction pass. */}}
-        <p class="status-note mb-3"><span class="sync-badge sync-badge-warn">{{num .Build.OrphanFacts}} facts cite messages that were re-imported</span>
+        <p class="status-note mb-space-3"><span class="sync-badge sync-badge-warn">{{num .Build.OrphanFacts}} facts cite messages that were re-imported</span>
           — they will be removed when the next extraction runs.</p>
         {{- end}}
 
@@ -130,7 +130,7 @@
             </div></div>
         </div>
         {{- if .Build.LastError}}
-        <p class="status-note mt-4"><span class="sync-badge sync-badge-err">Failed</span>
+        <p class="status-note mt-space-4"><span class="sync-badge sync-badge-err">Failed</span>
           Last run aborted: <span class="font-mono">{{.Build.LastError}}</span></p>
         {{- end}}
 
@@ -143,7 +143,7 @@
              billable outbound LLM work over thousands of conversations, so the
              price has to be visible at the moment of the decision, not
              afterwards — the "Rebuild all N digests" contract. */}}
-        <div class="flex flex-wrap gap-3 mt-5">
+        <div class="flex flex-wrap gap-3 mt-space-5">
           <form method="post" action="/facts/run"
                 hx-boost="true" hx-target="#main-content" hx-select="#main-content" hx-swap="outerHTML">
             <input type="hidden" name="setup_token" value="{{.SetupToken}}">
@@ -161,13 +161,13 @@
           </form>
           {{- end}}
         </div>
-        <p class="status-note mt-3">Extraction sends each conversation's messages to your LLM endpoint in
+        <p class="status-note mt-space-3">Extraction sends each conversation's messages to your LLM endpoint in
           batches — {{num .Build.Remaining}} conversations have not been read yet, and each one costs at least
           one call. It resumes from where the last run stopped and leaves facts you already have alone.
           {{- if or (gt .Build.Processed 0) (gt .Build.Facts 0)}} Re-extract clears all {{num .Build.Facts}}
           stored facts and pays for every one of the {{num .Build.Conversations}} conversations again.{{end}}</p>
         {{- else}}
-        <p class="status-note mt-5">Extraction sends message text to your configured LLM endpoint, so it needs
+        <p class="status-note mt-space-5">Extraction sends message text to your configured LLM endpoint, so it needs
           a chat model. Nothing is sent until you start a run, and no run can start without one.</p>
         {{- end}}
         {{- end}}

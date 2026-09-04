@@ -57,14 +57,14 @@
      indexData both carry them). The element ids inside are unique per page —
      the two surfaces never render together. */}}
 {{define "mcp_connect_card"}}
-    <section class="status-card space-y-4" aria-labelledby="settings-mcp-heading">
+    <section class="status-card stack-gap-4" aria-labelledby="settings-mcp-heading">
       <h2 id="settings-mcp-heading" class="status-card-title">MCP server</h2>
       <p class="status-note">Point Claude Desktop or Claude Code at this archive over streamable HTTP.
         The endpoint shares this app's address; in desktop mode it is live at
         <code class="font-mono">/mcp</code>, and <code class="font-mono">msgbrowse mcp --http</code> serves the same tools standalone.</p>
 
       <div>
-        <div class="eyebrow mb-1" id="settings-endpoint-label">Endpoint URL</div>
+        <div class="eyebrow mb-space-1" id="settings-endpoint-label">Endpoint URL</div>
         <div class="copy-block">
           <pre class="copy-pre"><code id="mcp-endpoint">{{.MCPEndpointURL}}</code></pre>
           <button type="button" class="copy-btn" data-copy-target="mcp-endpoint"
@@ -76,7 +76,7 @@
       </div>
 
       <div>
-        <div class="eyebrow mb-1" id="settings-json-label">Client configuration (JSON)</div>
+        <div class="eyebrow mb-space-1" id="settings-json-label">Client configuration (JSON)</div>
         <div class="copy-block">
           <pre class="copy-pre"><code id="mcp-config-json">{{.MCPConfigJSON}}</code></pre>
           <button type="button" class="copy-btn" data-copy-target="mcp-config-json"
@@ -88,7 +88,7 @@
       </div>
 
       <div>
-        <div class="eyebrow mb-1" id="settings-cli-label">Claude Code one-liner</div>
+        <div class="eyebrow mb-space-1" id="settings-cli-label">Claude Code one-liner</div>
         <div class="copy-block">
           <pre class="copy-pre"><code id="mcp-add-command">{{.MCPAddCommand}}</code></pre>
           <button type="button" class="copy-btn" data-copy-target="mcp-add-command"
@@ -114,7 +114,7 @@
     {{else if eq .AutostartResult "error"}}
         {{template "status_banner" dict "variant" "error" "title" "Could not update launch at login." "body" "See Logs for details and try again."}}
     {{end}}
-    <section class="status-card space-y-4" aria-labelledby="settings-autostart-heading">
+    <section class="status-card stack-gap-4" aria-labelledby="settings-autostart-heading">
       <h2 id="settings-autostart-heading" class="status-card-title">Desktop app</h2>
       <p class="status-note">Start msgbrowse automatically when you log in, hidden up in the
         menubar — no window opens until you choose View Messages.</p>
@@ -155,7 +155,7 @@
          payload itself is public (SPEC-0014 §Trust Model) — the token is why
          the history opt-out stays. */}}
     <main id="main-content" class="flex-1" tabindex="0" hx-history="false">
-  <div class="px-6 lg:px-8 py-8 max-w-4xl space-y-5">
+  <div class="px-6 lg:px-8 py-8 max-w-4xl stack-gap-5">
     <h1 class="screen-h1">MCP</h1>
     {{template "settings_subnav" "mcp"}}
     <p class="screen-sub">Connect an MCP client to this archive, or pair another device.</p>
@@ -175,7 +175,7 @@
          The whole section is gated on DeviceSyncFeature — the `devicesync` build
          tag. Release builds omit the feature, so nothing here renders. */}}
     {{- if .DeviceSyncFeature}}
-    <section class="status-card space-y-4" aria-labelledby="settings-pairing-heading">
+    <section class="status-card stack-gap-4" aria-labelledby="settings-pairing-heading">
       <h2 id="settings-pairing-heading" class="status-card-title">Device sync</h2>
       {{- if .UnpairResult}}
       {{/* Post-redirect banner from the unpair POST (#158): the same
@@ -216,14 +216,14 @@
       <div class="qr-panel">
         <img class="qr-img" src="{{.Pairing.QRDataURI}}" width="220" height="220"
              alt="Device pairing QR code — a text device-ID code is provided below.">
-        <div class="qr-panel-text space-y-3 min-w-0">
+        <div class="qr-panel-text stack-gap-3 min-w-0">
           <p class="status-note">This is <strong>{{.Pairing.Name}}</strong>'s device ID{{if .Pairing.FolderLabels}}, offering
             the {{range $i, $l := .Pairing.FolderLabels}}{{if $i}}, {{end}}{{$l}}{{end}} archive{{end}}.
             Scan the QR — or copy the code — on the other device and paste it into its pairing form.
             The ID is public: pairing only completes when <em>both</em> devices have accepted each
             other, so a copied code grants nothing by itself.</p>
           <div>
-            <div class="eyebrow mb-1" id="settings-device-id-label">This device's ID</div>
+            <div class="eyebrow mb-space-1" id="settings-device-id-label">This device's ID</div>
             <div class="copy-block">
               <pre class="copy-pre"><code id="device-id">{{.Pairing.DeviceID}}</code></pre>
               <button type="button" class="copy-btn" data-copy-target="device-id"
@@ -234,7 +234,7 @@
             </div>
           </div>
           <div>
-            <div class="eyebrow mb-1" id="settings-pairing-code-label">Manual pairing code</div>
+            <div class="eyebrow mb-space-1" id="settings-pairing-code-label">Manual pairing code</div>
             <div class="copy-block">
               <pre class="copy-pre"><code id="pairing-code">{{.Pairing.ManualCode}}</code></pre>
               <button type="button" class="copy-btn" data-copy-target="pairing-code"
@@ -251,9 +251,9 @@
            form POST (CSP form-action 'self') through the privileged-POST gate
            — the hidden setup_token plus same-origin check, exactly the Setup
            POSTs' contract (issue #157 Security Checklist). */}}
-      <form method="post" action="/settings/devices/pair" class="space-y-2">
+      <form method="post" action="/settings/devices/pair" class="stack-gap-2">
         <input type="hidden" name="setup_token" value="{{.SetupToken}}">
-        <label class="eyebrow mb-1 block" for="pair-code-input">Pair a device</label>
+        <label class="eyebrow mb-space-1 block" for="pair-code-input">Pair a device</label>
         <p class="status-note">Paste the other device's manual code (MSGB2.…) or its device ID.</p>
         <input id="pair-code-input" name="code" type="text" class="filter-input w-full font-mono"
                autocomplete="off" spellcheck="false"
@@ -268,7 +268,7 @@
            Unpair control. Connection changes are server-rendered per load;
            the region is aria-live so a refreshed state is announced. */}}
       <div>
-        <div class="eyebrow mb-1" id="settings-paired-devices-label">Paired devices</div>
+        <div class="eyebrow mb-space-1" id="settings-paired-devices-label">Paired devices</div>
         {{- if and .EngineStateKnown (not .EngineRunning)}}
         {{/* The engine died mid-session (the pairing payload above may be a
              cached device ID): say so rather than letting "State unknown"
@@ -278,7 +278,7 @@
           Peer states below are unknown until the sync engine is back — check Logs and restart if it persists.</p>
         {{- end}}
         {{- if .Peers}}
-        <ul class="space-y-2" aria-labelledby="settings-paired-devices-label" aria-live="polite">
+        <ul class="stack-gap-2" aria-labelledby="settings-paired-devices-label" aria-live="polite">
           {{- range .Peers}}
           <li class="notice-card">
             <p class="link-card-title">{{.Name}} <span class="font-mono">({{.ShortID}})</span>

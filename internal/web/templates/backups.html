@@ -9,7 +9,7 @@
      .snapshots inventory (ADR-0010 §5: never opened or decrypted). */}}
 {{define "backups_content"}}<title>{{.Title}}</title>
     <main id="main-content" class="flex-1" tabindex="0">
-  <div class="px-6 lg:px-8 py-8 max-w-4xl space-y-5">
+  <div class="px-6 lg:px-8 py-8 max-w-4xl stack-gap-5">
     <h1 class="screen-h1">Settings</h1>
     {{template "settings_subnav" "backups"}}
 
@@ -53,13 +53,13 @@
     {{/* Configuration form (issue #300): snapshot directory + GFS retention,
          persisted to the config file (the Settings → LLM pattern — saves
          apply live, no restart). */}}
-    <section class="status-card space-y-4" aria-labelledby="backups-config-heading">
+    <section class="status-card stack-gap-4" aria-labelledby="backups-config-heading">
       <h2 id="backups-config-heading" class="status-card-title">Backup configuration</h2>
-      <form method="post" action="/backups/config" class="space-y-4"
+      <form method="post" action="/backups/config" class="stack-gap-4"
             hx-boost="true" hx-target="#main-content" hx-select="#main-content" hx-swap="outerHTML">
         <input type="hidden" name="setup_token" value="{{.SetupToken}}">
 
-        <div class="space-y-1">
+        <div class="stack-gap-1">
           <label class="eyebrow block" for="backup-dir">Snapshot directory</label>
           <input id="backup-dir" name="dir" type="text" class="filter-input w-full font-mono"
                  value="{{.ConfigDir}}" autocomplete="off" spellcheck="false"
@@ -76,28 +76,28 @@
             <code class="font-mono">{{.DefaultDir}}</code>.</p>
         </div>
 
-        <div class="space-y-1">
+        <div class="stack-gap-1">
           <span class="eyebrow block">Retention (snapshots kept per tier)</span>
           <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
-            <div class="space-y-1">
+            <div class="stack-gap-1">
               <label class="status-note" for="ret-daily">Daily</label>
               <input id="ret-daily" name="retention_daily" type="number" min="0" max="1000"
                      class="filter-input w-full font-mono" value="{{.Retention.Daily}}"
                      {{if .ErrRetention}}aria-invalid="true"{{end}}>
             </div>
-            <div class="space-y-1">
+            <div class="stack-gap-1">
               <label class="status-note" for="ret-monthly">Monthly</label>
               <input id="ret-monthly" name="retention_monthly" type="number" min="0" max="1000"
                      class="filter-input w-full font-mono" value="{{.Retention.Monthly}}"
                      {{if .ErrRetention}}aria-invalid="true"{{end}}>
             </div>
-            <div class="space-y-1">
+            <div class="stack-gap-1">
               <label class="status-note" for="ret-quarterly">Quarterly</label>
               <input id="ret-quarterly" name="retention_quarterly" type="number" min="0" max="1000"
                      class="filter-input w-full font-mono" value="{{.Retention.Quarterly}}"
                      {{if .ErrRetention}}aria-invalid="true"{{end}}>
             </div>
-            <div class="space-y-1">
+            <div class="stack-gap-1">
               <label class="status-note" for="ret-yearly">Yearly</label>
               <input id="ret-yearly" name="retention_yearly" type="number" min="0" max="1000"
                      class="filter-input w-full font-mono" value="{{.Retention.Yearly}}"
@@ -125,7 +125,7 @@
     {{if .BackupMgrAvailable}}
     <div class="status-card">
       <div class="status-card-title">msgbrowse snapshots</div>
-      <p class="status-note mb-4">A snapshot is a plaintext copy of the database, embeddings, and config — restorable without re-running any exporter or re-embedding.
+      <p class="status-note mb-space-4">A snapshot is a plaintext copy of the database, embeddings, and config — restorable without re-running any exporter or re-embedding.
         Total footprint: <span class="font-mono">{{humanSize .OwnedFootprint}}</span> across <span class="font-mono">{{num (len .OwnedSnapshots)}}</span> snapshots.
         {{if .BackupDir}}Written to <code class="font-mono">{{.BackupDir}}</code>.{{end}}
         Snapshot files are mode 0600 — they contain the entire message corpus.</p>
@@ -133,7 +133,7 @@
       {{/* Create + Prune controls, following the Status page's POST /status/index
            precedent: privileged same-origin form POST carrying setup_token,
            buttons disabled while an operation is in progress. */}}
-      <div class="setup-card-actions mb-4">
+      <div class="setup-card-actions mb-space-4">
         <form method="post" action="/backups/create">
           <input type="hidden" name="setup_token" value="{{.SetupToken}}">
           <button type="submit" class="setup-btn">Create backup</button>
@@ -214,7 +214,7 @@
     {{if .HasSnapshotPipeline}}
     <div class="status-card">
       <div class="status-card-title">External snapshots (read-only)</div>
-      <p class="status-note mb-4">Total footprint: <span class="font-mono">{{humanSize .ExternalFootprint}}</span> across <span class="font-mono">{{num (len .ExternalSnapshots)}}</span> snapshots.
+      <p class="status-note mb-space-4">Total footprint: <span class="font-mono">{{humanSize .ExternalFootprint}}</span> across <span class="font-mono">{{num (len .ExternalSnapshots)}}</span> snapshots.
         These are SQLCipher-encrypted raw database backups produced by an external backup job —
         msgbrowse lists them but never opens or decrypts them.</p>
       {{if .ExternalSnapshots}}

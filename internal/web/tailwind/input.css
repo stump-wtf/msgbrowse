@@ -287,6 +287,35 @@
   margin-top: var(--section-gap);
 }
 
+/* Scale-backed element rhythm helpers (#433, the #432 follow-up). The last
+   hand-rolled margin utilities — mb-N, mt-N, space-y-N — are retired: a
+   column of siblings takes .stack (20px) or, for a tighter intra-card
+   rhythm, one of the .stack-gap-N variants, and a one-off margin takes
+   .mt-space-N / .mb-space-N so the value still comes from --space-*. Each
+   maps 1:1 to the Tailwind utility it replaced, so nothing shifts visually.
+   spacing_test.go fails the build if a raw utility reappears in a template.
+
+   @joestump-agent 09/04/2026 - Added with the app-wide margin sweep (#433). */
+.stack-gap-1 > * + * { margin-top: var(--space-1); }
+.stack-gap-2 > * + * { margin-top: var(--space-2); }
+.stack-gap-3 > * + * { margin-top: var(--space-3); }
+.stack-gap-4 > * + * { margin-top: var(--space-4); }
+.stack-gap-5 > * + * { margin-top: var(--space-5); } /* == --stack-gap, the .stack default */
+.mt-space-1 { margin-top: var(--space-1); }
+.mt-space-2 { margin-top: var(--space-2); }
+.mt-space-3 { margin-top: var(--space-3); }
+.mt-space-4 { margin-top: var(--space-4); }
+.mt-space-5 { margin-top: var(--space-5); }
+.mt-space-6 { margin-top: var(--space-6); }
+.mt-space-7 { margin-top: var(--space-7); }
+.mb-space-1 { margin-bottom: var(--space-1); }
+.mb-space-2 { margin-bottom: var(--space-2); }
+.mb-space-3 { margin-bottom: var(--space-3); }
+.mb-space-4 { margin-bottom: var(--space-4); }
+.mb-space-5 { margin-bottom: var(--space-5); }
+.mb-space-6 { margin-bottom: var(--space-6); }
+.mb-space-7 { margin-bottom: var(--space-7); }
+
 /* --- typography: system fonts only (no web fonts; CSP/ADR-0010 holds) --- */
 
 /* System sans for UI, antialiased per the handoff; system mono for numerals. */

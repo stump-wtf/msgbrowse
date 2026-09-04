@@ -31,7 +31,7 @@
     <main id="main-content" class="flex-1" tabindex="0">
   <div class="px-6 lg:px-10 py-10">
     <div class="screen-col">
-      <header class="mb-6 flex items-baseline justify-between gap-3 flex-wrap">
+      <header class="mb-space-6 flex items-baseline justify-between gap-3 flex-wrap">
         <h1 class="home-hero-title">Journal</h1>
         {{- if .Years}}
         <div class="flex gap-1.5">
@@ -48,7 +48,7 @@
            view — instead of between the month grid and the day card, where it
            read as if it described the selected day. */}}
       {{- if .Years}}
-      <div class="journal-stats mb-5">
+      <div class="journal-stats mb-space-5">
         <div class="journal-stat"><span class="journal-stat-value">{{.ActiveYear}}</span><span class="journal-stat-label">year in view</span></div>
         <div class="journal-stat"><span class="journal-stat-value">{{num .Stats.DaysWithEntries}}</span><span class="journal-stat-label">days with entries</span></div>
         <div class="journal-stat"><span class="journal-stat-value">{{num .Stats.LongestStreakDays}}</span><span class="journal-stat-label">longest streak</span></div>
@@ -76,7 +76,7 @@
       {{- else}}
 
       {{/* Mood-tinted month calendar navigator */}}
-      <section class="journal-cal mb-8">
+      <section class="journal-cal mb-space-7">
         <div class="journal-cal-head">
           <a id="journal-cal-prev" class="journal-cal-nav" href="{{.PrevURL}}" title="Previous month" aria-label="Previous month"
              hx-boost="true" hx-target="#main-content" hx-select="#main-content" hx-swap="outerHTML show:none focus-scroll:false" hx-push-url="true">‹</a>
@@ -240,10 +240,10 @@
           <summary>Expressed affect ·
             <span class="font-mono opacity-60">{{num .Scores}} scores{{if .Facets}} across {{len .Facets}} constructs{{end}}</span></summary>
         {{- if .Facets}}
-        <p class="text-xs opacity-50 mb-1">Facets with fewer than {{num 3}} scores are folded into the total but not listed.</p>
-        <ul class="mb-3">
+        <p class="text-xs opacity-50 mb-space-1">Facets with fewer than {{num 3}} scores are folded into the total but not listed.</p>
+        <ul class="mb-space-3">
           {{- range .Facets}}
-          <li class="mb-3">
+          <li class="mb-space-3">
             <div class="flex flex-wrap items-baseline gap-2">
               <span class="text-sm">{{.Label}}</span>
               <span class="font-mono text-xs opacity-60">{{.Text}} · {{.Direction}} · {{.Detail}}</span>
@@ -256,7 +256,7 @@
           {{- end}}
         </ul>
         {{- end}}
-        <p class="text-xs opacity-50 mb-4">AI-generated from message text against the public-domain IPIP item
+        <p class="text-xs opacity-50 mb-space-4">AI-generated from message text against the public-domain IPIP item
           pool — what this day&rsquo;s messages expressed, not an assessment of anyone who wrote them. Contacts
           who opted out of scoring are excluded entirely.</p>
         </details>

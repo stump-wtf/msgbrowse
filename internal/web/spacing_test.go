@@ -254,3 +254,34 @@ func TestBuiltCSSCarriesTheScale(t *testing.T) {
 		}
 	}
 }
+
+// rawTemplateMargin matches a hand-rolled margin/space-y utility in a
+// template — what #433 retired in favour of the scale-backed helpers
+// (.stack / .stack-gap-N / .mt-space-N / .mb-space-N in input.css). Any
+// reintroduction fails the build.
+var rawTemplateMargin = regexp.MustCompile(`\b(?:mb|mt|ml|mr)-[0-9]+\b|\bspace-y-[0-9]+\b`)
+
+// TestTemplatesCarryNoRawMarginUtilities (#433): templates express vertical
+// rhythm through the scale-backed classes, never a raw Tailwind margin or
+// space-y utility. The scale tokens are the single source of spacing truth;
+// a raw utility is exactly the per-call-site number-picking the scale exists
+// to stop.
+func TestTemplatesCarryNoRawMarginUtilities(t *testing.T) {
+	entries, err := os.ReadDir("templates")
+	if err != nil {
+		t.Fatalf("read templates dir: %v", err)
+	}
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".html") {
+			continue
+		}
+		b, err := os.ReadFile("templates/" + e.Name())
+		if err != nil {
+			t.Fatalf("read template %s: %v", e.Name(), err)
+		}
+		if m := rawTemplateMargin.Find(b); m != nil {
+			t.Errorf("%s carries raw spacing utility %q — use .stack / .stack-gap-N for "+
+				"sibling rhythm or .mt-space-N / .mb-space-N for a one-off (#433)", e.Name(), m)
+		}
+	}
+}

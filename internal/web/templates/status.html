@@ -21,7 +21,7 @@
        len .Conversations) so partial renders can skip the sidebar listing.
        Renders inside the Settings shell (issue #163): shared h1 + sub-nav,
        with /status staying the canonical URL. */}}
-  <div class="px-6 lg:px-8 py-8 max-w-4xl space-y-5">
+  <div class="px-6 lg:px-8 py-8 max-w-4xl stack-gap-5">
     <h1 class="screen-h1">Settings</h1>
     {{template "settings_subnav" "status"}}
 
@@ -65,7 +65,7 @@
       <p class="status-note">Device sync is enabled, but its state is unavailable in this session —
         check the Logs page and restart if it persists.</p>
       {{else}}
-      <p class="status-note mb-4">Sync engine:
+      <p class="status-note mb-space-4">Sync engine:
         {{if .Sync.Running}}<span class="sync-badge sync-badge-ok">Running</span>
         {{else}}<span class="sync-badge sync-badge-err">Not running</span> — peers and folders below show
         their last-known registry state.{{end}}</p>

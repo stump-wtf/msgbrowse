@@ -18,7 +18,7 @@
      + status line, never color alone. */}}
 {{define "logs_content"}}<title>{{.Title}}</title>
     <main id="main-content" class="flex-1" tabindex="0">
-  <div class="px-6 lg:px-8 py-8 max-w-4xl space-y-5">
+  <div class="px-6 lg:px-8 py-8 max-w-4xl stack-gap-5">
     {{/* Logs renders inside the Settings shell (issue #163): shared h1 +
          sub-nav, with /logs staying the canonical URL. */}}
     <h1 class="screen-h1">Settings</h1>
@@ -38,7 +38,7 @@
          string. Static per page load (outside the self-polling entries
          fragment). */}}
     {{- if .SyncNotes}}
-    <section class="status-card space-y-1" aria-labelledby="log-title-devsync">
+    <section class="status-card stack-gap-1" aria-labelledby="log-title-devsync">
       <div class="log-entry-head">
         <span id="log-title-devsync" class="log-entry-title">Device sync</span>
       </div>
@@ -63,7 +63,7 @@
          line is a server-owned string; errors reuse the failed badge so state is
          conveyed as text, never color alone. */}}
     {{- if .ShellNotes}}
-    <section class="status-card space-y-1" aria-labelledby="log-title-shell">
+    <section class="status-card stack-gap-1" aria-labelledby="log-title-shell">
       <div class="log-entry-head">
         <span id="log-title-shell" class="log-entry-title">Desktop shell</span>
       </div>
@@ -87,10 +87,10 @@
      2s and swaps itself (outerHTML), so a running export's captured tail updates
      in place; at rest it does not poll. */}}
 {{define "logs_entries"}}
-<div id="logs-entries" class="space-y-5" role="status" aria-live="polite"
+<div id="logs-entries" class="stack-gap-5" role="status" aria-live="polite"
      {{if .AnyActive}}hx-get="/logs?fragment=entries" hx-trigger="every 2s" hx-target="this" hx-swap="outerHTML"{{end}}>
   {{- range .Entries}}
-  <section class="status-card space-y-1" aria-labelledby="log-title-{{.Source}}">
+  <section class="status-card stack-gap-1" aria-labelledby="log-title-{{.Source}}">
     <div class="log-entry-head">
       <span id="log-title-{{.Source}}" class="log-entry-title">{{.Label}}</span>
       {{- if .HasJob}}

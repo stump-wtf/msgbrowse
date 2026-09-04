@@ -13,7 +13,7 @@
     <div class="screen-col">
 
       {{/* Identity header — merged handles, source presence, message span. */}}
-      <header class="mb-8">
+      <header class="mb-space-7">
         <div class="conv-header-top">
           <span class="avatar-mono {{avatarColor .C.DisplayName}}" aria-hidden="true">
             {{initials .C.DisplayName}}
@@ -39,7 +39,7 @@
         </a>
         {{- end}}
         {{- if .C.Identifiers}}
-        <div class="conv-ids mt-3">
+        <div class="conv-ids mt-space-3">
           {{- range .C.Identifiers}}
           <span class="id-chip font-mono" title="{{humanSource .Source}}">{{template "icon-identity" $}}<span>{{.Identifier}}</span></span>
           {{- end}}
@@ -51,7 +51,7 @@
            inline style; CSP-safe). Bars rolled up to years, accent-tinted. */}}
       {{- if .Bars}}
       <section>
-        <div class="flex items-baseline justify-between gap-3 mb-2">
+        <div class="flex items-baseline justify-between gap-3 mb-space-2">
           <div class="stat-cell-label">Message volume</div>
           {{- if .Reactions}}
           <div class="flex flex-wrap gap-3" title="Top reactions across this person's threads">
@@ -89,16 +89,16 @@
            redundantly and keeps the page CSP-clean (no inline style). */}}
       {{/* AI-gathered facts, grouped by category, each deep-linking to the
            message it was drawn from (in that message's own conversation). */}}
-      <section class="mb-4">
-        <div class="flex items-baseline gap-2 mb-4">
+      <section class="mb-space-4">
+        <div class="flex items-baseline gap-2 mb-space-4">
           <h2 class="text-lg font-semibold">AI-gathered facts</h2>
           {{- if .FactGroups}}<span class="badge badge-sm badge-neutral">{{num .FactCount}} cited</span>{{end}}
         </div>
         {{- if .FactGroups}}
         {{- range .FactGroups}}
-        <div class="mb-4">
-          <div class="stat-cell-label mb-2">{{.Category}}</div>
-          <ul class="space-y-1.5">
+        <div class="mb-space-4">
+          <div class="stat-cell-label mb-space-2">{{.Category}}</div>
+          <ul class="stack-gap-1.5">
             {{- range .Facts}}
             <li class="flex flex-wrap items-baseline gap-2 text-sm">
               <span>{{.Fact}}</span>
@@ -114,7 +114,7 @@
           </ul>
         </div>
         {{- end}}
-        <p class="mt-2 text-xs opacity-50">AI-generated from messages — may be incomplete or wrong. Each fact links to its source.</p>
+        <p class="mt-space-2 text-xs opacity-50">AI-generated from messages — may be incomplete or wrong. Each fact links to its source.</p>
         {{- else if .FactsExtracted}}
         {{/* Extraction HAS read this person and produced nothing — a real and
              common outcome (a thread of pure logistics holds no durable facts).
@@ -152,18 +152,18 @@
              scoring task the same way ("You are scoring text, not people") — a
              page that rendered five confident trait bars would undo that framing
              at the last step. */}}
-        <p class="text-xs opacity-60 mb-4">AI-generated from message text against the public-domain IPIP
+        <p class="text-xs opacity-60 mb-space-4">AI-generated from message text against the public-domain IPIP
           item pool. These describe what messages <em>expressed</em>.
           They are not a psychological assessment of this person,
           and they are not a clinical or diagnostic result.</p>
 
         {{- if .Sentiment.HasScores}}
         {{- if .Sentiment.Months}}
-        <div class="mb-6">
-          <div class="stat-cell-label mb-2">Affect over time</div>
+        <div class="mb-space-6">
+          <div class="stat-cell-label mb-space-2">Affect over time</div>
           <ul>
             {{- range .Sentiment.Months}}
-            <li class="mb-3">
+            <li class="mb-space-3">
               <div class="flex flex-wrap items-baseline gap-2">
                 <span class="text-sm">{{.Label}}</span>
                 <span class="font-mono text-xs opacity-60">{{.Text}} · {{.Direction}} · {{.Detail}}</span>
@@ -179,11 +179,11 @@
         {{- end}}
 
         {{- if .Sentiment.Traits}}
-        <div class="mb-2">
-          <div class="stat-cell-label mb-2">Big Five sketch</div>
+        <div class="mb-space-2">
+          <div class="stat-cell-label mb-space-2">Big Five sketch</div>
           <ul>
             {{- range .Sentiment.Traits}}
-            <li class="mb-3">
+            <li class="mb-space-3">
               <div class="flex flex-wrap items-baseline gap-2">
                 <span class="text-sm">{{.Label}}</span>
                 <span class="font-mono text-xs opacity-60">{{.Text}} · {{.Direction}} · {{.Detail}}</span>
@@ -195,7 +195,7 @@
             </li>
             {{- end}}
           </ul>
-          <p class="mt-2 text-xs opacity-50">A sketch of how these five axes were expressed in messages,
+          <p class="mt-space-2 text-xs opacity-50">A sketch of how these five axes were expressed in messages,
             averaged over {{num .Sentiment.ScoredMessages}} scored messages. Text messages are a narrow,
             selective sample of anyone, so this is
             an indication of tone, not a measurement of personality.</p>

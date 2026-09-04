@@ -22,7 +22,7 @@
      this card and the semantic-index card on one grab-bag tab (#368). */}}
 {{define "journal_settings_content"}}<title>{{.Title}}</title>
     <main id="main-content" class="flex-1" tabindex="0" hx-history="false">
-  <div class="px-6 lg:px-8 py-8 max-w-4xl space-y-5">
+  <div class="px-6 lg:px-8 py-8 max-w-4xl stack-gap-5">
     <h1 class="screen-h1">Settings</h1>
     {{template "settings_subnav" "journal"}}
 
@@ -65,7 +65,7 @@
            replacement omits the trigger once the run ends, so the polling stops
            on its own. No aria-live on the CARD — the live region is scoped to
            the one line that actually changes, below. */}}
-      <div id="journal-build-card" class="status-card mb-6"
+      <div id="journal-build-card" class="status-card mb-space-6"
            {{- if .Build.Busy}} hx-get="/journal/build/progress" hx-trigger="every 2s" hx-target="#journal-build-card" hx-swap="outerHTML"{{end}}>
         <div class="status-card-title">Journal build</div>
         {{- if not .Build.Available}}
@@ -75,13 +75,13 @@
         {{- else}}
 
         {{- if .Build.InProgress}}
-        <p class="status-note mb-3" role="status" aria-live="polite"><span class="sync-badge sync-badge-info">Building…</span>
+        <p class="status-note mb-space-3" role="status" aria-live="polite"><span class="sync-badge sync-badge-info">Building…</span>
           {{num .Build.RunDigested}} days digested so far in the current run.</p>
         {{- else if .Build.Running}}
-        <p class="status-note mb-3" role="status" aria-live="polite"><span class="sync-badge sync-badge-info">Building…</span>
+        <p class="status-note mb-space-3" role="status" aria-live="polite"><span class="sync-badge sync-badge-info">Building…</span>
           The run has just started.</p>
         {{- else if .Build.Stalled}}
-        <p class="status-note mb-3"><span class="sync-badge sync-badge-warn">Interrupted</span>
+        <p class="status-note mb-space-3"><span class="sync-badge sync-badge-warn">Interrupted</span>
           The last journal run stopped before finishing — building again resumes from the days that still
           have no digest, so nothing already paid for is re-derived.</p>
         {{- end}}
@@ -89,7 +89,7 @@
         {{/* Digest coverage over the days that have activity. <progress> (not an
              inline-styled div) keeps this CSP-clean. */}}
         {{- if gt .Build.Days 0}}
-        <div class="index-progress-row mb-4">
+        <div class="index-progress-row mb-space-4">
           <progress class="index-progress" value="{{.Build.Digested}}" max="{{.Build.Days}}"></progress>
           <span class="index-progress-pct mono">{{.Build.Percent}}%</span>
         </div>
@@ -128,12 +128,12 @@
              the coverage cell because a three-column grid gives it about twenty
              characters a line. */}}
         {{- if gt .Build.Undigested 0}}
-        <p class="status-note mt-4">{{num .Build.Undigested}} days have messages but no digest — they show as
+        <p class="status-note mt-space-4">{{num .Build.Undigested}} days have messages but no digest — they show as
           &ldquo;not analysed yet&rdquo; on the <a href="/journal" class="link link-hover">Journal</a> calendar
           until a build reaches them.</p>
         {{- end}}
         {{- if .Build.LastError}}
-        <p class="status-note mt-4"><span class="sync-badge sync-badge-err">Failed</span>
+        <p class="status-note mt-space-4"><span class="sync-badge sync-badge-err">Failed</span>
           Last run aborted: <span class="font-mono">{{.Build.LastError}}</span></p>
         {{- end}}
 
@@ -141,7 +141,7 @@
 
         {{/* Privileged same-origin form POSTs carrying the per-session token,
              boosted to swap only #main-content (no inline JS; CSP-clean). */}}
-        <div class="flex flex-wrap gap-3 mt-5">
+        <div class="flex flex-wrap gap-3 mt-space-5">
           <form method="post" action="/journal/build"
                 hx-boost="true" hx-target="#main-content" hx-select="#main-content" hx-swap="outerHTML">
             <input type="hidden" name="setup_token" value="{{.SetupToken}}">
@@ -159,12 +159,12 @@
           </form>
           {{- end}}
         </div>
-        <p class="status-note mt-3">Build fills in what is missing and leaves existing digests alone.
+        <p class="status-note mt-space-3">Build fills in what is missing and leaves existing digests alone.
           {{- if gt .Build.Digested 0}} Rebuild all re-derives every cached digest — that is
           {{num .Build.Digested}} fresh calls to your LLM endpoint. Each one is replaced only when its
           replacement succeeds, so a failure part-way leaves what you already have intact.{{end}}</p>
         {{- if not .Build.DigestOn}}
-        <p class="status-note mt-2">Digests are turned off in config
+        <p class="status-note mt-space-2">Digests are turned off in config
           (<code class="font-mono">journal.digest_enabled</code>); a build writes the day layer only.</p>
         {{- end}}
         {{- end}}

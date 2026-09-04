@@ -19,7 +19,7 @@
          localStorage history cache — the same opt-out the LLM and pairing tabs
          use. */}}
     <main id="main-content" class="flex-1" tabindex="0" hx-history="false">
-  <div class="px-6 lg:px-8 py-8 max-w-4xl space-y-5">
+  <div class="px-6 lg:px-8 py-8 max-w-4xl stack-gap-5">
     <h1 class="screen-h1">Settings</h1>
     {{template "settings_subnav" "contacts"}}
     <p class="screen-sub">How msgbrowse unifies the same person across Signal, iMessage, and WhatsApp —
@@ -49,12 +49,12 @@
 
     {{/* Merge RULES. Toggle chips over checkboxes (the search filters' pattern),
          a plain form POST through the gate. */}}
-    <section class="status-card space-y-4" aria-labelledby="contacts-rules-heading">
+    <section class="status-card stack-gap-4" aria-labelledby="contacts-rules-heading">
       <h2 id="contacts-rules-heading" class="status-card-title">Matching rules</h2>
       <p class="status-note">Which identifiers count as "the same person", and whether msgbrowse merges
         automatically or only ever suggests. The conservative default is suggest-only.</p>
 
-      <form method="post" action="/settings/contacts/rules" class="space-y-4"
+      <form method="post" action="/settings/contacts/rules" class="stack-gap-4"
             hx-boost="true" hx-target="#main-content" hx-select="#main-content" hx-swap="outerHTML">
         <input type="hidden" name="setup_token" value="{{.SetupToken}}">
 
@@ -117,24 +117,24 @@
           <div class="status-metric-value">{{num .Diagnostics.ManualMerged}} by you · {{num .Diagnostics.AutoMerged}} automatic</div></div>
       </div>
       {{- if and (gt .Diagnostics.Contacts 0) (eq .Diagnostics.RealHandles 0)}}
-      <p class="status-note mt-4"><span class="sync-badge sync-badge-warn">Nothing to match on</span>
+      <p class="status-note mt-space-4"><span class="sync-badge sync-badge-warn">Nothing to match on</span>
         No contact carries a phone number or email address, so phone and email matching cannot suggest
         anything. Sources that export only a display name — Signal archives in particular — rely on
         name matching above.</p>
       {{- end}}
       {{- if .Candidates}}
-      <p class="status-note mt-4">{{num (len .Candidates)}} suggestion(s) waiting for review below.</p>
+      <p class="status-note mt-space-4">{{num (len .Candidates)}} suggestion(s) waiting for review below.</p>
       {{- end}}
     </section>
 
     {{/* CANDIDATE review: the suggested cross-source merges under the current
          rules, each with a one-click Merge (a form POST carrying the two ids). */}}
-    <section class="status-card space-y-4" aria-labelledby="contacts-candidates-heading">
+    <section class="status-card stack-gap-4" aria-labelledby="contacts-candidates-heading">
       <h2 id="contacts-candidates-heading" class="status-card-title">Suggested merges</h2>
       {{- if .Candidates}}
       <p class="status-note">Two entries that look like the same person. Review each and merge the ones
         that are right — merging is durable and survives re-importing an archive.</p>
-      <ul class="space-y-2" aria-label="Suggested merges">
+      <ul class="stack-gap-2" aria-label="Suggested merges">
         {{- range .Candidates}}
         <li class="notice-card">
           <p class="link-card-title">{{.NameA}} <span class="status-note">and</span> {{.NameB}}</p>
@@ -167,17 +167,17 @@
     {{/* SPLIT overrides: the multi-identifier contacts, each with a per-source
          identifier checklist and a Split-off-selected form. Undoes a mistaken
          merge; the split is durable so it is never re-united. */}}
-    <section class="status-card space-y-4" aria-labelledby="contacts-split-heading">
+    <section class="status-card stack-gap-4" aria-labelledby="contacts-split-heading">
       <h2 id="contacts-split-heading" class="status-card-title">Merged contacts</h2>
       {{- if .Merged}}
       <p class="status-note">Contacts unified from more than one identifier. If two people were merged by
         mistake, select the identifiers that belong to the <em>other</em> person and split them off. At
         least one identifier must stay behind.</p>
-      <ul class="space-y-2" aria-label="Merged contacts">
+      <ul class="stack-gap-2" aria-label="Merged contacts">
         {{- range .Merged}}
         <li class="notice-card">
           <p class="link-card-title">{{.Name}}</p>
-          <form method="post" action="/settings/contacts/split" class="space-y-2"
+          <form method="post" action="/settings/contacts/split" class="stack-gap-2"
                 hx-boost="true" hx-target="#main-content" hx-select="#main-content" hx-swap="outerHTML">
             <input type="hidden" name="setup_token" value="{{$.SetupToken}}">
             <input type="hidden" name="contact_id" value="{{.ID}}">

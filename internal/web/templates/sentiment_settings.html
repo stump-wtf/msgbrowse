@@ -26,7 +26,7 @@
      htmx's localStorage history cache. */}}
 {{define "sentiment_settings_content"}}<title>{{.Title}}</title>
     <main id="main-content" class="flex-1" tabindex="0" hx-history="false">
-  <div class="px-6 lg:px-8 py-8 max-w-4xl space-y-5">
+  <div class="px-6 lg:px-8 py-8 max-w-4xl stack-gap-5">
     <h1 class="screen-h1">Settings</h1>
     {{template "settings_subnav" "sentiment"}}
 
@@ -72,7 +72,7 @@
            replacement omits the trigger once the run ends, so the polling stops
            on its own. No aria-live on the CARD — the live region is scoped to
            the one line that actually changes, below. */}}
-      <div id="sentiment-build-card" class="status-card mb-6"
+      <div id="sentiment-build-card" class="status-card mb-space-6"
            {{- if .Build.Busy}} hx-get="/sentiment/run/progress" hx-trigger="every 2s" hx-target="#sentiment-build-card" hx-swap="outerHTML"{{end}}>
         <div class="status-card-title">Sentiment &amp; trait scoring</div>
         {{- if not .Build.Available}}
@@ -82,14 +82,14 @@
         {{- else}}
 
         {{- if .Build.InProgress}}
-        <p class="status-note mb-3" role="status" aria-live="polite"><span class="sync-badge sync-badge-info">Scoring…</span>
+        <p class="status-note mb-space-3" role="status" aria-live="polite"><span class="sync-badge sync-badge-info">Scoring…</span>
           {{num .Build.RunConversations}} conversations read and {{num .Build.RunScores}} scores written so far
           in the current run.</p>
         {{- else if .Build.Running}}
-        <p class="status-note mb-3" role="status" aria-live="polite"><span class="sync-badge sync-badge-info">Scoring…</span>
+        <p class="status-note mb-space-3" role="status" aria-live="polite"><span class="sync-badge sync-badge-info">Scoring…</span>
           The run has just started.</p>
         {{- else if .Build.Stalled}}
-        <p class="status-note mb-3"><span class="sync-badge sync-badge-warn">Interrupted</span>
+        <p class="status-note mb-space-3"><span class="sync-badge sync-badge-warn">Interrupted</span>
           The last scoring run stopped before finishing — running again resumes from each conversation's stored
           cursor, so nothing already paid for is re-scored.</p>
         {{- end}}
@@ -97,7 +97,7 @@
         {{/* Scoring coverage over the eligible conversations. <progress> (not an
              inline-styled div) keeps this CSP-clean. */}}
         {{- if gt .Build.Conversations 0}}
-        <div class="index-progress-row mb-4">
+        <div class="index-progress-row mb-space-4">
           <progress class="index-progress" value="{{.Build.Processed}}" max="{{.Build.Conversations}}"></progress>
           <span class="index-progress-pct mono">{{.Build.Percent}}%</span>
         </div>
@@ -132,11 +132,11 @@
             </div></div>
         </div>
         {{- if gt .Build.OptedOut 0}}
-        <p class="status-note mt-4">{{num .Build.OptedOut}} contact(s) have opted out of sentiment scoring. Their
+        <p class="status-note mt-space-4">{{num .Build.OptedOut}} contact(s) have opted out of sentiment scoring. Their
           messages are never sent to the model, and no score or trait data is shown for them anywhere.</p>
         {{- end}}
         {{- if .Build.LastError}}
-        <p class="status-note mt-4"><span class="sync-badge sync-badge-err">Failed</span>
+        <p class="status-note mt-space-4"><span class="sync-badge sync-badge-err">Failed</span>
           Last run aborted: <span class="font-mono">{{.Build.LastError}}</span></p>
         {{- end}}
 
@@ -149,7 +149,7 @@
              billable outbound LLM work over thousands of conversations — the
              most expensive pass in the archive per ADR-0028 — so the price has
              to be visible at the moment of the decision, not afterwards. */}}
-        <div class="flex flex-wrap gap-3 mt-5">
+        <div class="flex flex-wrap gap-3 mt-space-5">
           <form method="post" action="/sentiment/run"
                 hx-boost="true" hx-target="#main-content" hx-select="#main-content" hx-swap="outerHTML">
             <input type="hidden" name="setup_token" value="{{.SetupToken}}">
@@ -167,18 +167,18 @@
           </form>
           {{- end}}
         </div>
-        <p class="status-note mt-3">Scoring sends each conversation's messages to your LLM endpoint in batches
+        <p class="status-note mt-space-3">Scoring sends each conversation's messages to your LLM endpoint in batches
           and asks the model to score them against the IPIP lexicon — this is the most expensive pass msgbrowse
           runs. {{num .Build.Remaining}} conversations have not been scored under this model yet, and each one
           costs at least one call. It resumes from where the last run stopped and re-scores nothing already paid
           for.
           {{- if or (gt .Build.Processed 0) (gt .Build.Scores 0)}} Rescore discards all {{num .Build.Scores}}
           stored scores and pays for every one of the {{num .Build.Conversations}} conversations again.{{end}}</p>
-        <p class="status-note mt-2">Scores describe what a message <em>expresses</em>, not the person who wrote
+        <p class="status-note mt-space-2">Scores describe what a message <em>expresses</em>, not the person who wrote
           it — they are AI-generated indications, not a psychological assessment. Contacts can opt out on their
           profile, which deletes their stored scores and keeps their messages out of every future run.</p>
         {{- else}}
-        <p class="status-note mt-5">Scoring sends message text to your configured LLM endpoint, so it needs a
+        <p class="status-note mt-space-5">Scoring sends message text to your configured LLM endpoint, so it needs a
           chat model — the IPIP lexicon is the set of anchor items the model is prompted with, not a local
           scorer. Nothing is sent until you start a run, and no run can start without a model.</p>
         {{- end}}
