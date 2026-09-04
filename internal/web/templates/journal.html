@@ -130,12 +130,15 @@
         <h2 class="journal-day-title">{{.DateLabel}}</h2>
         <div class="journal-day-meta">
           <span class="font-mono">{{num .MessageCount}}</span> messages · <span class="font-mono">{{num .ConversationCount}}</span> conversations
-          {{/* The mood chip names its SOURCE when it did not come from a digest
-               (#370): a sentiment-folded mood is a mechanical read of per-message
-               affect scores, and labelling it the same as an editorial mood would
-               claim the digest pass read a day it never reached. */}}
+          {{/* ONE mood chip (issue #436, keeping #370's legend semantics).
+               With a digest the chip is the EDITORIAL mood and its tooltip
+               carries the mechanical fold's agreement or disagreement; without
+               a digest the chip IS the fold and keeps its "from sentiment"
+               suffix. The fold never renders a second chip below — that was
+               the same computation rendered twice. */}}
           {{- if .Mood}} · <span class="journal-mood {{.MoodClass}}{{if .MoodInferred}} cal-day--inferred{{end}}"
-            {{- if .MoodInferred}} title="Folded from this day&rsquo;s sentiment scores — it has no editorial digest yet"{{end}}>{{.Mood}}
+            {{- if .Digest}}{{if .Sentiment.Rendered}} title="{{if eq .Sentiment.Mood .Mood}}Sentiment fold agrees: {{.Sentiment.Mood}} from {{num .Sentiment.Scores}} scores{{else}}Sentiment fold reads {{.Sentiment.Mood}} from {{num .Sentiment.Scores}} scores{{end}}"{{end}}
+            {{- else}} title="Folded from this day&rsquo;s sentiment scores — it has no editorial digest yet"{{end}}>{{.Mood}}
             {{- if .MoodInferred}} <span class="opacity-60">from sentiment</span>{{end}}</span>{{end}}
           {{/* Staleness (#240, restyled by #437): this digest was written
                BEFORE later messages landed on the day. A meta-line chip, not a
@@ -178,20 +181,19 @@
              message sent near midnight lands in one bucket, not two.
 
              It is deliberately kept VISUALLY SEPARATE from the digest mood chip
-             above rather than merged into it. That chip is an editorial reading
-             by a model that read the whole day; this is a mechanical fold of
-             per-message affect scores. Merging them would let the page imply the
-             digest pass has read a day it has not.
+             above rather than merged into it (#370). Since #436 the fold's mood
+             WORD travels in the one meta chip's tooltip; this block carries the
+             detail — counts, facets, disclaimer — and no second chip.
 
              MoodClass comes from a three-value Go switch (upbeat / neutral /
              tense) — no model output or stored string reaches a class attribute
-             (SPEC-0016 REQ-0016-016). The mood word and every facet's signed
-             score are printed as text, so nothing here is encoded in colour or
+             (SPEC-0016 REQ-0016-016). Every facet's signed
+             score is printed as text, so nothing here is encoded in colour or
              bar length alone. */}}
         {{- with .Sentiment}}
         {{- if .Rendered}}
         <details class="journal-affect">
-          <summary>Expressed affect · <span class="journal-mood {{.MoodClass}}">{{.Mood}}</span>
+          <summary>Expressed affect ·
             <span class="font-mono opacity-60">{{num .Scores}} scores{{if .Facets}} across {{len .Facets}} constructs{{end}}</span></summary>
         {{- if .Facets}}
         <ul class="mb-3">

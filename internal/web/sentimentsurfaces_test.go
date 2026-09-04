@@ -630,3 +630,22 @@ func TestJournalAffectBlockIsCollapsedDetails(t *testing.T) {
 		t.Error("the IPIP disclaimer must stay inside the collapsed block")
 	}
 }
+
+// TestJournalDayHasExactlyOneMoodChip (issue #436): the mood chip must render
+// once per day card. Before the fix a scored day showed two .journal-mood
+// chips — the meta chip and the fold's chip in the "Expressed affect" line —
+// the same computation rendered twice.
+func TestJournalDayHasExactlyOneMoodChip(t *testing.T) {
+	srv, st := newSentimentServer(t)
+	seedScoredConversation(t, st, "Harper", affectMsgs("2023-05-01 09:00:00", 1, 0.8))
+
+	body := get(t, srv, "/journal?day=2023-05-01").Body.String()
+	if got := strings.Count(body, `class="journal-mood`); got != 1 {
+		t.Fatalf("scored day rendered %d .journal-mood chips, want exactly 1", got)
+	}
+	// The fold's mood WORD survives as tooltip text on the meta chip, and the
+	// collapsed affect block keeps its counts without a chip.
+	if !contains(body, "Sentiment fold") && !contains(body, "from sentiment") {
+		t.Errorf("chip tooltip lost the fold provenance:\n%s", body[max(0, len(body)-500):])
+	}
+}
