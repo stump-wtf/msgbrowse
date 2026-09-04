@@ -230,5 +230,13 @@ func (s *Server) handleJournalRebuildDay(w http.ResponseWriter, r *http.Request)
 	if !s.checkSetupPOST(w, r) {
 		return
 	}
-	s.renderJournalSettings(w, r, s.startJournalDay(r.Context(), strings.TrimSpace(r.PostFormValue("day"))))
+	result := s.startJournalDay(r.Context(), strings.TrimSpace(r.PostFormValue("day")))
+	// The day card's Refresh button (#440) posts with from=card and expects
+	// the JOURNAL page back — banner on the day it acted on, not the settings
+	// tab. The settings form omits the field and gets its own tab re-rendered.
+	if r.PostFormValue("from") == "card" {
+		s.renderJournalPage(w, r, result)
+		return
+	}
+	s.renderJournalSettings(w, r, result)
 }

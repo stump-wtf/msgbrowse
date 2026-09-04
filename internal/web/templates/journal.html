@@ -123,10 +123,46 @@
         </div>
       </section>
 
-      {{/* Editorial reading card for the selected day */}}
+      {{/* Refresh result banner (#440): fixed enum, selected server-side,
+           never request input. "day" names the day being rebuilt so the
+           reader knows what will change. */}}
+      {{/* Refresh result banner (#440): fixed enum, selected server-side,
+           never request input. "day" names the day being rebuilt so the
+           reader knows what will change. */}}
+      {{- if .JournalResult}}
+      {{- if eq .JournalResult "day"}}
+      {{template "status_banner" dict "variant" "info" "title" (printf "Rebuilding %s." .Selected.DateLabel) "body" "The digest will replace itself when the run finishes — this card refreshes on its own."}}
+      {{- else if eq .JournalResult "inprogress"}}
+      {{template "status_banner" dict "variant" "info" "title" "A journal run is already in progress." "body" "Nothing new was started — the running job continues."}}
+      {{- else if eq .JournalResult "nomodel"}}
+      {{template "status_banner" dict "variant" "warning" "title" "No chat model set." "body" "The day layer rebuilds without one, but the editorial digest needs a chat model — set one on the <a href=\"/settings/llm\" class=\"link link-hover\">LLM settings</a> tab."}}
+      {{- else if eq .JournalResult "badday"}}
+      {{template "status_banner" dict "variant" "warning" "title" "That day is not in the journal." "body" "Nothing was started. Pick a day that already has journal activity."}}
+      {{- else if eq .JournalResult "unavailable"}}
+      {{template "status_banner" dict "variant" "warning" "title" "Journal rebuilding is not available here." "body" "This server was started without a journal builder."}}
+      {{- end}}
+      {{- end}}
+      {{/* Editorial reading card for the selected day. While a journal run is
+           in flight (RunActive, #440) the card polls itself every 2s and
+           swaps in the fresh digest — no manual reload. */}}
       {{- with .Selected}}
-      <section id="journal-day-card" class="journal-day-card">
+      <section id="journal-day-card" class="journal-day-card"
+        {{- if $.RunActive}} hx-get="/journal?day={{.Day}}" hx-trigger="every 2s" hx-target="#journal-day-card" hx-swap="outerHTML"{{end}}>
+        <div class="flex items-start justify-between gap-3">
         <div class="journal-eyebrow">{{template "icon-sparkles" $}} This day, editorialized</div>
+        {{/* One-click Refresh (#440): the per-day rebuild endpoint already
+             existed (Settings used it); this card posts to it directly, with
+             the same privileged-POST gate the Settings forms use. Hidden
+             only when no builder is wired (no token, no dead form). */}}
+        {{- if $.SetupToken}}
+        <form method="post" action="/journal/rebuild/day" class="shrink-0">
+          <input type="hidden" name="setup_token" value="{{$.SetupToken}}">
+          <input type="hidden" name="from" value="card">
+          <input type="hidden" name="day" value="{{.Day}}">
+          <button type="submit" class="pin-btn" title="Re-derive this day&rsquo;s digest from its messages">Refresh this day</button>
+        </form>
+        {{- end}}
+        </div>
         <h2 class="journal-day-title">{{.DateLabel}}</h2>
         <div class="journal-day-meta">
           <span class="font-mono">{{num .MessageCount}}</span> messages · <span class="font-mono">{{num .ConversationCount}}</span> conversations

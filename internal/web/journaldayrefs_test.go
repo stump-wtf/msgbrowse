@@ -184,7 +184,7 @@ func TestJournalDayCardUnchangedWithoutArchiveFacts(t *testing.T) {
 		`{"summary":"links day","people":["Zed Nobody"],"themes":[],"mood":"","highlights":[],"standout_media":[],"notable_links":["https://ex.com/trip"]}`)
 
 	rec := httptest.NewRecorder()
-	srv.renderJournalPage(rec, httptest.NewRequest(http.MethodGet, "/journal?day=2023-05-01", nil))
+	srv.renderJournalPage(rec, httptest.NewRequest(http.MethodGet, "/journal?day=2023-05-01", nil), "")
 	body := rec.Body.String()
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d", rec.Code)

@@ -52,13 +52,30 @@ func (f *fakeJournalBuilder) day() string { return f.lastDay.Load().(string) }
 // journalPOST issues a privileged POST to a /journal/* route with the given
 // origin, token and optional day field.
 func journalPOST(t *testing.T, srv *Server, path, origin, token, day string) *httptest.ResponseRecorder {
+	return journalPOSTMulti(t, srv, path, origin, token, map[string]string{"day": day}, nil)
+}
+
+// journalPOSTMulti is journalPOST with extra plain and repeatable form fields
+// (the #440 card refresh posts from=card alongside day).
+func journalPOSTMulti(t *testing.T, srv *Server, path, origin, token string, fields map[string]string, multi map[string][]string) *httptest.ResponseRecorder {
 	t.Helper()
 	form := url.Values{}
 	if token != "" {
 		form.Set(setupTokenField, token)
 	}
-	if day != "" {
+	if day := fields["day"]; day != "" {
 		form.Set("day", day)
+	}
+	for k, v := range fields {
+		if k == "day" {
+			continue
+		}
+		form.Set(k, v)
+	}
+	for k, vs := range multi {
+		for _, v := range vs {
+			form.Add(k, v)
+		}
 	}
 	req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(form.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
@@ -370,8 +387,10 @@ func TestJournalStaleDayCard(t *testing.T) {
 	if !contains(body, "28 new messages") {
 		t.Errorf("expected the new-message count in the staleness chip:\n%s", body)
 	}
-	if contains(body, `action="/journal/rebuild/day"`) {
-		t.Error("the journal day card no longer carries a rebuild form (controls live on Status)")
+	// #440: the card DOES carry a rebuild form now — its own Refresh button,
+	// posting from=card so the response re-renders the journal page.
+	if !contains(body, `action="/journal/rebuild/day"`) || !contains(body, `name="from" value="card"`) {
+		t.Error("the stale day card must offer its Refresh-this-day form")
 	}
 	if !contains(body, "/settings/journal") {
 		t.Error("the stale note should point at the Settings → Journal build surface")
@@ -472,5 +491,78 @@ func TestJournalDayCardOrder(t *testing.T) {
 	}
 	if affect >= 0 && !contains(body, "<details") {
 		t.Error("affect block must be a native <details> (CSP-clean, closed by default)")
+	}
+}
+
+// --- Day-card Refresh (#440) ----------------------------------------------
+
+// TestJournalRefreshFromCardRendersJournal: the card's Refresh POST re-renders
+// the JOURNAL page (not the settings tab) with the fixed-enum day banner.
+func TestJournalRefreshFromCardRendersJournal(t *testing.T) {
+	srv, st, _ := newTestServer(t)
+	srv.SetJournalBuilder(newFakeJournalBuilder("test-chat", true))
+	seedJournalDay(t, st, "2026-06-02", 12, 12)
+
+	body := get(t, srv, "/journal?day=2026-06-02").Body.String()
+	i := strings.Index(body, `name="setup_token" value="`)
+	if i < 0 {
+		t.Fatal("journal page did not mint a token for the Refresh form")
+	}
+	tok := body[i+len(`name="setup_token" value="`):]
+	tok = tok[:strings.Index(tok, `"`)]
+
+	rec := journalPOSTMulti(t, srv, "/journal/rebuild/day", selfOrigin, tok, map[string]string{"day": "2026-06-02", "from": "card"}, nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d", rec.Code)
+	}
+	b := rec.Body.String()
+	if !strings.Contains(b, "Rebuilding") || !strings.Contains(b, "/journal?day=2026-06-02") {
+		t.Errorf("card refresh must re-render the journal page with the day banner")
+	}
+	if strings.Contains(b, "Settings → Journal</a> build card") {
+		t.Error("card refresh must not land on the settings tab")
+	}
+}
+
+// TestJournalRefreshCardSingleFlight: a second Refresh while a run is live
+// coalesces — the inprogress banner renders on the journal page and only one
+// job started.
+func TestJournalRefreshCardSingleFlight(t *testing.T) {
+	srv, st, _ := newTestServer(t)
+	fb := newFakeJournalBuilder("test-chat", true)
+	fb.finished.Add(1)
+	srv.SetJournalBuilder(fb)
+	seedJournalDay(t, st, "2026-06-02", 12, 12)
+
+	journalPOSTMulti(t, srv, "/journal/rebuild/day", selfOrigin, mintToken(t, srv), map[string]string{"day": "2026-06-02", "from": "card"}, nil)
+	waitFor(t, func() bool { return fb.starts() == 1 })
+	rec := journalPOSTMulti(t, srv, "/journal/rebuild/day", selfOrigin, mintToken(t, srv), map[string]string{"day": "2026-06-02", "from": "card"}, nil)
+	if fb.starts() != 1 {
+		t.Fatalf("card refresh started %d jobs; must coalesce to 1", fb.starts())
+	}
+	if !strings.Contains(rec.Body.String(), "already in progress") {
+		t.Error("coalesced refresh must show the inprogress banner on the journal page")
+	}
+	close(fb.release)
+	fb.finished.Wait()
+}
+
+// TestJournalRefreshCardBadDayAndUnavailable: the fixed-enum failure arms
+// render on the journal page.
+func TestJournalRefreshCardBadDayAndUnavailable(t *testing.T) {
+	srv, st, _ := newTestServer(t)
+	srv.SetJournalBuilder(newFakeJournalBuilder("test-chat", true))
+	seedJournalDay(t, st, "2026-06-02", 12, 12)
+
+	rec := journalPOSTMulti(t, srv, "/journal/rebuild/day", selfOrigin, mintToken(t, srv), map[string]string{"day": "1999-01-01", "from": "card"}, nil)
+	if !strings.Contains(rec.Body.String(), "That day is not in the journal") {
+		t.Error("bad day must render the badday banner on the journal page")
+	}
+
+	srv2, _, _ := newTestServer(t) // no builder wired
+	seedJournalDay(t, st, "2026-06-02", 12, 12)
+	body := get(t, srv2, "/journal").Body.String()
+	if strings.Contains(body, "Refresh this day") {
+		t.Error("no builder wired — the card must not render a dead Refresh form")
 	}
 }

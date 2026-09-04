@@ -1,6 +1,7 @@
 package web
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -29,6 +30,16 @@ type journalData struct {
 	PeakHourLabel string   // "11 PM" ("" when no activity)
 	Moods         []string // legend order (journal.Moods)
 	Selected      *dayCard // the selected day's editorial card (nil = none)
+	// JournalResult is the fixed-enum build outcome (#440) after the day
+	// card's Refresh POST re-renders this page; "" renders no banner.
+	JournalResult string
+	// RunActive says a journal run is in flight right now (fresh heartbeat),
+	// so the day card polls itself every 2s and swaps in the fresh digest
+	// when the run lands.
+	RunActive bool
+	// SetupToken feeds the day card's Refresh form's privileged-POST gate
+	// (#440). Empty when no builder is wired — no form, no token.
+	SetupToken string
 }
 
 // calCell is one day cell in the month grid. A zero-value cell (InMonth false)
@@ -112,14 +123,16 @@ type dayCard struct {
 // handleJournal renders the journal as a mood-tinted month calendar with an
 // editorial day card. Boosted navigations swap only #main-content.
 func (s *Server) handleJournal(w http.ResponseWriter, r *http.Request) {
-	s.renderJournalPage(w, r)
+	s.renderJournalPage(w, r, "")
 }
 
 // renderJournalPage assembles and renders the Journal page (full document or
-// boosted #main-content partial). The journal surface is deliberately free of
+// boosted #main-content partial). journalResult is the fixed-enum outcome of a
+// day-card Refresh POST (#440); "" on plain GETs renders no banner. The journal
+// surface is deliberately free of
 // build/indexing machinery — those controls live on the Settings → Status tab
 // (issue #300-era consolidation of the LLM/semantic surfaces into Settings).
-func (s *Server) renderJournalPage(w http.ResponseWriter, r *http.Request) {
+func (s *Server) renderJournalPage(w http.ResponseWriter, r *http.Request, journalResult string) {
 	ctx := r.Context()
 	var base baseData
 	if isPartialRequest(r) {
@@ -153,6 +166,19 @@ func (s *Server) renderJournalPage(w http.ResponseWriter, r *http.Request) {
 			baseData: base, Empty: true,
 		})
 		return
+	}
+
+	// The Refresh form's privileged-POST token (#440), minted only when a
+	// builder is wired — the same conditional the build card's forms follow.
+	// hx-history="false" (on <main>) keeps the token out of htmx history.
+	var refreshToken string
+	if s.journalBuilder != nil {
+		tok, terr := s.setupTokens.mint()
+		if terr != nil {
+			s.serverError(w, terr)
+			return
+		}
+		refreshToken = tok
 	}
 
 	// Day/month context comes from the query on a GET, and from the FORM on the
@@ -227,6 +253,9 @@ func (s *Server) renderJournalPage(w http.ResponseWriter, r *http.Request) {
 
 	data := journalData{
 		baseData:      base,
+		JournalResult: journalResult,
+		RunActive:     s.journalRunFresh(ctx),
+		SetupToken:    refreshToken,
 		Years:         years,
 		ActiveYear:    year,
 		MonthLabel:    time.Date(year, month, 1, 0, 0, 0, 0, time.UTC).Format("January 2006"),
@@ -262,6 +291,17 @@ func (s *Server) renderJournalPage(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	s.render(w, r, "journal", data)
+}
+
+// journalRunFresh reports whether a journal run is in flight right now: a
+// journal_runs row with no terminal write and a heartbeat inside the stale
+// window — the same cross-process signal the build guard uses. The day card
+// polls on it (#440) so a Refresh click swaps in the fresh digest without a
+// manual reload.
+func (s *Server) journalRunFresh(ctx context.Context) bool {
+	run, err := s.store.LatestJournalRun(ctx)
+	return err == nil && run != nil &&
+		run.InFlight() && time.Since(run.UpdatedAt) <= journalRunStaleAfter
 }
 
 // journalContext resolves the (year, month) to show from the selected day, the
