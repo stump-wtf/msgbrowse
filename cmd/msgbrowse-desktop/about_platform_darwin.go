@@ -18,6 +18,7 @@ package main
 
 // Definitions live in about_platform_darwin.m — a file that uses //export must
 // keep its preamble to declarations only (cgo rule).
+#include <stdlib.h>
 void msgbrowse_show_about_panel(const char* title, const char* message);
 void msgbrowse_hide_app(void);
 void msgbrowse_hide_others(void);
