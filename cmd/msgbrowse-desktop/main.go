@@ -95,6 +95,9 @@ func run() error {
 	// would race. It learns the server URL immediately below; every reader of
 	// baseURL (the tray deep links) starts after that write.
 	sh := newShell()
+	// The About panel content (issue #429): build-time version/commit now,
+	// bundled-tool versions appended once the async integrity check lands.
+	sh.about = newAboutState(Version, Commit)
 
 	es, err := embedded.Start(ctx, cfg, slog.Default(),
 		embedded.WithShellNotes(notes.Snapshot),
@@ -114,7 +117,7 @@ func run() error {
 	// waits on it, and a corrupt .app surfaces per-source when the user clicks
 	// Enable, so deferring it never strands the window. In the non-bundled
 	// dev/Linux build it is a quick no-op (Bundled=false, no error).
-	go logBundledToolchain(ctx, slog.Default())
+	go logBundledToolchain(ctx, slog.Default(), sh.about)
 
 	// Quit when the context is cancelled (signal) or when the embedded server
 	// exits on its own — an abnormally dead server must not leave a live
@@ -216,10 +219,10 @@ func run() error {
 			// desktop, so window translucency/vibrancy is deliberately off.
 			WebviewIsTransparent: true,
 			WindowIsTranslucent:  false,
-			About: &mac.AboutInfo{
-				Title:   "msgbrowse",
-				Message: fmt.Sprintf("Version %s\nBuild %s", Version, Commit),
-			},
+			// The app-menu About item is hand-built (shell.menu, issue #429) so
+			// it can carry Cmd+, and the live tool versions; Wails' mac.About
+			// only feeds the static AppMenu-role alert, which the hand-built
+			// menu replaces.
 		},
 		Linux: &linux.Options{
 			ProgramName: "msgbrowse",

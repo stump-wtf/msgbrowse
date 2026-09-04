@@ -47,6 +47,10 @@ type shell struct {
 	// openExternal can be wired into the server's /desktop/open-url seam
 	// (issue #179), and Start only serves after that wiring.
 	baseURL string
+	// about assembles the native About panel content (issue #429): the
+	// build-time version/commit plus the tool versions the startup integrity
+	// check resolves asynchronously. nil on paths that never show About.
+	about *aboutState
 }
 
 func newShell() *shell { return &shell{} }
@@ -148,15 +152,50 @@ func (sh *shell) copyText(text string) bool {
 	return wailsruntime.ClipboardSetText(ctx, text) == nil
 }
 
-// menu builds the native application menu. On macOS the standard app menu
-// supplies Cmd+Q quit (and the Edit menu makes clipboard shortcuts reach the
-// webview); everywhere a File menu carries the platform's conventional quit
-// accelerator. All quit paths call sh.quit(), which funnels into the single
-// shutdown context in run().
+// showAbout presents the native About panel (issue #429): the standard
+// app-menu About item and Cmd+, both land here. Content (version, build,
+// resolved bundled-tool versions) is assembled at click time by aboutState,
+// so a click seconds after launch already shows whatever the integrity check
+// has verified by then.
+func (sh *shell) showAbout() {
+	title := "msgbrowse"
+	if sh.about == nil {
+		showAboutPanel(title, "Version dev")
+		return
+	}
+	showAboutPanel(title, sh.about.message())
+}
+
+// menu builds the native application menu. On macOS the app menu is built by
+// hand instead of via Wails' AppMenu role (issue #429): the role's About item
+// carries no accelerator and only the static mac.About text, while every Mac
+// app answers Cmd+, with About. The hand-built menu keeps the standard items
+// (Hide/Hide Others/Show All ride native selectors via the about_platform
+// seam) and quits through sh.quit(), which funnels into the single shutdown
+// context in run(). The Edit menu makes clipboard shortcuts reach the
+// webview; the File menu carries the platform's conventional quit
+// accelerator everywhere.
 func (sh *shell) menu() *menu.Menu {
 	m := menu.NewMenu()
 	if goruntime.GOOS == "darwin" {
-		m.Append(menu.AppMenu())
+		app := m.AddSubmenu("msgbrowse")
+		app.AddText("About msgbrowse", keys.CmdOrCtrl(","), func(*menu.CallbackData) {
+			sh.showAbout()
+		})
+		app.AddSeparator()
+		app.AddText("Hide msgbrowse", keys.CmdOrCtrl("h"), func(*menu.CallbackData) {
+			hideApp()
+		})
+		app.AddText("Hide Others", keys.Combo("h", keys.OptionOrAltKey, keys.CmdOrCtrlKey), func(*menu.CallbackData) {
+			hideOthers()
+		})
+		app.AddText("Show All", nil, func(*menu.CallbackData) {
+			showAll()
+		})
+		app.AddSeparator()
+		app.AddText("Quit msgbrowse", keys.CmdOrCtrl("q"), func(*menu.CallbackData) {
+			sh.quit()
+		})
 		m.Append(menu.EditMenu())
 	}
 	file := m.AddSubmenu("File")

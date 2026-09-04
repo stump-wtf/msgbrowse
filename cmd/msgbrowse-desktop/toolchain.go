@@ -33,11 +33,12 @@ import (
 
 // logBundledToolchain runs the bundled-tool integrity + version check once at
 // startup and logs the outcome, recording each tool's pinned version for the
-// About/Advanced view and warning (never crashing) on a corrupt bundle. It is a
+// About panel (issue #429) and warning (never crashing) on a corrupt bundle.
+// It is a
 // no-op in the non-bundled build (Locate returns ErrNotBundled), so dev runs
 // and the Linux desktop build stay quiet. The check is time-boxed so a wedged
 // bundled binary cannot stall launch.
-func logBundledToolchain(ctx context.Context, log *slog.Logger) {
+func logBundledToolchain(ctx context.Context, log *slog.Logger, about *aboutState) {
 	exe, err := os.Executable()
 	if err != nil {
 		log.Warn("could not resolve executable for bundled-toolchain check", "error", err)
@@ -58,6 +59,11 @@ func logBundledToolchain(ctx context.Context, log *slog.Logger) {
 	vctx, cancel := context.WithTimeout(ctx, bundledVerifyTimeout)
 	defer cancel()
 	infos, errs := r.Verify(vctx, nil)
+	// Feed the verified versions to the About panel (issue #429); the About
+	// message omits the tool block until this lands.
+	if about != nil {
+		about.setTools(infos)
+	}
 	for _, in := range infos {
 		log.Info("bundled tool verified", "tool", in.Name, "version", in.Version, "path", in.Path)
 	}
