@@ -130,6 +130,15 @@ type settingsData struct {
 	// same checkSetupPOST gate the Setup POSTs use (SPEC-0013 §Security,
 	// reused verbatim per issue #157). Empty when no pairing source is wired.
 	SetupToken string
+	// AutostartAvailable gates the launch-at-login card (issue #430): true
+	// only inside the desktop shell, when the shell wired a registration and
+	// the platform supports one. Browser mode never sees the card.
+	AutostartAvailable bool
+	// AutostartEnabled mirrors the registration's current state.
+	AutostartEnabled bool
+	// AutostartResult is the post-redirect banner state after the toggle
+	// POST: "ok" or "error" — the same fixed-enum contract as PairResult.
+	AutostartResult string
 }
 
 // settingsPairing is the pairing section's data while the engine is running.
@@ -222,6 +231,16 @@ func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 	if ur := r.URL.Query().Get("unpair"); unpairResultStates[ur] {
 		data.UnpairResult = ur
 	}
+	// Launch-at-login (issue #430): the card exists only when the desktop
+	// shell wired a registration; state reads live so the toggle reflects
+	// reality even if the file changed under us.
+	if s.autostart != nil {
+		data.AutostartAvailable = true
+		data.AutostartEnabled = s.autostart.Enabled()
+	}
+	if ar := r.URL.Query().Get("autostart"); autostartResultStates[ar] {
+		data.AutostartResult = ar
+	}
 	// The two-step unpair confirm state (#158): ?unpair=confirm&device=<id>
 	// marks exactly the matching REGISTRY peer's row. The device parameter is
 	// request-derived but strictly validated — it must canonicalize as a
@@ -284,6 +303,17 @@ func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 		// The pair and unpair forms post through the same same-origin +
 		// per-session token gate as the Setup POSTs (issue #157/#158
 		// Security Checklists).
+		tok, err := s.setupTokens.mint()
+		if err != nil {
+			s.serverError(w, err)
+			return
+		}
+		data.SetupToken = tok
+	}
+	// The launch-at-login form (issue #430) posts through the same gate, so
+	// it needs a live token even when device sync (the pairing source above)
+	// is off — mint one for it independently.
+	if s.autostart != nil && data.SetupToken == "" {
 		tok, err := s.setupTokens.mint()
 		if err != nil {
 			s.serverError(w, err)

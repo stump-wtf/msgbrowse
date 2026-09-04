@@ -37,11 +37,13 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/joestump/msgbrowse/cmd/msgbrowse-desktop/internal/autostart"
 	"github.com/joestump/msgbrowse/cmd/msgbrowse-desktop/internal/bootstrap"
 	"github.com/joestump/msgbrowse/cmd/msgbrowse-desktop/internal/embedded"
 	"github.com/joestump/msgbrowse/cmd/msgbrowse-desktop/internal/shellnotes"
 	"github.com/joestump/msgbrowse/cmd/msgbrowse-desktop/internal/tray"
 	"github.com/joestump/msgbrowse/internal/mcp"
+	"github.com/joestump/msgbrowse/internal/web"
 	"github.com/wailsapp/wails/v2"
 	"github.com/wailsapp/wails/v2/pkg/options"
 	"github.com/wailsapp/wails/v2/pkg/options/assetserver"
@@ -61,6 +63,19 @@ func main() {
 		fmt.Fprintln(os.Stderr, "msgbrowse:", err)
 		os.Exit(1)
 	}
+}
+
+// autostartOption builds the launch-at-login registration for this platform
+// (issue #430): a LaunchAgent plist on macOS, an XDG autostart entry on
+// Linux — both boots passing --hidden so a login start is menubar-only. A
+// nil return (unsupported platform, or no resolvable home directory) simply
+// leaves the settings toggle unwired; default remains OFF.
+func autostartOption() embedded.Option {
+	if m := autostart.New(); m != nil {
+		return embedded.WithAutostart(m)
+	}
+	// A no-op option: the web layer renders nothing without the seam.
+	return func(*web.Server) {}
 }
 
 func run() error {
@@ -101,7 +116,8 @@ func run() error {
 
 	es, err := embedded.Start(ctx, cfg, slog.Default(),
 		embedded.WithShellNotes(notes.Snapshot),
-		embedded.WithExternalOpener(sh.openExternal))
+		embedded.WithExternalOpener(sh.openExternal),
+		autostartOption())
 	if err != nil {
 		return err
 	}

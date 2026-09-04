@@ -69,7 +69,10 @@ appear in the platform's application switcher (macOS Dock presence with the
 app icon), and MUST set a meaningful window title. On macOS the app menu MUST
 carry an About item with the standard Cmd+, accelerator, showing the app
 version, build, and the resolved bundled-tool versions. Open-at-login
-registration MAY be provided.
+registration MUST be provided on darwin and Linux where a session-manager
+mechanism exists (LaunchAgent plist / XDG autostart), default OFF, toggled
+from the desktop shell's settings surface, and any boot from it MUST be
+menubar-only (--hidden).
 
 #### Scenario: Quit from the menu
 
@@ -80,6 +83,11 @@ registration MAY be provided.
 
 - **WHEN** the user chooses "About msgbrowse" from the app menu (or presses Cmd+,) on macOS
 - **THEN** a native About panel appears showing the app version, build SHA, and the bundled-tool versions the startup integrity check has verified.
+
+#### Scenario: Launch at login (issue #430)
+
+- **WHEN** the user enables launch-at-login in the desktop settings and logs back in
+- **THEN** the app starts menubar-only (no window), and disabling the toggle removes the registration.
 
 ### Requirement: Menubar residency
 
