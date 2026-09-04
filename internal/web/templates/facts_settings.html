@@ -97,6 +97,14 @@
         </div>
         {{- end}}
 
+        {{- if gt .Build.OrphanFacts 0}}
+        {{/* Orphaned citations (#447): re-imports shift timestamps and hashes,
+             leaving facts pointing at messages that no longer exist. They are
+             reaped automatically at the start of the next extraction pass. */}}
+        <p class="status-note mb-3"><span class="sync-badge sync-badge-warn">{{num .Build.OrphanFacts}} facts cite messages that were re-imported</span>
+          — they will be removed when the next extraction runs.</p>
+        {{- end}}
+
         <div class="status-grid">
           <div><div class="status-metric-label">Extraction coverage</div>
             <div class="status-metric-value">{{num .Build.Processed}} of {{num .Build.Conversations}} conversations ({{.Build.Percent}}%)</div></div>

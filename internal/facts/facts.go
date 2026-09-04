@@ -173,8 +173,11 @@ type Summary struct {
 	Conversations  int
 	MessagesParsed int
 	FactsAdded     int
-	Batches        int
-	DurationMS     int64
+	// FactsReaped is how many orphaned facts (citing re-imported messages)
+	// the pass deleted before extracting (#447).
+	FactsReaped int
+	Batches     int
+	DurationMS  int64
 }
 
 // Run extracts facts from every eligible conversation (incrementally, honoring
@@ -243,6 +246,12 @@ func Run(ctx context.Context, st *store.Store, client llm.Client, opts Options) 
 		if err != nil {
 			msg = err.Error()
 		}
+		if sum.FactsReaped > 0 {
+			if msg != "" {
+				msg += "; "
+			}
+			msg += fmt.Sprintf("%d orphaned facts reaped", sum.FactsReaped)
+		}
 		if ferr := st.FinishFactRun(finishCtx, store.FactRun{
 			ID: runID, FinishedAt: time.Now(),
 			DurationMS:    time.Since(start).Milliseconds(),
@@ -252,6 +261,19 @@ func Run(ctx context.Context, st *store.Store, client llm.Client, opts Options) 
 			log.Error("facts: could not record run completion", "error", ferr)
 		}
 	}()
+
+	// Reap orphans first (#447): facts citing messages a re-import has
+	// invalidated. A reset wipes everything anyway, so this matters on the
+	// incremental path — it is what stops paraphrased duplicates piling up
+	// beside their stale originals.
+	if !opts.Reset {
+		if n, rerr := st.ReapOrphanFacts(ctx); rerr != nil {
+			log.Warn("facts: could not reap orphaned facts", "error", rerr)
+		} else if n > 0 {
+			sum.FactsReaped = int(n)
+			log.Info("facts: reaped orphaned facts citing re-imported messages", "count", n)
+		}
+	}
 
 	if opts.Reset {
 		if err := st.ResetFacts(ctx); err != nil {

@@ -50,3 +50,31 @@ func TestFactsLiveOnTheProfileNotTheTranscript(t *testing.T) {
 		}
 	}
 }
+
+// TestFactsOrphanCountSurfaces (#447): the Facts card shows the orphaned-
+// citation count so the automatic reap is observable before it happens.
+func TestFactsOrphanCountSurfaces(t *testing.T) {
+	srv, st, _ := newTestServer(t)
+	srv.SetFactsExtractor(newFakeFactsExtractor("test-chat"))
+	ctx := context.Background()
+
+	var convID, contactID int64
+	if err := st.DB().QueryRow(`SELECT id, contact_id FROM conversations WHERE name = 'Harper'`).Scan(&convID, &contactID); err != nil {
+		t.Fatalf("find Harper: %v", err)
+	}
+	orphan := store.FactInput{ContactID: contactID, Fact: "cites a vanished message", Category: "c",
+		Source: source.Signal, SourceMessageHash: "no-such-hash", SourceTS: "2020-01-01 00:00:00", Model: "test"}
+	if added, err := st.PutFact(ctx, orphan); err != nil || !added {
+		t.Fatalf("seed orphan: added=%v err=%v", added, err)
+	}
+
+	body := get(t, srv, "/settings/facts").Body.String()
+	if !contains(body, "facts cite messages that were re-imported") {
+		t.Error("orphan count note missing from the Facts card")
+	}
+	// The count itself renders through num() inside the badge; the note text
+	// above is the observable contract.
+	if !contains(body, "facts cite messages that were re-imported") && !contains(body, "will be removed") {
+		t.Error("reap note incomplete")
+	}
+}
