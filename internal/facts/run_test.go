@@ -104,7 +104,7 @@ func TestRunExtractsHonorsExcludeAndIsIncremental(t *testing.T) {
 	seed(t, st, source.Signal, "Blair")
 	seed(t, st, source.Signal, "Secret")
 
-	client := &fakeClient{resp: `[{"fact":"Likes hiking","category":"preferences","evidence":1}]`}
+	client := &fakeClient{resp: `[{"fact":"Really loves hiking in the mountains","category":"preferences","evidence":1}]`}
 	opts := Options{Model: "test-model", Exclude: []string{"Secret"}, Logger: quietLogger()}
 
 	sum, err := Run(ctx, st, client, opts)
@@ -208,7 +208,7 @@ func TestRunOnlyConversationAndReset(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	client := &fakeClient{resp: `[{"fact":"Likes hiking","category":"preferences","evidence":1}]`}
+	client := &fakeClient{resp: `[{"fact":"Really loves hiking in the mountains","category":"preferences","evidence":1}]`}
 	sum, err := Run(ctx, st, client, Options{Model: "m", OnlyConversationID: alexID, Logger: quietLogger()})
 	if err != nil {
 		t.Fatal(err)
@@ -253,7 +253,7 @@ func TestRunRecordsRunLog(t *testing.T) {
 	if run.InFlight() {
 		t.Error("a completed pass left its run row in flight")
 	}
-	if run.Model != "test-chat" || run.Scope != store.FactScopeArchive {
+	if run.Model != "test-chat@p2" || run.Scope != store.FactScopeArchive {
 		t.Errorf("run = %+v, want model test-chat and the archive scope", run)
 	}
 	if run.FactsAdded != sum.FactsAdded || run.Conversations != sum.Conversations {
@@ -307,7 +307,7 @@ func TestRunReapsOrphanFactsFirst(t *testing.T) {
 		t.Fatalf("seed orphan: added=%v err=%v", added, err)
 	}
 
-	client := &fakeClient{resp: `[{"fact":"Likes hiking","category":"preferences","evidence":1}]`}
+	client := &fakeClient{resp: `[{"fact":"Really loves hiking in the mountains","category":"preferences","evidence":1}]`}
 	sum, err := Run(ctx, st, client, Options{Model: "test-model", Logger: quietLogger()})
 	if err != nil {
 		t.Fatal(err)

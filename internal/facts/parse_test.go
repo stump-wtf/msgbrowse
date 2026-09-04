@@ -17,8 +17,8 @@ func included() []store.MessageView {
 
 func TestParseFactsFencedAndBound(t *testing.T) {
 	raw := "Sure! Here you go:\n```json\n[" +
-		`{"fact":"Has a dog","category":"personal","evidence":1},` +
-		`{"fact":"Works as a nurse","category":"WORK","evidence":3}` +
+		`{"fact":"Has a dog named Biscuit","category":"personal","evidence":1},` +
+		`{"fact":"Works as a nurse in Denver","category":"WORK","evidence":3}` +
 		"]\n```\n"
 	got, err := parseFacts(raw, included())
 	if err != nil {
@@ -27,7 +27,7 @@ func TestParseFactsFencedAndBound(t *testing.T) {
 	if len(got) != 2 {
 		t.Fatalf("got %d facts, want 2", len(got))
 	}
-	if got[0].Fact != "Has a dog" || got[0].Msg.Hash != "h1" {
+	if got[0].Fact != "Has a dog named Biscuit" || got[0].Msg.Hash != "h1" {
 		t.Errorf("fact[0] = %+v, want bound to h1", got[0])
 	}
 	// Category is normalized to lowercase and bound to the cited message.
@@ -37,8 +37,8 @@ func TestParseFactsFencedAndBound(t *testing.T) {
 }
 
 func TestParseFactsCoercesUnknownCategoryAndClampsEvidence(t *testing.T) {
-	raw := `[{"fact":"Likes jazz","category":"musical taste","evidence":99},` +
-		`{"fact":"No evidence given","category":"personal","evidence":0}]`
+	raw := `[{"fact":"Really likes jazz music","category":"musical taste","evidence":99},` +
+		`{"fact":"Plays guitar on weekends","category":"personal","evidence":0}]`
 	got, err := parseFacts(raw, included())
 	if err != nil {
 		t.Fatal(err)
@@ -83,5 +83,24 @@ func TestBuildPromptLabelsOwnerAndNumbers(t *testing.T) {
 	}
 	if !strings.Contains(p, "2. [2023-05-01] You: nice!") {
 		t.Errorf("owner not labeled 'You':\n%s", p)
+	}
+}
+
+// TestParseFactsRejectsSubMinimumFacts (#448): fewer than 3 words cannot
+// carry a durable fact — "Was late" and friends are dropped at parse time,
+// the backstop behind the prompt's durable-only instruction.
+func TestParseFactsRejectsSubMinimumFacts(t *testing.T) {
+	// The floor is mechanical: <3 words. "Was late" dies here; "Was working
+	// from home" clears it and is the PROMPT's job to refuse (#448's two
+	// layers).
+	raw := `[{"fact":"Was late","category":"schedule","evidence":1},` +
+		`{"fact":"Busy today","category":"schedule","evidence":1},` +
+		`{"fact":"Works as a nurse in Denver","category":"work","evidence":1}]`
+	got, err := parseFacts(raw, included())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1 || got[0].Fact != "Works as a nurse in Denver" {
+		t.Fatalf("got %+v, want only the durable fact", got)
 	}
 }

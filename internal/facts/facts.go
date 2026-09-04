@@ -52,17 +52,30 @@ func isKnownCategory(c string) bool {
 // effective prompt version; editing it changes extraction behavior. The category
 // list is derived from Categories so the prompt and the validator
 // (isKnownCategory) cannot drift.
+// The prompt's wording is load-bearing: it is what stops "Was late" rows from
+// piling up beside real facts (issue #448). It is versioned via
+// FactPromptVersion — bump it whenever the wording changes extraction
+// behavior, and every conversation re-scans on the next run.
 var systemPrompt = `You extract durable, factual information about ONE person (the contact) from a transcript of their chat messages.
 
 Rules:
 - Return ONLY a JSON array, no prose, no markdown fences.
 - Each element is an object: {"fact": string, "category": string, "evidence": integer}.
+- "durable" means: still true in a year. Durable facts cover identity (name, job, where they live), family, pets, home, lasting preferences and tastes, and long-running plans. Do NOT record where someone was, what they were doing, how they felt, being late/early/sick/busy today, one-off logistics, or any other single-event state — statements like "was late", "was working from home", or "was at his office" are ephemeral and must be dropped even if clearly stated.
+- Phrase facts in the present tense where possible; drop past-tense single-event statements ("was late to the meeting") entirely.
+- Consolidate: at most one fact per subject. Merge phrasings of the same subject into one line ("Owns a Google Pixel 3 smartphone" and "Owns a Pixel 3 phone" are one fact: "Owns a Google Pixel 3").
 - "fact" is a single, atomic, self-contained statement about the contact, in third person, terse (e.g. "Has a dog named Biscuit", "Works as a nurse in Denver"). Phrase recurring facts consistently so duplicates collapse.
 - "category" is one of: ` + strings.Join(Categories, ", ") + `.
 - "evidence" is the 1-based number of the single message that best supports the fact.
 - Only include facts that are clearly stated or strongly implied by the contact. Do NOT speculate, infer mood, or summarize events.
 - Facts must be about the CONTACT, not about "You" (the archive owner).
 - If there are no durable facts, return [].`
+
+// FactPromptVersion stamps the extraction prompt. It is appended to the model
+// in the fact_state cursor comparison, so bumping it re-scans every
+// conversation under the new wording on the next run (issue #448) — the same
+// mechanism the journal uses for prompt_version.
+const FactPromptVersion = 2
 
 // errBadResponse marks an LLM response that could not be parsed into facts (as
 // opposed to a transport error from the LLM call). A bad response is skipped and
@@ -123,9 +136,18 @@ func parseFacts(raw string, included []store.MessageView) ([]parsedFact, error) 
 		return nil, fmt.Errorf("parse facts JSON: %w", err)
 	}
 	out := make([]parsedFact, 0, len(rawFacts))
+	dropped := 0
 	for _, rf := range rawFacts {
 		fact := strings.TrimSpace(rf.Fact)
 		if fact == "" {
+			continue
+		}
+		// Minimum substance floor (#448): "Was late" and friends are states of
+		// an afternoon, not facts about a person. Fewer than 3 words cannot
+		// carry a durable fact; the prompt is asked not to produce them, this
+		// is the backstop.
+		if len(strings.Fields(fact)) < 3 {
+			dropped++
 			continue
 		}
 		cat := strings.ToLower(strings.TrimSpace(rf.Category))
@@ -140,6 +162,9 @@ func parseFacts(raw string, included []store.MessageView) ([]parsedFact, error) 
 			idx = len(included) - 1
 		}
 		out = append(out, parsedFact{Fact: fact, Category: cat, Msg: included[idx]})
+	}
+	if dropped > 0 {
+		slog.Debug("facts: dropped sub-minimum facts", "count", dropped)
 	}
 	return out, nil
 }
@@ -193,6 +218,10 @@ func Run(ctx context.Context, st *store.Store, client llm.Client, opts Options) 
 	if model == "" {
 		return Summary{}, fmt.Errorf("facts: model not configured (set llm.chat_model)")
 	}
+	// The cursor generation is model + prompt version (#448): a prompt bump
+	// invalidates every cursor exactly like a model change would, so the new
+	// wording re-reads the archive.
+	model = fmt.Sprintf("%s@p%d", model, FactPromptVersion)
 	batch := opts.BatchSize
 	if batch <= 0 || batch > 200 {
 		batch = 60
