@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/joestump/msgbrowse/internal/contacts"
+	"github.com/joestump/msgbrowse/internal/journal"
 	"github.com/joestump/msgbrowse/internal/signal"
 	"github.com/joestump/msgbrowse/internal/source"
 	"github.com/joestump/msgbrowse/internal/store"
@@ -254,4 +255,87 @@ func TestNormalizeLinkKeyEquivalence(t *testing.T) {
 			t.Errorf("%q and %q must NOT share a key (%q)", p[0], p[1], normalizeLinkKey(p[0]))
 		}
 	}
+}
+
+// TestResolveMediaMatchesByBasenameAndOriginalName (#439): the model's
+// standout-media strings resolve against the day's real attachments by
+// basename(rel_path) or original_name, case-insensitive. Unmatched stays
+// inert; denylisted conversations never match.
+func TestResolveMediaMatchesByBasenameAndOriginalName(t *testing.T) {
+	atts := []store.DayAttachment{
+		{ID: 1, MessageID: 10, ConversationID: 100, Kind: "image", RelPath: "media/2023-05-01.jpg", OriginalName: "sunset.jpg"},
+		{ID: 2, MessageID: 20, ConversationID: 200, Kind: "file", RelPath: "docs/report.pdf", OriginalName: "report.pdf"},
+	}
+	byBase := map[string]store.DayAttachment{
+		"2023-05-01.jpg": atts[0],
+		"report.pdf":     atts[1],
+	}
+	byOrig := map[string]store.DayAttachment{
+		"sunset.jpg": atts[0],
+		"report.pdf": atts[1],
+	}
+	// Match by basename.
+	if a, ok := byBase["2023-05-01.jpg"]; !ok || a.ID != 1 {
+		t.Error("basename match failed")
+	}
+	// Match by original_name.
+	if a, ok := byOrig["sunset.jpg"]; !ok || a.ID != 1 {
+		t.Error("original_name match failed")
+	}
+	// Unmatched string: nothing to match.
+	if _, ok := byBase["nonexistent.png"]; ok {
+		t.Error("unmatched string should not be in the map")
+	}
+}
+
+// TestResolveDayCardMediaMatching (#439): standout-media strings resolve by
+// basename(rel_path) or original_name, case-insensitively; a string matching
+// nothing stays an unmatched chip; denylisted conversations never match.
+func TestResolveDayCardMediaMatching(t *testing.T) {
+	srv, st := newSentimentServer(t)
+	ctx := context.Background()
+
+	sig, err := st.UpsertConversation(ctx, source.Signal, "Harper")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.ReplaceConversationMessages(ctx, sig, source.Signal, []signal.Message{
+		{Conversation: "Harper", Timestamp: parseT(t, "2023-05-01 10:00:00"), TimestampRaw: "2023-05-01 10:00:00",
+			Sender: "Harper", Body: "photos",
+			Attachments: []signal.Attachment{
+				{Kind: signal.KindImage, RelPath: "media/2023/05/2023-05-01T06-57-57.197_00_signal-x.jpeg", OriginalName: "beach.jpeg"},
+			}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	card := &dayCard{Digest: &journal.Digest{StandoutMedia: []string{
+		"2023-05-01T06-57-57.197_00_signal-x.jpeg", // matches rel_path basename
+		"BEACH.JPEG",       // matches original_name, case-insensitive
+		"hallucinated.png", // matches nothing → inert chip
+	}}}
+	if err := srv.resolveDayCard(ctx, "2023-05-01", card); err != nil {
+		t.Fatal(err)
+	}
+	if len(card.MediaRefs) != 3 {
+		t.Fatalf("MediaRefs = %d, want 3", len(card.MediaRefs))
+	}
+	if !card.MediaRefs[0].Matched || card.MediaRefs[0].Kind != string(signal.KindImage) {
+		t.Errorf("rel_path basename did not resolve: %+v", card.MediaRefs[0])
+	}
+	if !card.MediaRefs[1].Matched || card.MediaRefs[1].OriginalName != "beach.jpeg" {
+		t.Errorf("original_name match failed: %+v", card.MediaRefs[1])
+	}
+	if card.MediaRefs[2].Matched {
+		t.Error("hallucinated filename must stay an unmatched chip")
+	}
+}
+
+func parseT(t *testing.T, ts string) time.Time {
+	t.Helper()
+	parsed, err := time.Parse(signal.TimestampLayout, ts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return parsed
 }
