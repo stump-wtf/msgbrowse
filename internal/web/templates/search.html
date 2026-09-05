@@ -98,8 +98,11 @@
     </div>
   {{- else if .Ran}}
     {{- if .Hits}}
-    {{/* Results meta: count + server-side elapsed (the brief's "· 0.04s"). */}}
-    <div class="results-meta mb-space-3">{{num .Count}} result{{if ne .Count 1}}s{{end}} · {{.Elapsed}}{{if eq .Count 200}} · showing first 200{{end}}</div>
+    {{/* Results meta: count + server-side elapsed (the brief's "· 0.04s").
+         At the mode's cap the true total is unknown, so the count reads "N+"
+         with "showing first N" — a flat "N results" claimed the cap was the
+         total (audit F37, 2026-09-05). */}}
+    <div class="results-meta mb-space-3">{{if .Capped}}{{num .Count}}+ results · {{.Elapsed}} · showing first {{num .Count}}{{else}}{{num .Count}} result{{if ne .Count 1}}s{{end}} · {{.Elapsed}}{{end}}</div>
     <ol class="flex flex-col gap-2">
       {{- range $i, $hit := .Hits}}
       <li>
