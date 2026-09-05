@@ -2,6 +2,7 @@ package web
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"testing"
 	"time"
@@ -152,5 +153,33 @@ func TestConversationAtWrongConversation(t *testing.T) {
 	rec := get(t, srv, "/c/"+itoa(group.ID)+"/at/"+itoa(harperMid))
 	if rec.Code != http.StatusNotFound {
 		t.Errorf("cross-conversation jump status = %d, want 404", rec.Code)
+	}
+}
+
+// TestSearchCappedCountReadsAsCap (audit F37, 2026-09-05): with more matches
+// than the 200-result cap, the meta line must read "50+ results · showing
+// first 200" — a flat "200 results" claimed the cap was the total.
+func TestSearchCappedCountReadsAsCap(t *testing.T) {
+	srv, st, _ := newTestServer(t)
+	conv, _ := st.GetConversation(context.Background(), "Harper")
+	if conv == nil {
+		t.Fatal("fixture conversation missing")
+	}
+	for i := 0; i < 205; i++ {
+		if _, err := st.DB().Exec(`INSERT INTO messages(hash, conversation_id, source, ts, ts_unix, sender, body)
+			VALUES (?, ?, 'signal', '2022-03-02 12:00:00', 1646222400, 'Harper', 'needle payload')`,
+			fmt.Sprintf("hcap%d", i), conv.ID); err != nil {
+			t.Fatal(err)
+		}
+	}
+	body := get(t, srv, "/search/results?q=needle").Body.String()
+	if !contains(body, "50+ results") {
+		t.Errorf("capped result count must read \"50+ results\":\n%.300q", body)
+	}
+	if !contains(body, "showing first 50") {
+		t.Error("capped result count lost the \"showing first 50\" qualifier")
+	}
+	if contains(body, ">50 results<") {
+		t.Error("capped result count renders as a flat total")
 	}
 }
