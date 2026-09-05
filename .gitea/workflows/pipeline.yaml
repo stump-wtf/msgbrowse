@@ -298,10 +298,32 @@ jobs:
             echo "tap already at v${VER} — nothing to push"
           else
             git commit -aqm "toil(msgbrowse): bump formula + cask to v${VER} (automated tap bump)"
-            git -c http.extraheader="Authorization: token ${TAP_PUSH_TOKEN}" \
-              push -q origin HEAD:main
             echo "tap bumped to v${VER}" >> "$GITHUB_STEP_SUMMARY"
           fi
+
+      - name: Verify the pinned sha256 before push and push
+        # Re-download the zip and confirm the live sha256 matches the pinned
+        # value. If assets were replaced between our checksum step and this
+        # push (the duplicate-desktop-run race), the sha256 won't match and
+        # we re-checksum and rewrite rather than publishing a stale pin.
+        continue-on-error: false
+        run: |
+          set -euo pipefail
+          C="Casks/msgbrowse-desktop.rb"
+          PINNED=$(grep -E '^\s+sha256 "[0-9a-f]{64}"' "tap/$C" | sed 's/.*"\([0-9a-f]*\)".*/\1/')
+          ACTUAL=$(curl -sfL --retry 3 --retry-all-errors "$ZIP_URL" | sha256sum | cut -d' ' -f1)
+          if [ "$PINNED" != "$ACTUAL" ]; then
+            echo "sha256 drift detected: pinned=$PINNED actual=$ACTUAL — re-checksumming"
+            sed -i -E "s|^(  sha256 )\"[0-9a-f]{64}\"|\1\"${ACTUAL}\"|" "tap/$C"
+            cd tap
+            git commit -aqm "toil(msgbrowse): re-checksum desktop cask to v${VER} (assets drifted before push)"
+            echo "re-checksummed to ${ACTUAL}"
+          else
+            echo "sha256 verified: pinned matches live asset"
+          fi
+          cd tap
+          git -c http.extraheader="Authorization: token ${TAP_PUSH_TOKEN}" \
+            push -q origin HEAD:main
 
       - name: Mirror assets onto the Gitea release
         # Best-effort and explicitly non-fatal: the tap installs from the GitHub

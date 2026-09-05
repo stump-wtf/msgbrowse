@@ -12,10 +12,9 @@
 #      GitHub Release (macOS runners only exist there). This bypasses the
 #      push-mirror's 8h sync interval, which otherwise delays the release by
 #      up to most of a day.
-#   3. Bump stump.wtf/homebrew-tap (formula + desktop cask) inline once the
-#      GitHub assets appear — this is the only runner that can reach both
-#      forges, and cross-workflow dispatch is unsupported on this Gitea
-#      (the dispatch API 404s), so the bump runs in this same workflow.
+#   3. The tag push triggers pipeline.yaml's tap-bump job, which bumps
+#      stump.wtf/homebrew-tap (formula + desktop cask) from the GitHub
+#      release assets and mirrors assets to the Gitea release.
 #
 # Historically tags were cut by hand and the tap was bumped by hand, and
 # whenever either was forgotten `brew` kept serving an old version for days
@@ -101,109 +100,3 @@ jobs:
             -d "{\"ref\":\"${TAG}\"}")
           echo "desktop dispatch on ${TAG}: HTTP ${code}"
           [ "$code" = "204" ]
-
-  tap-bump:
-    name: Bump the Homebrew tap
-    needs: [tag]
-    runs-on: ubuntu-latest
-    env:
-      TAP_PUSH_TOKEN: ${{ secrets.TAP_PUSH_TOKEN }}
-      GH_REPO_URL: https://github.com/stump-wtf/msgbrowse
-      TAG: ${{ needs.tag.outputs.tag }}
-    steps:
-      - name: Wait for the GitHub release assets
-        # The desktop leg takes ~3-5 min on the mirror. HEAD the download
-        # URLs rather than the API: asset URLs are not subject to the 60/hr
-        # unauthenticated API rate limit, and a 200 means the bytes are
-        # actually fetchable, which is what the tap needs to be true.
-        run: |
-          set -euo pipefail
-          VER="${TAG#v}"
-          SRC_URL="$GH_REPO_URL/releases/download/$TAG/msgbrowse-v${VER}-source.tar.gz"
-          ZIP_URL="$GH_REPO_URL/releases/download/$TAG/msgbrowse-desktop_darwin_universal.zip"
-          {
-            echo "SRC_URL=$SRC_URL"
-            echo "ZIP_URL=$ZIP_URL"
-            echo "VER=$VER"
-          } >> "$GITHUB_ENV"
-          for i in $(seq 1 40); do
-            if curl -sfIL --max-time 30 -o /dev/null "$SRC_URL" \
-               && curl -sfIL --max-time 30 -o /dev/null "$ZIP_URL"; then
-              echo "both assets present after $(( (i - 1) * 30 ))s"
-              exit 0
-            fi
-            sleep 30
-          done
-          echo "::error::$TAG assets never appeared on $GH_REPO_URL after 20m." \
-               "Check the Desktop workflow on the mirror."
-          exit 1
-
-      - name: Download assets and checksum
-        run: |
-          set -euo pipefail
-          mkdir -p dist
-          curl -sfL --retry 3 --retry-all-errors -o "dist/src.tar.gz" "$SRC_URL"
-          curl -sfL --retry 3 --retry-all-errors -o "dist/desktop.zip" "$ZIP_URL"
-          echo "SHA_SRC=$(sha256sum dist/src.tar.gz | cut -d' ' -f1)" >> "$GITHUB_ENV"
-          echo "SHA_ZIP=$(sha256sum dist/desktop.zip | cut -d' ' -f1)" >> "$GITHUB_ENV"
-
-      - name: Bump the tap
-        run: |
-          set -euo pipefail
-          git clone -q "https://gitea.stump.rocks/stump.wtf/homebrew-tap.git" tap
-          cd tap
-          F="Formula/msgbrowse.rb"; C="Casks/msgbrowse-desktop.rb"
-
-          # The formula pins an explicit tag in its url; the cask interpolates
-          # v#{version}, so rewriting its `version` line moves the url with it.
-          sed -i -E "s|releases/download/v[0-9.]+/msgbrowse-v[0-9.]+-source\.tar\.gz|releases/download/${TAG}/msgbrowse-v${VER}-source.tar.gz|" "$F"
-          sed -i -E "s|^(  sha256 )\"[0-9a-f]{64}\"|\1\"${SHA_SRC}\"|" "$F"
-          sed -i -E "s|^(  version )\"[0-9.]+\"|\1\"${VER}\"|" "$C"
-          sed -i -E "s|^(  sha256 )\"[0-9a-f]{64}\"|\1\"${SHA_ZIP}\"|" "$C"
-
-          # Assert every rewrite landed. sed exits 0 when a pattern does not
-          # match, so without this a drifted formula would commit unchanged.
-          grep -q "releases/download/${TAG}/msgbrowse-v${VER}-source.tar.gz" "$F"
-          grep -q "sha256 \"${SHA_SRC}\"" "$F"
-          grep -q "version \"${VER}\"" "$C"
-          grep -q "sha256 \"${SHA_ZIP}\"" "$C"
-
-          git config user.name "joestump-agent"
-          git config user.email "joestump-agent@noreply.stump.rocks"
-          if git diff --quiet; then
-            echo "tap already at v${VER} — nothing to push"
-          else
-            git commit -aqm "toil(msgbrowse): bump formula + cask to v${VER} (automated tap bump)"
-            git -c http.extraheader="Authorization: token ${TAP_PUSH_TOKEN}" \
-              push -q origin HEAD:main
-            echo "tap bumped to v${VER}" >> "$GITHUB_STEP_SUMMARY"
-          fi
-
-      - name: Mirror assets onto the Gitea release
-        # Best-effort and explicitly non-fatal: the tap installs from the
-        # GitHub release, so this only keeps the canonical release page from
-        # looking empty. It must never be able to cost a release its tap bump.
-        continue-on-error: true
-        run: |
-          set -uo pipefail
-          command -v jq >/dev/null 2>&1 || sudo apt-get install -y -qq jq
-          API="https://gitea.stump.rocks/api/v1"
-          AUTH="Authorization: token ${TAP_PUSH_TOKEN}"
-          if ! RID=$(curl -sf --max-time 30 -H "$AUTH" \
-              "$API/repos/stump.wtf/msgbrowse/releases/tags/$TAG" | jq -r '.id'); then
-            echo "could not read the Gitea release for $TAG — skipping asset mirror"
-            exit 0
-          fi
-          upload() { # $1 = local file, $2 = asset name
-            OLD=$(curl -sf --max-time 30 -H "$AUTH" \
-              "$API/repos/stump.wtf/msgbrowse/releases/$RID/assets?limit=50" \
-              | jq -r ".[] | select(.name == \"$2\") | .id")
-            [ -z "$OLD" ] || curl -sf --max-time 60 -X DELETE -H "$AUTH" \
-              "$API/repos/stump.wtf/msgbrowse/releases/$RID/assets/$OLD" || true
-            curl -sf --max-time 900 -X POST -H "$AUTH" \
-              "$API/repos/stump.wtf/msgbrowse/releases/$RID/assets?name=$2" \
-              -F "attachment=@$1" > /dev/null \
-              && echo "attached $2" || echo "could not attach $2"
-          }
-          upload "dist/src.tar.gz" "msgbrowse-v${VER}-source.tar.gz"
-          upload "dist/desktop.zip" "msgbrowse-desktop_darwin_universal.zip"
