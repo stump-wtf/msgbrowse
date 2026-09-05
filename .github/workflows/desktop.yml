@@ -72,6 +72,16 @@ on:
   # Manual dry-run: produce all matrix artifacts from any ref without tagging.
   workflow_dispatch:
 
+concurrency:
+  # Key the concurrency group on the tag ref so a `push` and a
+  # `workflow_dispatch` for the same tag produce exactly one run. The
+  # tag-push event from auto-release.yaml and the explicit dispatch are
+  # separate triggers, and without this guard both run, produce two sets of
+  # release assets, and the second one replaces the first after the tap bump
+  # has already pinned the first's checksums.
+  group: desktop-${{ github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
 
