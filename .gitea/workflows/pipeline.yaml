@@ -298,10 +298,41 @@ jobs:
             echo "tap already at v${VER} — nothing to push"
           else
             git commit -aqm "toil(msgbrowse): bump formula + cask to v${VER} (automated tap bump)"
-            git -c http.extraheader="Authorization: token ${TAP_PUSH_TOKEN}" \
-              push -q origin HEAD:main
             echo "tap bumped to v${VER}" >> "$GITHUB_STEP_SUMMARY"
           fi
+
+      - name: Verify the pinned sha256s before push and push
+        # Re-download BOTH assets and confirm the live sha256s match the pinned
+        # values. If assets were replaced between our checksum step and this
+        # push (the duplicate-desktop-run race), the sha256 won't match and
+        # we re-checksum and rewrite rather than publishing a stale pin. Both
+        # the formula (source tarball) and the cask (desktop zip) are verified:
+        # a drift can hit either.
+        continue-on-error: false
+        run: |
+          set -euo pipefail
+          F="Formula/msgbrowse.rb"
+          C="Casks/msgbrowse-desktop.rb"
+          ACTUAL_SRC=$(curl -sfL --retry 3 --retry-all-errors "$SRC_URL" | sha256sum | cut -d' ' -f1)
+          ACTUAL_ZIP=$(curl -sfL --retry 3 --retry-all-errors "$ZIP_URL" | sha256sum | cut -d' ' -f1)
+          if [ "$SHA_SRC" != "$ACTUAL_SRC" ]; then
+            echo "source sha256 drift: pinned=$SHA_SRC actual=$ACTUAL_SRC - re-checksumming"
+            sed -i -E "s|^(  sha256 )\"[0-9a-f]{64}\"|\1\"${ACTUAL_SRC}\"|" "tap/$F"
+          fi
+          if [ "$SHA_ZIP" != "$ACTUAL_ZIP" ]; then
+            echo "zip sha256 drift: pinned=$SHA_ZIP actual=$ACTUAL_ZIP - re-checksumming"
+            sed -i -E "s|^(  sha256 )\"[0-9a-f]{64}\"|\1\"${ACTUAL_ZIP}\"|" "tap/$C"
+          fi
+          if [ "$SHA_SRC" != "$ACTUAL_SRC" ] || [ "$SHA_ZIP" != "$ACTUAL_ZIP" ]; then
+            cd tap
+            git commit -aqm "toil(msgbrowse): re-checksum tap to v${VER} (assets drifted before push)"
+            echo "re-checksummed: src=${ACTUAL_SRC} zip=${ACTUAL_ZIP}"
+          else
+            echo "sha256s verified: pinned values match the live assets"
+          fi
+          cd tap
+          git -c http.extraheader="Authorization: token ${TAP_PUSH_TOKEN}" \
+            push -q origin HEAD:main
 
       - name: Mirror assets onto the Gitea release
         # Best-effort and explicitly non-fatal: the tap installs from the GitHub
