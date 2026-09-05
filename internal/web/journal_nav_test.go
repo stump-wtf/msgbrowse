@@ -112,7 +112,8 @@ func TestJournalYearStatsStripPlacement(t *testing.T) {
 	}
 }
 
-// TestHomeSpacingRhythm (issue #432): the Home column is one .stack with a
+// TestHomeSpacingRhythm (issue #432): the Home column is one .vstack (the audit-F1
+// rename away from daisyUI's colliding .stack component) with a
 // single 32px hero break — no hand-rolled margin utilities, no extra
 // stack-gap/section-gap modifiers on the siblings.
 func TestHomeSpacingRhythm(t *testing.T) {
@@ -120,9 +121,9 @@ func TestHomeSpacingRhythm(t *testing.T) {
 	seedJournalDays(t, st, "Alex", []string{"2023-05-01"})
 
 	body := get(t, srv, "/").Body.String()
-	i := strings.Index(body, `class="screen-col stack"`)
+	i := strings.Index(body, `class="screen-col vstack"`)
 	if i < 0 {
-		t.Fatal("Home column is not a .stack")
+		t.Fatal("Home column is not a .vstack")
 	}
 	tail := body[i:]
 	for _, bad := range []string{"mb-4", "mt-2", "stack-gap-after", "page-section-gap-before"} {
