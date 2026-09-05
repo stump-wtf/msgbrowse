@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"testing"
@@ -173,7 +174,7 @@ func TestConversationTranscript(t *testing.T) {
 	for _, want := range []string{
 		`class="msg-row`,    // a dense-log message row
 		`class="msg-time`,   // the left timestamp gutter
-		`09:00:00`,          // gutter shows HH:MM:SS, not the full timestamp
+		`09:00`,             // gutter shows HH:MM, not the full timestamp (audit F34)
 		`class="msg-rail`,   // the sender-colored rail
 		`class="msg-sender`, // the sender name above the body
 		`class="msg-text`,   // the message body
@@ -487,3 +488,18 @@ func TestStatusPageFormatsThousands(t *testing.T) {
 func contains(s, sub string) bool { return strings.Contains(s, sub) }
 
 func itoa(n int64) string { return strconv.FormatInt(n, 10) }
+
+// TestTranscriptGutterDropsSeconds (audit F34, 2026-09-05): the per-message
+// time gutter reads HH:MM; seconds never render (the <time> title keeps the
+// full timestamp for hover).
+func TestTranscriptGutterDropsSeconds(t *testing.T) {
+	srv, st, _ := newTestServer(t)
+	conv, _ := st.GetConversation(context.Background(), "Harper")
+	body := get(t, srv, "/c/"+itoa(conv.ID)).Body.String()
+	if !contains(body, ">09:00<") {
+		t.Error("transcript gutter missing HH:MM time")
+	}
+	if m := regexp.MustCompile(`msg-time[^>]*>(\d\d:\d\d:\d\d)<`).FindStringSubmatch(body); m != nil {
+		t.Errorf("transcript gutter still renders seconds: %s", m[1])
+	}
+}

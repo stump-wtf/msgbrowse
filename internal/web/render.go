@@ -270,14 +270,16 @@ func dateKey(ts string) string {
 	return ts
 }
 
-// clockTime returns the "HH:MM:SS" portion of a stored timestamp for the
+// clockTime returns the "HH:MM" portion of a stored timestamp for the
 // transcript's left gutter (legacy iMessage timestamps are canonicalized
-// first). Falls back to the whole string if the format is unexpected, so the
-// gutter is never blank.
+// first; seconds were dropped per audit F34, 2026-09-05 — a per-message
+// gutter reads as rhythm, not a stopwatch, and the full timestamp stays one
+// hover away on the <time> title). Falls back to the whole string if the
+// format is unexpected, so the gutter is never blank.
 func clockTime(ts string) string {
 	ts = canonicalTS(ts)
-	if len(ts) >= 19 && ts[10] == ' ' {
-		return ts[11:19]
+	if len(ts) >= 16 && ts[10] == ' ' {
+		return ts[11:16]
 	}
 	return ts
 }
