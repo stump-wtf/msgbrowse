@@ -282,13 +282,14 @@ func TestDateKey(t *testing.T) {
 
 func TestClockTime(t *testing.T) {
 	cases := map[string]string{
-		"2022-03-01 09:00:00": "09:00:00",
-		"2026-12-31 23:59:59": "23:59:59",
+		"2022-03-01 09:00:00": "09:00",
+		"2026-12-31 23:59:59": "23:59",
 		"odd":                 "odd", // unrecognized → fall back to whole string
-		// Legacy iMessage rows reformat to HH:MM:SS instead of wrapping the
-		// 76px gutter with the full source-formatted string.
-		"Nov 13, 2015 5:53:29 AM": "05:53:29",
-		"Jun 5, 2020 2:30:00 PM":  "14:30:00",
+		// Legacy iMessage rows reformat to HH:MM instead of wrapping the
+		// 76px gutter with the full source-formatted string (audit F34:
+		// seconds dropped from the per-message gutter).
+		"Nov 13, 2015 5:53:29 AM": "05:53",
+		"Jun 5, 2020 2:30:00 PM":  "14:30",
 	}
 	for in, want := range cases {
 		if got := clockTime(in); got != want {
