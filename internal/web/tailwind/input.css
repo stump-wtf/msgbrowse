@@ -2786,6 +2786,11 @@ a.cal-day:hover {
   border: 1px solid var(--color-neutral);
   border-radius: 0.6rem;
   background: color-mix(in oklab, var(--color-base-200) 60%, transparent);
+  /* Eleven tabs overflow below ~1000px (audit F3): scroll instead of
+     clipping, so Status/Backups/Logs stay reachable in a narrow window. */
+  max-width: 100%;
+  overflow-x: auto;
+  scrollbar-width: thin;
 }
 .settings-tab {
   display: inline-flex;
