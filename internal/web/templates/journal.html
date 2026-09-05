@@ -200,7 +200,7 @@
         </ul>
         {{- end}}
         {{- if .DigestPeople}}<div class="journal-chips"><span class="journal-section-label">People</span>{{range .DigestPeople}}{{if .ContactID}}<a class="journal-chip" href="/contact/{{.ContactID}}" title="Open {{.Name}}&rsquo;s contact page">{{humanName .Name}}</a>{{else}}<span class="journal-chip">{{humanName .Name}}</span>{{end}}{{end}}</div>{{- end}}
-        {{- if .Digest.StandoutMedia}}<div class="journal-chips"><span class="journal-section-label">Media</span>{{range .Digest.StandoutMedia}}<span class="journal-chip font-mono">{{.}}</span>{{end}}</div>{{- end}}
+                {{- if .MediaRefs}}<div class="journal-chips"><span class="journal-section-label">Media</span>{{range .MediaRefs}}{{if .Matched}}{{if eq .Kind "image"}}<a class="journal-chip" href="#lb-media-{{.ID}}" title="{{.OriginalName}}">{{.OriginalName}}</a><div class="lightbox" id="lb-media-{{.ID}}"><a class="toolbar-icon-btn lightbox-close absolute top-4 right-4" href="#" title="close">✕</a><img loading="lazy" src="{{mediaURL .ConversationID .RelPath}}" alt="{{.OriginalName}}"><div class="text-sm lightbox-caption font-mono opacity-50">{{.Name}}</div></div>{{else}}<a class="journal-chip font-mono" href="/c/{{.ConversationID}}/at/{{.MessageID}}#m{{.MessageID}}">{{.OriginalName}}</a>{{end}}{{else}}<span class="journal-chip font-mono">{{.Name}}</span>{{end}}{{end}}</div>{{- end}}
         {{- if .Digest.Themes}}<div class="journal-chips"><span class="journal-section-label">Themes</span>{{range .Digest.Themes}}<span class="journal-chip">{{.}}</span>{{end}}</div>{{- end}}
         {{- else if .Body}}
         <p class="journal-summary">{{.Body}}</p>
