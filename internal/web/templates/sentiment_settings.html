@@ -126,7 +126,7 @@
             </div></div>
           <div><div class="status-metric-label">Last run</div>
             <div class="status-metric-value">
-              {{- if .Build.HasLastRun}}{{.Build.LastFinished}} · {{num .Build.LastScores}} scores in {{num .Build.LastDurationMS}} ms
+              {{- if .Build.HasLastRun}}{{.Build.LastFinished}} · {{num .Build.LastScores}} scores in {{duration .Build.LastDurationMS}}
               {{- else if .Build.Busy}}running now
               {{- else}}never{{end -}}
             </div></div>
