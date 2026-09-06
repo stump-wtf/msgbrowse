@@ -55,3 +55,11 @@ func (s *Server) renderError(w http.ResponseWriter, r *http.Request, status int,
 func (s *Server) mediaError(w http.ResponseWriter, r *http.Request, status int, heading, detail string) {
 	s.renderError(w, r, status, heading, detail)
 }
+
+// notFound renders the styled 404 page. Every in-handler http.NotFound call
+// site (unknown contact/conversation id, unwired desktop-only route, bad day)
+// routes through here so no 404 is a bare text response (audit F7, 2026-09-05).
+func (s *Server) notFound(w http.ResponseWriter, r *http.Request) {
+	s.renderError(w, r, http.StatusNotFound, "Not found",
+		"That page does not exist — it may have been removed, or the link is wrong.")
+}

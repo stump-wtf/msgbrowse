@@ -122,7 +122,7 @@ func (s *Server) handleSetupEnable(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleSetupStatus(w http.ResponseWriter, r *http.Request) {
 	src := r.PathValue("source")
 	if !source.IsKnown(src) {
-		http.NotFound(w, r)
+		s.notFound(w, r)
 		return
 	}
 	if s.enabler == nil {

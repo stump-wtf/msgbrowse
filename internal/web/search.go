@@ -148,12 +148,12 @@ func (s *Server) handleConversationAt(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	id, ok := parseID(r.PathValue("id"))
 	if !ok {
-		http.NotFound(w, r)
+		s.notFound(w, r)
 		return
 	}
 	mid, ok := parseID(r.PathValue("mid"))
 	if !ok {
-		http.NotFound(w, r)
+		s.notFound(w, r)
 		return
 	}
 	active, err := s.store.GetConversationByID(ctx, id)
@@ -162,7 +162,7 @@ func (s *Server) handleConversationAt(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if active == nil {
-		http.NotFound(w, r)
+		s.notFound(w, r)
 		return
 	}
 	// Verify the target message actually belongs to this conversation. Without
@@ -177,7 +177,7 @@ func (s *Server) handleConversationAt(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !found || ownerConv != id {
-		http.NotFound(w, r)
+		s.notFound(w, r)
 		return
 	}
 	msgs, err := s.store.GetContext(ctx, mid, searchContextWindow)
@@ -186,7 +186,7 @@ func (s *Server) handleConversationAt(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if len(msgs) == 0 {
-		http.NotFound(w, r)
+		s.notFound(w, r)
 		return
 	}
 	list := messageListData{

@@ -46,7 +46,7 @@ var autostartResultStates = map[string]bool{"ok": true, "error": true}
 // login item (SPEC-0013 §Security posture).
 func (s *Server) handleAutostart(w http.ResponseWriter, r *http.Request) {
 	if s.autostart == nil {
-		http.NotFound(w, r)
+		s.notFound(w, r)
 		return
 	}
 	r.Body = http.MaxBytesReader(w, r.Body, setupBodyLimit)

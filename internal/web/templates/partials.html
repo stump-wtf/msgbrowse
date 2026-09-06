@@ -303,7 +303,14 @@
       {{- if $showSender}}
       <div class="msg-sender{{if .IsOwner}} msg-sender-me{{end}}">{{if .IsOwner}}Me{{else}}{{humanName .Sender}}{{end}}</div>
       {{- end}}
-      {{- if $body}}<div class="msg-text whitespace-pre-wrap break-words">{{$body}}</div>{{end}}
+      {{- if $body}}<div class="msg-text whitespace-pre-wrap break-words">{{$body}}</div>
+      {{- else if and (not .Attachments) (not .Links) (not .Reactions)}}
+      {{/* Empty rows (audit F31): a message with no text, no attachments, no
+           links and no reactions rendered as a bare rail + sender with
+           nothing under it — it reads as a rendering bug. A dim placeholder
+           says what it is. */}}
+      <div class="msg-text msg-text-empty opacity-50 italic">no text content</div>
+      {{- end}}
       {{- if .Attachments}}
       <div class="msg-attachments">
         {{- range $ai, $att := .Attachments}}
@@ -324,7 +331,7 @@
                fetch a 404 under the `download` attribute, which browsers
                surface as a silently failed download — "clicking does nothing".
                Same inert labeled treatment as the gallery's missing tile/card. */}}
-          <span class="attach-chip attach-chip-missing" title="not in the archive on this machine">{{if eq $att.Kind "image"}}{{template "icon-photo" $}}{{else}}{{template "icon-paperclip" $}}{{end}}<span class="font-mono">{{if $att.OriginalName}}{{$att.OriginalName}}{{else}}{{$att.RelPath}}{{end}}</span><span class="ph-tag">missing</span></span>
+          <span class="attach-chip attach-chip-missing" title="not in the archive on this machine">{{if eq $att.Kind "image"}}{{template "icon-photo" $}}{{else}}{{template "icon-paperclip" $}}{{end}}<span class="font-mono">{{if $att.OriginalName}}{{$att.OriginalName}}{{else if eq $att.Kind "image"}}photo{{else}}file{{end}}</span><span class="ph-tag">missing</span></span>
           {{- else}}
           {{/* Files, and images with no browser-renderable rendition (e.g. an
                un-transcoded HEIC), render as a labeled attachment chip:

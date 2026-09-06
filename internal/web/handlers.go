@@ -334,7 +334,7 @@ func (s *Server) handleConversation(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	id, ok := parseID(r.PathValue("id"))
 	if !ok {
-		http.NotFound(w, r)
+		s.notFound(w, r)
 		return
 	}
 	active, err := s.store.GetConversationByID(ctx, id)
@@ -343,7 +343,7 @@ func (s *Server) handleConversation(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if active == nil {
-		http.NotFound(w, r)
+		s.notFound(w, r)
 		return
 	}
 	// Boosted clicks skip the sidebar listing entirely: the partial response
@@ -409,7 +409,7 @@ func (s *Server) handlePin(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	id, ok := parseID(r.PathValue("id"))
 	if !ok {
-		http.NotFound(w, r)
+		s.notFound(w, r)
 		return
 	}
 	found, err := s.store.TogglePinned(ctx, id)
@@ -418,7 +418,7 @@ func (s *Server) handlePin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !found {
-		http.NotFound(w, r)
+		s.notFound(w, r)
 		return
 	}
 	if !isPartialRequest(r) {
@@ -442,7 +442,7 @@ func (s *Server) renderPinToggle(w http.ResponseWriter, r *http.Request, id int6
 		return
 	}
 	if active == nil {
-		http.NotFound(w, r)
+		s.notFound(w, r)
 		return
 	}
 	base, err := s.baseData(ctx, active.Name+" · msgbrowse", id)
@@ -499,7 +499,7 @@ func (s *Server) handleMessages(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	id, ok := parseID(r.PathValue("id"))
 	if !ok {
-		http.NotFound(w, r)
+		s.notFound(w, r)
 		return
 	}
 	// The keyset cursor param matches the walk direction: ascending pages
