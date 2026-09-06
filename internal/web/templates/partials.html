@@ -511,8 +511,8 @@
                 <tr class="border-t border-base-300/40">
                   <td class="whitespace-nowrap py-2 pr-4 mono">{{.Started}}</td>
                   {{- if $scoped}}<td class="whitespace-nowrap py-2 pr-4">{{.Scope}}</td>{{end}}
-                  <td class="whitespace-nowrap py-2 pr-4"><span class="sync-badge sync-badge-{{.Badge}}">{{.Status}}</span>
-                    {{- if .Error}} <span class="opacity-60 font-mono">{{.Error}}</span>{{end}}</td>
+                  <td class="py-2 pr-4"><span class="sync-badge sync-badge-{{.Badge}}">{{.Status}}</span>
+                    {{- if .Error}} <span class="opacity-60">{{summarizeError .Error}}</span>{{end}}</td>
                   <td class="whitespace-nowrap py-2 pr-4 mono">{{num .Count}}</td>
                   <td class="whitespace-nowrap py-2 pr-4 mono">{{.Duration}}</td>
                   <td class="whitespace-nowrap py-2 mono opacity-70">{{.Model}}</td>

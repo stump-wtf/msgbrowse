@@ -69,6 +69,10 @@ type searchData struct {
 	Hits                []searchResult
 	Ran                 bool // a query was actually executed
 	Count               int
+	// Capped is true when the result list hit its mode's cap, so the count is
+	// a floor, not a total — the results meta line renders "N+ results …
+	// showing first N" (audit F37, 2026-09-05).
+	Capped bool
 	// SemanticAvailable is true when an indexer is wired AND an embed model is
 	// configured, so the semantic/hybrid modes can actually run. When false and
 	// the user selected one, the results area explains how to enable it instead
@@ -316,6 +320,7 @@ func (s *Server) runSearch(ctx context.Context, form searchForm, opts store.Sear
 		}
 		if !data.SemanticAvailable {
 			data.Hits = keywordResults(kw) // degrade to keyword-only
+			data.Capped = len(kw) == searchLimit
 			break
 		}
 		sem, err := s.scoredFor(ctx, form.Q, opts)
@@ -323,12 +328,14 @@ func (s *Server) runSearch(ctx context.Context, form searchForm, opts store.Sear
 			return err
 		}
 		data.Hits = fuseSearchResults(kw, sem, searchLimit)
+		data.Capped = len(data.Hits) == searchLimit
 	default: // keyword
 		hits, err := s.store.SearchMessages(ctx, opts)
 		if err != nil {
 			return err
 		}
 		data.Hits = keywordResults(hits)
+		data.Capped = len(hits) >= keywordSearchLimit(opts)
 	}
 	data.Count = len(data.Hits)
 	return nil
@@ -488,4 +495,14 @@ func stripSnippetMarks(body string) string {
 // formatElapsed renders a query duration like the brief's "0.04s".
 func formatElapsed(d time.Duration) string {
 	return strconv.FormatFloat(d.Seconds(), 'f', 2, 64) + "s"
+}
+
+// keywordSearchLimit mirrors the store's keyword clamp (store.search: unset or
+// out-of-range limits collapse to 50) so the web layer can tell "exactly N
+// matches" from "capped at N" without a second count query (audit F37).
+func keywordSearchLimit(opts store.SearchOptions) int {
+	if opts.Limit <= 0 || opts.Limit > 200 {
+		return 50
+	}
+	return opts.Limit
 }
