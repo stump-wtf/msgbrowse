@@ -487,3 +487,40 @@ func TestStatusPageFormatsThousands(t *testing.T) {
 func contains(s, sub string) bool { return strings.Contains(s, sub) }
 
 func itoa(n int64) string { return strconv.FormatInt(n, 10) }
+
+// TestTranscriptEmptyRowsAndMissingNames (audit F31, 2026-09-05): a message
+// with no body, attachments, links or reactions renders a dim "no text
+// content" placeholder instead of an empty rail; a missing attachment whose
+// only name is the exporter rel-path shows a kind label ("photo"/"file"), not
+// the raw path.
+func TestTranscriptEmptyRowsAndMissingNames(t *testing.T) {
+	srv, st, _ := newTestServer(t)
+	conv, err := st.GetConversation(context.Background(), "Harper")
+	if err != nil || conv == nil {
+		t.Fatalf("get conversation: %v", err)
+	}
+	// An empty-body message and a missing image with no original name.
+	if _, err := st.DB().Exec(`INSERT INTO messages(hash, conversation_id, source, ts, ts_unix, sender, body)
+		VALUES ('hempty', ?, 'signal', '2022-03-01 10:00:00', 1646128800, 'Harper', '')`, conv.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.DB().Exec(`INSERT INTO messages(hash, conversation_id, source, ts, ts_unix, sender, body)
+		VALUES ('hmiss', ?, 'signal', '2022-03-01 10:01:00', 1646128860, 'Harper', 'look')`, conv.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.DB().Exec(`INSERT INTO attachments(message_id, kind, rel_path, original_name)
+		SELECT id, 'image', 'export/2022/98/28/b91f.heic', '' FROM messages WHERE hash = 'hmiss'`); err != nil {
+		t.Fatal(err)
+	}
+
+	body := get(t, srv, "/c/"+itoa(conv.ID)).Body.String()
+	if !contains(body, "no text content") {
+		t.Error("empty message row missing the \"no text content\" placeholder (audit F31)")
+	}
+	if contains(body, "export/2022") {
+		t.Error("missing attachment chip prints the exporter rel-path instead of a kind label (audit F31)")
+	}
+	if !contains(body, ">missing<") {
+		t.Error("missing attachment chip lost its missing tag")
+	}
+}
