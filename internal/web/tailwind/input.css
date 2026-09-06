@@ -9,9 +9,16 @@
  * between them. */
 @import "tailwindcss";
 
-/* Load daisyUI itself (components + utilities). We do NOT enable any stock
-   themes here — the two custom themes below fully define our palette. */
-@plugin "../../../.tools/daisyui/package/index.js";
+/* Load only the daisyUI components we actually use (drawer, loading, link)
+   link, plus its base items). Loading all of daisyUI meant every component
+   class (btn, card, badge, stack, …) shipped in app.css, and any of our own
+   helpers with the same name silently lost to daisyUI's cascade — that is
+   exactly how the Home screen collapsed (audit F1, 2026-09-05). The
+   csscollision guard test fails the build if a template uses a daisyUI
+   component class outside this list, or if a colliding component ships. */
+@plugin "../../../.tools/daisyui/package/index.js" {
+  include: properties, scrollbar, svg, rootscrolllock, rootscrollgutter, rootcolor, drawer, loading, link, badge;
+}
 
 /* --- slate (default, dark) ---------------------------------------------------
  * The bespoke slate system. Tokens are the normative values from SPEC-0006's
@@ -264,11 +271,15 @@
    instead of picking a Tailwind margin utility per call site — the mb-8 / mb-4
    / mt-8 mix on Home had no rule behind which gap was which.
 
-   .stack sets the gap between sibling cards for a whole column; the *-gap-after
+   .vstack sets the gap between sibling cards for a whole column; the *-gap-after
    / *-gap-before pair is for the one-off case where a single element needs the
    gap and its siblings are laid out by something else (a grid, a conditional
-   block). .card-grid is the gap BETWEEN cards laid out side by side. */
-.stack > * + * {
+   block). .card-grid is the gap BETWEEN cards laid out side by side.
+
+   Named .vstack, not .stack, because daisyUI ships a .stack component that
+   lays all children on top of each other — the collision collapsed Home
+   (audit F1). csscollision_test.go guards the boundary. */
+.vstack > * + * {
   margin-top: var(--stack-gap);
 }
 .stack-gap-after {
