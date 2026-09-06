@@ -93,3 +93,29 @@ func TestAttachmentChipsCarryDownload(t *testing.T) {
 		t.Errorf("attachment chip missing the download attribute (tag: %s)", tag)
 	}
 }
+
+// TestUnknownRoutesRenderStyled404 (audit F7, 2026-09-05): unknown routes and
+// unknown in-app entities 404 with the styled error page — never net/http's
+// bare "404 page not found" text.
+func TestUnknownRoutesRenderStyled404(t *testing.T) {
+	srv, _, _ := newTestServer(t)
+	for _, path := range []string{"/nope", "/c/999999", "/contact/999999"} {
+		rec := get(t, srv, path)
+		if rec.Code != http.StatusNotFound {
+			t.Errorf("%s: status = %d, want 404", path, rec.Code)
+			continue
+		}
+		body := rec.Body.String()
+		if contains(body, "404 page not found") {
+			t.Errorf("%s: bare-text 404 returned:\n%.200q", path, body)
+		}
+		for _, want := range []string{"<!doctype html>", "screen-h1", `href="/"`} {
+			if !contains(body, want) {
+				t.Errorf("%s: styled 404 missing %q", path, want)
+			}
+		}
+		if ct := rec.Header().Get("Content-Type"); !contains(ct, "text/html") {
+			t.Errorf("%s: Content-Type = %q, want text/html", path, ct)
+		}
+	}
+}

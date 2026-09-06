@@ -19,6 +19,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"path"
 	"strings"
@@ -662,7 +663,36 @@ func (s *Server) routes() http.Handler {
 		mux.HandleFunc("POST /settings/autostart", s.handleAutostart)
 	}
 
-	return gzipMiddleware(securityHeaders(mux))
+	// Unknown routes render the styled error page (audit F7, 2026-09-05)
+	// instead of net/http's bare "404 page not found" text. Wrapping rather
+	// than registering a "/" catch-all: a catch-all also swallows the mux's
+	// 405 Method Not Allowed responses, which the security tests pin. Only
+	// unmatched requests (empty pattern) pay the probe.
+	return gzipMiddleware(securityHeaders(s.styledNotFound(mux)))
+}
+
+// styledNotFound serves mux but replaces net/http's bare-text 404 for unknown
+// routes with the styled error page. Method-mismatch 405s keep their stdlib
+// shape — the mux deliberately advertises registered POST surfaces.
+func (s *Server) styledNotFound(mux *http.ServeMux) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if h, pat := mux.Handler(r); pat == "" {
+			rec := httptest.NewRecorder()
+			h.ServeHTTP(rec, r)
+			if rec.Code == http.StatusNotFound {
+				s.notFound(w, r)
+				return
+			}
+			if rec.Code == http.StatusMethodNotAllowed {
+				if allow := rec.Header().Get("Allow"); allow != "" {
+					w.Header().Set("Allow", allow)
+				}
+				http.Error(w, rec.Body.String(), rec.Code)
+				return
+			}
+		}
+		mux.ServeHTTP(w, r)
+	})
 }
 
 // Run starts the HTTP server on addr and blocks until ctx is cancelled, then

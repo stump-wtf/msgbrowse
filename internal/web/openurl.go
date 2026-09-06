@@ -60,7 +60,7 @@ func (s *Server) handleOpenURL(w http.ResponseWriter, r *http.Request) {
 	// desktop-chrome still lands here — the endpoint does not exist: 404,
 	// not 403.
 	if s.externalOpener == nil || !s.desktopChrome {
-		http.NotFound(w, r)
+		s.notFound(w, r)
 		return
 	}
 

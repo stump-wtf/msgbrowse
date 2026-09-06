@@ -91,7 +91,7 @@ func (s *Server) handleContact(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	id, ok := parseID(r.PathValue("id"))
 	if !ok {
-		http.NotFound(w, r)
+		s.notFound(w, r)
 		return
 	}
 	c, err := s.store.GetContactByID(ctx, id)
@@ -100,7 +100,7 @@ func (s *Server) handleContact(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if c == nil {
-		http.NotFound(w, r)
+		s.notFound(w, r)
 		return
 	}
 
