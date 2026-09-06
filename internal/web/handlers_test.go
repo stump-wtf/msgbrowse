@@ -471,7 +471,7 @@ func TestStatusPageFormatsThousands(t *testing.T) {
 	}
 	body := rec.Body.String()
 	for _, want := range []string{
-		"83,457 ms",
+		"83.5s", // humanized duration (audit F12), not raw ms
 		"1,100 changed / 1,200 scanned",
 		"1,234,567 total (4,321 added)",
 		"1,024",

@@ -35,7 +35,7 @@
       {{if .Run}}
       <div class="status-grid">
         <div><div class="status-metric-label">Finished</div><div class="status-metric-value">{{.Run.FinishedAt.Format "2006-01-02 15:04:05"}}</div></div>
-        <div><div class="status-metric-label">Duration</div><div class="status-metric-value">{{num .Run.DurationMS}} ms</div></div>
+        <div><div class="status-metric-label">Duration</div><div class="status-metric-value">{{duration .Run.DurationMS}}</div></div>
         <div><div class="status-metric-label">Conversations</div><div class="status-metric-value">{{num .Run.ConversationsChanged}} changed / {{num .Run.ConversationsScanned}} scanned</div></div>
         <div><div class="status-metric-label">Messages</div><div class="status-metric-value">{{num .Run.MessagesTotal}} total ({{num .Run.MessagesAdded}} added)</div></div>
         <div><div class="status-metric-label">Skipped lines</div><div class="status-metric-value">{{num .Run.SkippedLines}}</div></div>

@@ -124,7 +124,7 @@
             </div></div>
           <div><div class="status-metric-label">Last extraction</div>
             <div class="status-metric-value">
-              {{- if .Build.HasLastRun}}{{.Build.LastFinished}} · {{num .Build.LastFacts}} facts in {{num .Build.LastDurationMS}} ms
+              {{- if .Build.HasLastRun}}{{.Build.LastFinished}} · {{num .Build.LastFacts}} facts in {{duration .Build.LastDurationMS}}
               {{- else if .Build.Busy}}running now
               {{- else}}never{{end -}}
             </div></div>

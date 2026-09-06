@@ -88,7 +88,7 @@
           <div class="status-metric-value">{{.Embedding.Model}}</div></div>
         <div><div class="status-metric-label">Last index run</div>
           <div class="status-metric-value">
-            {{- if .Embedding.HasLastRun}}{{.Embedding.LastFinished}} · {{num .Embedding.LastEmbedded}} embedded in {{num .Embedding.LastDurationMS}} ms
+            {{- if .Embedding.HasLastRun}}{{.Embedding.LastFinished}} · {{num .Embedding.LastEmbedded}} embedded in {{duration .Embedding.LastDurationMS}}
               {{- if and .Embedding.LastModel (ne .Embedding.LastModel .Embedding.Model)}} <span class="opacity-60">(model {{.Embedding.LastModel}})</span>{{end}}
             {{- else if .Embedding.InProgress}}running now
             {{- else}}never{{end -}}

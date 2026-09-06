@@ -142,7 +142,7 @@ func TestOverviewEmbeddingCoverageAndLastRun(t *testing.T) {
 	for _, want := range []string{
 		"1 of " + itoa(int64(cov.Embeddable)) + " messages (" + itoa(int64(pct)) + "%)",
 		fin.Local().Format("2006-01-02 15:04"),
-		"1 embedded in 1,234 ms",
+		"1 embedded in 1.2s", // humanized (audit F12)
 	} {
 		if !contains(body, want) {
 			t.Errorf("post-index card missing %q", want)

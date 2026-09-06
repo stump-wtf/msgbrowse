@@ -348,6 +348,7 @@ func NewServer(st Store, cfg *config.Config, log *slog.Logger) (*Server, error) 
 		"mediaURL":         mediaURL,
 		"humanSize":        humanSize,
 		"num":              num,
+		"duration":         formatDurationMS,
 		"domainOf":         domainOf,
 		"highlightSnippet": highlightSnippet,
 		"humanName":        humanName,

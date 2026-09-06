@@ -136,3 +136,31 @@ func TestPipelineErrorsAreSummarized(t *testing.T) {
 		t.Errorf("summarized message missing:\n%.400q", truncFor(body))
 	}
 }
+
+// TestDurationsRenderHumanized (audit F12, 2026-09-05): the Settings tiles
+// printed raw milliseconds ("8,408,089 ms"). The existing formatDurationMS
+// helper (via the new `duration` template func) renders sub-second as "N ms"
+// and anything longer as "8408.1s"-style seconds.
+func TestDurationsRenderHumanized(t *testing.T) {
+	srv, st, _ := newTestServer(t)
+	srv.SetJournalBuilder(newFakeJournalBuilder("test-chat", true))
+	ctx := context.Background()
+	seedJournalDay(t, st, "2026-06-01", 12, -1)
+	fin := time.Date(2026, 7, 1, 12, 0, 0, 0, time.UTC)
+	jid, err := st.BeginJournalRun(ctx, "test-chat", "", fin.Add(-8408089*time.Millisecond))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.FinishJournalRun(ctx, store.JournalRun{
+		ID: jid, FinishedAt: fin, DurationMS: 8408089, Digested: 7,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	body := get(t, srv, "/settings/journal").Body.String()
+	if contains(body, "8,408,089 ms") {
+		t.Error("raw millisecond duration still rendered on the Journal tile (audit F12)")
+	}
+	if !contains(body, "digested in ") {
+		t.Error("last-run tile lost its duration phrase")
+	}
+}
