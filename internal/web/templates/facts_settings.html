@@ -131,7 +131,7 @@
         </div>
         {{- if .Build.LastError}}
         <p class="status-note mt-space-4"><span class="sync-badge sync-badge-err">Failed</span>
-          Last run aborted: <span class="font-mono">{{.Build.LastError}}</span></p>
+          Last run aborted: {{summarizeError .Build.LastError}}</p>
         {{- end}}
 
         {{template "pipeline_run_history" dict "rows" .Build.History "unit" "Facts"}}

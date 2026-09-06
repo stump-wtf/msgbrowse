@@ -103,3 +103,36 @@ func truncFor(s string) string {
 	}
 	return s
 }
+
+// TestPipelineErrorsAreSummarized (audit F4/F5, 2026-09-05): a failed run's
+// raw endpoint error (provider JSON like
+// `llm: /v1/chat returned 502: {"error":{"message":"upstream down"}}`) must
+// not be printed verbatim — not in the "Last run aborted" note and not in the
+// Recent runs table, where it overflowed the card. Both render the summarized
+// sentence instead.
+func TestPipelineErrorsAreSummarized(t *testing.T) {
+	srv, st, _ := newTestServer(t)
+	srv.SetJournalBuilder(newFakeJournalBuilder("test-chat", true))
+	ctx := context.Background()
+	seedJournalDay(t, st, "2026-06-01", 12, -1)
+
+	rawErr := `llm: /v1/chat/completions returned 502: {"error":{"message":"upstream connect error","type":"server_error"}}`
+	fin := time.Date(2026, 7, 1, 12, 0, 0, 0, time.UTC)
+	jid, err := st.BeginJournalRun(ctx, "test-chat", "", fin.Add(-time.Minute))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.FinishJournalRun(ctx, store.JournalRun{
+		ID: jid, FinishedAt: fin, DurationMS: 900, Digested: 0, Error: rawErr,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	body := get(t, srv, "/settings/journal").Body.String()
+	if contains(body, `"error":{"message"`) {
+		t.Errorf("raw provider JSON leaked onto the page:\n%.400q", truncFor(body))
+	}
+	if !contains(body, "upstream connect error") {
+		t.Errorf("summarized message missing:\n%.400q", truncFor(body))
+	}
+}
