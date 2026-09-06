@@ -481,3 +481,57 @@ SELECT date(m.ts_unix,'unixepoch') d, r.emoji, COUNT(*) n
 	}
 	return out, rows.Err()
 }
+
+// DayAttachment is one attachment whose message falls in a UTC day bucket —
+// the store side of resolving the journal card's standout-media strings to
+// real, linkable attachments (issue #439).
+type DayAttachment struct {
+	ID             int64
+	MessageID      int64
+	ConversationID int64
+	Kind           string // "image" | "file" | ...
+	RelPath        string
+	OriginalName   string
+}
+
+// DayAttachments returns every attachment whose message falls in the given
+// UTC day bucket (date(ts_unix,'unixepoch'), the ADR-0023 frame journal_days
+// uses), across eligible conversations: contact-linked and not on the exclude
+// list. Unordered by intent — the caller matches model strings against it.
+//
+// @joestump-agent 09/05/2026 - Added with #439.
+func (s *Store) DayAttachments(ctx context.Context, day string, exclude []string) ([]DayAttachment, error) {
+	if len(day) != 10 {
+		return nil, fmt.Errorf("day attachments: malformed day %q (want YYYY-MM-DD)", day)
+	}
+	rows, err := s.db.QueryContext(ctx, `
+SELECT a.id, a.message_id, m.conversation_id, a.kind, a.rel_path, a.original_name, c.name
+  FROM attachments a
+  JOIN messages m ON m.id = a.message_id
+  JOIN conversations c ON c.id = m.conversation_id
+ WHERE date(m.ts_unix,'unixepoch') = ?
+   AND c.contact_id IS NOT NULL`, day)
+	if err != nil {
+		return nil, fmt.Errorf("day attachments: %w", err)
+	}
+	defer rows.Close()
+
+	excluded := make(map[string]struct{}, len(exclude))
+	for _, name := range exclude {
+		excluded[name] = struct{}{}
+	}
+
+	var out []DayAttachment
+	for rows.Next() {
+		var d DayAttachment
+		var convName string
+		if err := rows.Scan(&d.ID, &d.MessageID, &d.ConversationID, &d.Kind, &d.RelPath, &d.OriginalName, &convName); err != nil {
+			return nil, fmt.Errorf("day attachments: scan: %w", err)
+		}
+		if _, skip := excluded[convName]; skip {
+			continue
+		}
+		out = append(out, d)
+	}
+	return out, rows.Err()
+}

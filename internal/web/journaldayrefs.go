@@ -3,6 +3,7 @@ package web
 import (
 	"context"
 	"net/url"
+	"path"
 	"strings"
 
 	"github.com/joestump/msgbrowse/internal/store"
@@ -96,6 +97,22 @@ func participantKey(name string) string {
 // resolveDayCard fills the card's People and NotableLinks with their archive
 // verdicts. Both reads are pure lookups; an empty day (no observed links, no
 // participants) leaves every entry inert, which is the requirement's default.
+// JournalMediaRef is one standout-media entry as rendered (issue #439).
+// Matched means the model's string resolved to a real attachment: images
+// render as the gallery tile + :target lightbox pair, other kinds stay as a
+// file chip linking to the source message. Unmatched (a hallucinated or
+// re-import-renamed filename) stays today's inert chip.
+type JournalMediaRef struct {
+	Name           string // raw model string
+	Matched        bool
+	ID             int64
+	MessageID      int64
+	ConversationID int64
+	Kind           string
+	RelPath        string
+	OriginalName   string
+}
+
 func (s *Server) resolveDayCard(ctx context.Context, day string, c *dayCard) error {
 	if c == nil || c.Digest == nil {
 		return nil
@@ -135,6 +152,43 @@ func (s *Server) resolveDayCard(ctx context.Context, day string, c *dayCard) err
 			ref.URL = stored
 		}
 		c.NotableLinks = append(c.NotableLinks, ref)
+	}
+
+	// Standout media resolution (#439): match each model string against the
+	// day's real attachments by basename(rel_path) or original_name,
+	// case-insensitive — the same matching-not-filtering rule the people and
+	// links lookups follow (the #371 rule). A string with no attachment match
+	// stays an inert chip; denylisted conversations were never in the set.
+	if len(c.Digest.StandoutMedia) > 0 {
+		atts, aerr := s.store.DayAttachments(ctx, day, s.journalExclude)
+		if aerr != nil {
+			return aerr
+		}
+		byBase := make(map[string]store.DayAttachment, len(atts))
+		byOrig := make(map[string]store.DayAttachment, len(atts))
+		for _, a := range atts {
+			byBase[strings.ToLower(path.Base(a.RelPath))] = a
+			if a.OriginalName != "" {
+				byOrig[strings.ToLower(a.OriginalName)] = a
+			}
+		}
+		c.MediaRefs = make([]JournalMediaRef, 0, len(c.Digest.StandoutMedia))
+		for _, raw := range c.Digest.StandoutMedia {
+			ref := JournalMediaRef{Name: raw}
+			want := strings.ToLower(strings.TrimSpace(raw))
+			if want != "" {
+				if a, ok := byBase[want]; ok {
+					ref.Matched = true
+					ref.ID, ref.MessageID, ref.ConversationID = a.ID, a.MessageID, a.ConversationID
+					ref.Kind, ref.RelPath, ref.OriginalName = a.Kind, a.RelPath, a.OriginalName
+				} else if a, ok := byOrig[want]; ok {
+					ref.Matched = true
+					ref.ID, ref.MessageID, ref.ConversationID = a.ID, a.MessageID, a.ConversationID
+					ref.Kind, ref.RelPath, ref.OriginalName = a.Kind, a.RelPath, a.OriginalName
+				}
+			}
+			c.MediaRefs = append(c.MediaRefs, ref)
+		}
 	}
 	return nil
 }

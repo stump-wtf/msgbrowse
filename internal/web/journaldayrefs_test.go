@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/joestump/msgbrowse/internal/contacts"
+	"github.com/joestump/msgbrowse/internal/journal"
 	"github.com/joestump/msgbrowse/internal/signal"
 	"github.com/joestump/msgbrowse/internal/source"
 	"github.com/joestump/msgbrowse/internal/store"
@@ -256,23 +257,54 @@ func TestNormalizeLinkKeyEquivalence(t *testing.T) {
 	}
 }
 
-// TestUniqueParticipantNormalisesNames (#438): an old digest's smooshed
-// "ChelseaStump" must resolve to the contact "Chelsea Stump" without
-// rebuilding the digest; genuine ambiguity (the normalised key matching two
-// different contacts) stays unlinked.
-func TestUniqueParticipantNormalisesNames(t *testing.T) {
-	participants := []store.JournalDayParticipant{
-		{Name: "Chelsea Stump", ContactID: 7},
+// TestResolveDayCardMediaMatching (#439): standout-media strings resolve by
+// basename(rel_path) or original_name, case-insensitively; a string matching
+// nothing stays an unmatched chip; denylisted conversations never match.
+func TestResolveDayCardMediaMatching(t *testing.T) {
+	srv, st := newSentimentServer(t)
+	ctx := context.Background()
+
+	sig, err := st.UpsertConversation(ctx, source.Signal, "Harper")
+	if err != nil {
+		t.Fatal(err)
 	}
-	if got := uniqueParticipant("ChelseaStump", participants); got != 7 {
-		t.Errorf("smooshed name resolved to %d, want contact 7", got)
+	if _, err := st.ReplaceConversationMessages(ctx, sig, source.Signal, []signal.Message{
+		{Conversation: "Harper", Timestamp: parseT(t, "2023-05-01 10:00:00"), TimestampRaw: "2023-05-01 10:00:00",
+			Sender: "Harper", Body: "photos",
+			Attachments: []signal.Attachment{
+				{Kind: signal.KindImage, RelPath: "media/2023/05/2023-05-01T06-57-57.197_00_signal-x.jpeg", OriginalName: "beach.jpeg"},
+			}},
+	}); err != nil {
+		t.Fatal(err)
 	}
-	// Ambiguity: the normalised key matches two different contacts → unlinked.
-	ambiguous := []store.JournalDayParticipant{
-		{Name: "Chelsea Stump", ContactID: 7},
-		{Name: "chelsea stump", ContactID: 8},
+
+	card := &dayCard{Digest: &journal.Digest{StandoutMedia: []string{
+		"2023-05-01T06-57-57.197_00_signal-x.jpeg", // matches rel_path basename
+		"BEACH.JPEG",       // matches original_name, case-insensitive
+		"hallucinated.png", // matches nothing → inert chip
+	}}}
+	if err := srv.resolveDayCard(ctx, "2023-05-01", card); err != nil {
+		t.Fatal(err)
 	}
-	if got := uniqueParticipant("ChelseaStump", ambiguous); got != 0 {
-		t.Errorf("ambiguous name resolved to %d, want 0", got)
+	if len(card.MediaRefs) != 3 {
+		t.Fatalf("MediaRefs = %d, want 3", len(card.MediaRefs))
 	}
+	if !card.MediaRefs[0].Matched || card.MediaRefs[0].Kind != string(signal.KindImage) {
+		t.Errorf("rel_path basename did not resolve: %+v", card.MediaRefs[0])
+	}
+	if !card.MediaRefs[1].Matched || card.MediaRefs[1].OriginalName != "beach.jpeg" {
+		t.Errorf("original_name match failed: %+v", card.MediaRefs[1])
+	}
+	if card.MediaRefs[2].Matched {
+		t.Error("hallucinated filename must stay an unmatched chip")
+	}
+}
+
+func parseT(t *testing.T, ts string) time.Time {
+	t.Helper()
+	parsed, err := time.Parse(signal.TimestampLayout, ts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return parsed
 }

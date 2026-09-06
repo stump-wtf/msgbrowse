@@ -97,6 +97,10 @@ type dayCard struct {
 	// never accused of being out of date on no evidence.
 	Stale       bool
 	NewMessages int
+	// MediaRefs resolves the digest's standout-media strings to real
+	// attachments (issue #439): matched entries render as gallery tiles +
+	// lightbox, unmatched stay inert chips.
+	MediaRefs []JournalMediaRef
 	// Sentiment is the additive per-day mood strip (#367, delivering SPEC-0027's
 	// per-day mood requirement from #313). Its Rendered flag is false for a day
 	// with no usable affect scores, and the card then renders exactly as it did
