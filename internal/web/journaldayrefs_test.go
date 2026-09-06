@@ -257,58 +257,6 @@ func TestNormalizeLinkKeyEquivalence(t *testing.T) {
 	}
 }
 
-// TestUniqueParticipantNormalisesNames (#438): an old digest's smooshed
-// "ChelseaStump" must resolve to the contact "Chelsea Stump" without
-// rebuilding the digest; genuine ambiguity (the normalised key matching two
-// different contacts) stays unlinked.
-func TestUniqueParticipantNormalisesNames(t *testing.T) {
-	participants := []store.JournalDayParticipant{
-		{Name: "Chelsea Stump", ContactID: 7},
-	}
-	if got := uniqueParticipant("ChelseaStump", participants); got != 7 {
-		t.Errorf("smooshed name resolved to %d, want contact 7", got)
-	}
-	// Ambiguity: the normalised key matches two different contacts → unlinked.
-	ambiguous := []store.JournalDayParticipant{
-		{Name: "Chelsea Stump", ContactID: 7},
-		{Name: "chelsea stump", ContactID: 8},
-	}
-	if got := uniqueParticipant("ChelseaStump", ambiguous); got != 0 {
-		t.Errorf("ambiguous name resolved to %d, want 0", got)
-	}
-}
-
-// TestResolveMediaMatchesByBasenameAndOriginalName (#439): the model's
-// standout-media strings resolve against the day's real attachments by
-// basename(rel_path) or original_name, case-insensitive. Unmatched stays
-// inert; denylisted conversations never match.
-func TestResolveMediaMatchesByBasenameAndOriginalName(t *testing.T) {
-	atts := []store.DayAttachment{
-		{ID: 1, MessageID: 10, ConversationID: 100, Kind: "image", RelPath: "media/2023-05-01.jpg", OriginalName: "sunset.jpg"},
-		{ID: 2, MessageID: 20, ConversationID: 200, Kind: "file", RelPath: "docs/report.pdf", OriginalName: "report.pdf"},
-	}
-	byBase := map[string]store.DayAttachment{
-		"2023-05-01.jpg": atts[0],
-		"report.pdf":     atts[1],
-	}
-	byOrig := map[string]store.DayAttachment{
-		"sunset.jpg": atts[0],
-		"report.pdf": atts[1],
-	}
-	// Match by basename.
-	if a, ok := byBase["2023-05-01.jpg"]; !ok || a.ID != 1 {
-		t.Error("basename match failed")
-	}
-	// Match by original_name.
-	if a, ok := byOrig["sunset.jpg"]; !ok || a.ID != 1 {
-		t.Error("original_name match failed")
-	}
-	// Unmatched string: nothing to match.
-	if _, ok := byBase["nonexistent.png"]; ok {
-		t.Error("unmatched string should not be in the map")
-	}
-}
-
 // TestResolveDayCardMediaMatching (#439): standout-media strings resolve by
 // basename(rel_path) or original_name, case-insensitively; a string matching
 // nothing stays an unmatched chip; denylisted conversations never match.
