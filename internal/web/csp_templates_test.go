@@ -33,3 +33,16 @@ func TestNoInlineStylesInTemplates(t *testing.T) {
 		t.Fatalf("walk templates: %v", err)
 	}
 }
+
+// TestSettingsTabsShareOneH1 (audit F8, 2026-09-05): every Settings tab's H1
+// reads "Settings" — the MCP tab alone said "MCP", so the shell jumped a
+// heading when tabbing into and out of it.
+func TestSettingsTabsShareOneH1(t *testing.T) {
+	srv, _, _ := newTestServer(t)
+	for _, path := range []string{"/providers", "/settings/mcp", "/settings/llm", "/settings/contacts"} {
+		body := get(t, srv, path).Body.String()
+		if !contains(body, `<h1 class="screen-h1">Settings</h1>`) {
+			t.Errorf("%s: settings tab H1 is not the shared \"Settings\" heading", path)
+		}
+	}
+}
