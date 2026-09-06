@@ -199,7 +199,7 @@
           {{- range .Digest.Highlights}}<li>{{.Text}}{{if .Time}} <span class="font-mono opacity-50">{{.Time}}</span>{{end}}</li>{{- end}}
         </ul>
         {{- end}}
-        {{- if .DigestPeople}}<div class="journal-chips"><span class="journal-section-label">People</span>{{range .DigestPeople}}{{if .ContactID}}<a class="journal-chip" href="/contact/{{.ContactID}}" title="Open {{.Name}}&rsquo;s contact page">{{.Name}}</a>{{else}}<span class="journal-chip">{{.Name}}</span>{{end}}{{end}}</div>{{- end}}
+        {{- if .DigestPeople}}<div class="journal-chips"><span class="journal-section-label">People</span>{{range .DigestPeople}}{{if .ContactID}}<a class="journal-chip" href="/contact/{{.ContactID}}" title="Open {{.Name}}&rsquo;s contact page">{{humanName .Name}}</a>{{else}}<span class="journal-chip">{{humanName .Name}}</span>{{end}}{{end}}</div>{{- end}}
         {{- if .Digest.StandoutMedia}}<div class="journal-chips"><span class="journal-section-label">Media</span>{{range .Digest.StandoutMedia}}<span class="journal-chip font-mono">{{.}}</span>{{end}}</div>{{- end}}
         {{- if .Digest.Themes}}<div class="journal-chips"><span class="journal-section-label">Themes</span>{{range .Digest.Themes}}<span class="journal-chip">{{.}}</span>{{end}}</div>{{- end}}
         {{- else if .Body}}

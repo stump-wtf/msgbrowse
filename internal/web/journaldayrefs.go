@@ -67,13 +67,13 @@ func normalizeLinkKey(raw string) string {
 // zero when absent, ambiguous (two different contacts share the name), or the
 // name is itself empty. A group-less day resolves nothing.
 func uniqueParticipant(name string, participants []store.JournalDayParticipant) int64 {
-	name = strings.TrimSpace(name)
-	if name == "" {
+	key := participantKey(name)
+	if key == "" {
 		return 0
 	}
 	var id int64
 	for _, p := range participants {
-		if !strings.EqualFold(strings.TrimSpace(p.Name), name) {
+		if participantKey(p.Name) != key {
 			continue
 		}
 		if id != 0 && id != p.ContactID {
@@ -82,6 +82,15 @@ func uniqueParticipant(name string, participants []store.JournalDayParticipant) 
 		id = p.ContactID
 	}
 	return id
+}
+
+// participantKey is the comparison key for people-name resolution (#438):
+// lowercased, whitespace-normalised. It makes an old digest's smooshed
+// "ChelseaStump" resolve to the contact "Chelsea Stump" without rebuilding
+// the digest. Ambiguity (the key matching two different contacts) is still
+// handled by the caller.
+func participantKey(name string) string {
+	return strings.ToLower(strings.Join(strings.Fields(humanName(name)), " "))
 }
 
 // resolveDayCard fills the card's People and NotableLinks with their archive

@@ -26,6 +26,7 @@ import (
 	"log/slog"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/joestump/msgbrowse/internal/llm"
 	"github.com/joestump/msgbrowse/internal/source"
@@ -398,7 +399,10 @@ func renderDayUser(day string, lines []store.DayTranscriptLine) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "Date: %s\n\nMessages:\n", day)
 	for i, ln := range lines {
-		who := ln.Sender
+		// humanName splits the exporter's camel-case labels ("ChelseaStump"
+		// → "Chelsea Stump"), so the model echoes readable names into the
+		// digest's people list instead of smooshed handles (#438).
+		who := humanNameStr(ln.Sender)
 		if ln.IsOwner {
 			who = "You"
 		}
@@ -568,4 +572,26 @@ func orAll(since string) string {
 		return "all"
 	}
 	return since
+}
+
+// humanNameStr mirrors internal/web's humanName for the digest prompt: empty
+// and "None" become "Unknown", already-spaced names are unchanged, and
+// camel-case labels split at the boundary ("ChelseaStump" → "Chelsea Stump"),
+// so the model echoes readable names (issue #438).
+func humanNameStr(s string) string {
+	if s == "" || s == "None" {
+		return "Unknown"
+	}
+	if strings.ContainsRune(s, ' ') {
+		return s
+	}
+	var b strings.Builder
+	runes := []rune(s)
+	for i, r := range runes {
+		if i > 0 && unicode.IsUpper(r) && !unicode.IsUpper(runes[i-1]) {
+			b.WriteRune(' ')
+		}
+		b.WriteRune(r)
+	}
+	return b.String()
 }

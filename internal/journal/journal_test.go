@@ -575,3 +575,18 @@ func TestBuildRefreshesStaleDigest(t *testing.T) {
 		t.Error("the refreshed digest should no longer read as stale")
 	}
 }
+
+func TestHumanNameStrSplitsCamelCase(t *testing.T) {
+	cases := map[string]string{
+		"ChelseaStump":  "Chelsea Stump",
+		"Chelsea Stump": "Chelsea Stump", // already spaced: unchanged
+		"None":          "Unknown",
+		"":              "Unknown",
+		"JonStump":      "Jon Stump",
+	}
+	for in, want := range cases {
+		if got := humanNameStr(in); got != want {
+			t.Errorf("humanNameStr(%q) = %q, want %q", in, got, want)
+		}
+	}
+}

@@ -255,3 +255,24 @@ func TestNormalizeLinkKeyEquivalence(t *testing.T) {
 		}
 	}
 }
+
+// TestUniqueParticipantNormalisesNames (#438): an old digest's smooshed
+// "ChelseaStump" must resolve to the contact "Chelsea Stump" without
+// rebuilding the digest; genuine ambiguity (the normalised key matching two
+// different contacts) stays unlinked.
+func TestUniqueParticipantNormalisesNames(t *testing.T) {
+	participants := []store.JournalDayParticipant{
+		{Name: "Chelsea Stump", ContactID: 7},
+	}
+	if got := uniqueParticipant("ChelseaStump", participants); got != 7 {
+		t.Errorf("smooshed name resolved to %d, want contact 7", got)
+	}
+	// Ambiguity: the normalised key matches two different contacts → unlinked.
+	ambiguous := []store.JournalDayParticipant{
+		{Name: "Chelsea Stump", ContactID: 7},
+		{Name: "chelsea stump", ContactID: 8},
+	}
+	if got := uniqueParticipant("ChelseaStump", ambiguous); got != 0 {
+		t.Errorf("ambiguous name resolved to %d, want 0", got)
+	}
+}
