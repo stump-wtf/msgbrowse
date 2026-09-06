@@ -232,3 +232,30 @@ func TestJournalCalendarEmojiChips(t *testing.T) {
 		t.Errorf("rendered %d emoji chips, want 2", n)
 	}
 }
+
+// TestJournalPollSelectsOnlyDayCard: while a run is in flight the day card
+// polls /journal every 2s, but /journal answers with the full #main-content.
+// Without hx-select="#journal-day-card" on the poll the whole page — including
+// another polling card — was swapped into the card, duplicating the journal
+// into itself every 2s (audit F2, 2026-09-05).
+func TestJournalPollSelectsOnlyDayCard(t *testing.T) {
+	srv, st := newJournalServer(t)
+	seedJournalDays(t, st, "Harper", []string{"2023-05-01"})
+	putDigest(t, st, "2023-05-01", "A calm day with Harper.", "upbeat",
+		`{"summary":"A calm day with Harper.","people":[],"themes":[],"mood":"upbeat","highlights":[],"standout_media":[],"notable_links":[]}`)
+
+	// A fresh in-flight run makes RunActive true, arming the card's poll.
+	ctx := context.Background()
+	if _, err := st.BeginJournalRun(ctx, "test-chat", "", time.Now()); err != nil {
+		t.Fatal(err)
+	}
+
+	body := get(t, srv, "/journal?day=2023-05-01").Body.String()
+	poll := `hx-trigger="every 2s" hx-target="#journal-day-card" hx-select="#journal-day-card"`
+	if !strings.Contains(body, poll) {
+		t.Errorf("day-card poll must narrow its swap with hx-select to avoid the page duplicating into the card; want %q", poll)
+	}
+	if got := strings.Count(body, `id="journal-day-card"`); got != 1 {
+		t.Errorf("journal page renders %d journal-day-card sections; want 1", got)
+	}
+}

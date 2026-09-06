@@ -152,10 +152,14 @@
       {{- end}}
       {{/* Editorial reading card for the selected day. While a journal run is
            in flight (RunActive, #440) the card polls itself every 2s and
-           swaps in the fresh digest — no manual reload. */}}
+           swaps in the fresh digest — no manual reload. The hx-select is
+           load-bearing: /journal answers with the full #main-content, and
+           without it the whole page (poll included) was swapped into the
+           card, duplicating the journal into itself every 2s (audit F2,
+           2026-09-05). */}}
       {{- with .Selected}}
       <section id="journal-day-card" class="journal-day-card"
-        {{- if $.RunActive}} hx-get="/journal?day={{.Day}}" hx-trigger="every 2s" hx-target="#journal-day-card" hx-swap="outerHTML"{{end}}>
+        {{- if $.RunActive}} hx-get="/journal?day={{.Day}}" hx-trigger="every 2s" hx-target="#journal-day-card" hx-select="#journal-day-card" hx-swap="outerHTML"{{end}}>
         <div class="flex items-start justify-between gap-3">
         <div class="journal-eyebrow">{{template "icon-sparkles" $}} This day, editorialized</div>
         {{/* One-click Refresh (#440): the per-day rebuild endpoint already
