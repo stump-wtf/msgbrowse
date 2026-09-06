@@ -1434,6 +1434,17 @@ a.meta-chip:hover {
 .lightbox-caption {
   color: rgba(255, 255, 255, 0.8);
 }
+/* The caption link sits on the same black scrim, so it cannot take the theme
+   text color (audit F39: dark-theme links were invisible on the scrim). */
+.lightbox-caption a,
+.lightbox-caption a:visited {
+  color: #fff;
+  text-decoration: underline;
+  text-decoration-color: rgba(255, 255, 255, 0.4);
+}
+.lightbox-caption a:hover {
+  text-decoration-color: #fff;
+}
 /* Tracked-uppercase dim label (10.5px) reused by stat strips, sections, etc. */
 .eyebrow {
   font-size: 10.5px;
