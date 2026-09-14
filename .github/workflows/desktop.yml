@@ -646,9 +646,8 @@ jobs:
             **Homebrew** (macOS, both the CLI and the desktop app):
 
             ```
-            brew tap stump-wtf/tap
-            brew install msgbrowse            # CLI
-            brew install --cask msgbrowse-desktop
+            brew install stump-wtf/tap/msgbrowse            # CLI
+            brew install --cask stump-wtf/tap/msgbrowse-desktop
             ```
 
             **macOS, by hand** — download `msgbrowse-desktop_darwin_universal.zip`, unzip, then:

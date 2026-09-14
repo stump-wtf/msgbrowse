@@ -30,21 +30,27 @@ read-only, and the only internet egress is to the OpenAI-compatible LLM endpoint
 **Homebrew — CLI** (preferred; builds from source, so no Gatekeeper quarantine):
 
 ```sh
-brew tap stump-wtf/tap
-brew install msgbrowse
+brew install stump-wtf/tap/msgbrowse
 ```
+
+The fully qualified name is a one-liner and the only form that works out of the
+box: since [Homebrew 6.0.0](https://brew.sh/2026/06/11/homebrew-6.0.0/)
+non-official taps require explicit trust, and a fully qualified name trusts just
+that one formula rather than the tap and everything it may ever contain.
+(`brew tap stump-wtf/tap` + `brew install msgbrowse` now fails, because the
+short name needs the tap loaded and the tap is untrusted.)
 
 **Homebrew — desktop app** (macOS 11+): the native `.app` — same embedded server
 as `msgbrowse serve`, plus bundled exporters, so a fresh Mac with no Homebrew
 Python can export and import offline:
 
 ```sh
-brew install --cask msgbrowse-desktop
+brew install --cask stump-wtf/tap/msgbrowse-desktop
 ```
 
 The formula and the cask are **different artifacts of the same project** —
-installing one does not get you the other. `msgbrowse` builds the CLI from
-source; `msgbrowse-desktop` downloads the prebuilt universal `.app` into
+installing one does not get you the other. `stump-wtf/tap/msgbrowse` builds the CLI from
+source; `stump-wtf/tap/msgbrowse-desktop` downloads the prebuilt universal `.app` into
 `/Applications`. Homebrew forbids a formula from installing an `.app` into
 `/Applications`, which is why they ship under separate tokens rather than one.
 They coexist fine. Releases are ad-hoc signed pending a

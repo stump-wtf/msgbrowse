@@ -12,7 +12,7 @@ to set up either way.
 
 :::info CLI and desktop app are separate installs
 The **CLI** ships as a Homebrew *formula*; the macOS **desktop app** ships as a
-Homebrew *cask* under a different token. `brew install msgbrowse` gives you the
+Homebrew *cask* under a different token. `brew install stump-wtf/tap/msgbrowse` gives you the
 CLI only — it does not install the `.app`. Homebrew forbids a formula from
 placing an application bundle in `/Applications`, which is exactly what casks
 are for. Install either or both.
@@ -23,10 +23,14 @@ are for. Install either or both.
 ### Homebrew (preferred)
 
 ```sh
-brew tap stump-wtf/tap
-brew install msgbrowse
+brew install stump-wtf/tap/msgbrowse
 msgbrowse version
 ```
+
+The fully qualified name is the only form that works out of the box: since
+[Homebrew 6.0.0](https://brew.sh/2026/06/11/homebrew-6.0.0/) non-official taps
+require explicit trust, and a fully qualified name trusts just that one formula
+rather than the tap and everything it may ever contain.
 
 The formula builds from source, so the binary is compiled on your machine. It
 therefore never carries macOS's `com.apple.quarantine` attribute — no Gatekeeper
@@ -64,15 +68,14 @@ the three exporters and a Syncthing binary, so a fresh Mac with no Homebrew and
 no Python can export and import offline.
 
 ```sh
-brew tap stump-wtf/tap
-brew install --cask msgbrowse-desktop
+brew install --cask stump-wtf/tap/msgbrowse-desktop
 ```
 
 That installs the universal `.app` to `/Applications`. To remove it:
 
 ```sh
-brew uninstall --cask msgbrowse-desktop          # app only
-brew uninstall --zap --cask msgbrowse-desktop    # also deletes your data dir
+brew uninstall --cask stump-wtf/tap/msgbrowse-desktop          # app only
+brew uninstall --zap --cask stump-wtf/tap/msgbrowse-desktop    # also deletes your data dir
 ```
 
 :::warning The cask strips quarantine on purpose
