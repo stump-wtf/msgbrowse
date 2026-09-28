@@ -27,6 +27,12 @@
 #
 # @joestump-agent 09/03/2026 - Created. Tags every main push with the next
 #   patch version; minor/major bumps stay manual (`git tag vX.Y.0`).
+#
+# @joestump-agent 09/28/2026 - base64 -w0 when building the mirror-push
+#   Authorization header. GNU base64 wraps at 76 columns, so long
+#   (fine-grained) GitHub PATs produced a multi-line header; GitHub saw a
+#   broken one, 401'd the push, and the job died on git's username prompt
+#   (v0.8.42 tagged but never mirrored).
 
 name: Auto release
 
@@ -91,7 +97,7 @@ jobs:
           TAG: ${{ steps.version.outputs.next }}
         run: |
           set -euo pipefail
-          git -c "http.extraheader=Authorization: Basic $(printf 'x-access-token:%s' "$GH_MIRROR_TOKEN" | base64)" \
+          git -c "http.extraheader=Authorization: Basic $(printf 'x-access-token:%s' "$GH_MIRROR_TOKEN" | base64 -w0)" \
             push "${GH_MIRROR_URL}" "${TAG}"
           code=$(curl -s -o /dev/null -w '%{http_code}' -X POST \
             -H "Authorization: token ${GH_MIRROR_TOKEN}" \
