@@ -295,9 +295,14 @@ func newCharmLogger(level string) *charmlog.Logger {
 		charmlog.ErrorLevel: "🛑 ERROR",
 		charmlog.FatalLevel: "💀 FATAL",
 	} {
-		// Drop the default 4-cell MaxWidth (it would truncate "✅ INFO" → "✅ I");
-		// keep the level's color from DefaultStyles.
-		styles.Levels[level] = styles.Levels[level].SetString(label).UnsetMaxWidth()
+		// Drop the default 4-cell MaxWidth (it would truncate "✅ INFO" → "✅ I")
+		// and the fixed Width(5) log v2.0.1 swapped in, which wraps the label
+		// instead of truncating it; keep the level's color from DefaultStyles.
+		//
+		// 2026-10-12: Width(5) in log v2.0.1 wrapped "✅ INFO" to two lines and
+		// broke the emoji-level guard test; Width(0) clears the constraint.
+		// @joestump-agent
+		styles.Levels[level] = styles.Levels[level].SetString(label).UnsetMaxWidth().Width(0)
 	}
 	logger.SetStyles(styles)
 	return logger
