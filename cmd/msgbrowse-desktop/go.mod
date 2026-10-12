@@ -11,7 +11,7 @@ require (
 	github.com/joestump/msgbrowse v0.0.0-00010101000000-000000000000
 	github.com/modelcontextprotocol/go-sdk v1.7.0
 	github.com/pkg/browser v0.0.0-20240102092130-5ac0b6a4141c
-	github.com/wailsapp/wails/v2 v2.15.0
+	github.com/wailsapp/wails/v2 v2.16.0
 )
 
 require (
