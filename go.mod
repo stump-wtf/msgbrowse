@@ -10,7 +10,7 @@ require (
 	charm.land/log/v2 v2.0.1
 	github.com/charmbracelet/colorprofile v0.4.3
 	github.com/charmbracelet/x/term v0.2.2
-	github.com/modelcontextprotocol/go-sdk v1.7.0
+	github.com/modelcontextprotocol/go-sdk v1.8.0
 	github.com/muesli/mango-cobra v1.3.0
 	github.com/muesli/roff v0.1.0
 	github.com/skip2/go-qrcode v0.0.0-20200617195104-da1b6568686e
