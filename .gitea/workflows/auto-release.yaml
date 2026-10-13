@@ -12,9 +12,11 @@
 #      GitHub Release (macOS runners only exist there). This bypasses the
 #      push-mirror's 8h sync interval, which otherwise delays the release by
 #      up to most of a day.
-#   3. The tag push triggers pipeline.yaml's tap-bump job, which bumps
-#      stump.wtf/homebrew-tap (formula + desktop cask) from the GitHub
-#      release assets and mirrors assets to the Gitea release.
+#   3. The tap-bump job below waits for that release's assets and runs
+#      scripts/tap-bump.sh, which converges stump.wtf/homebrew-tap (formula
+#      + desktop cask) on the newest installable release. It runs even when
+#      step 1 or 2 failed, and tap-bump.yaml runs the same script hourly, so
+#      a release this run could not ship is picked up by a later one.
 #
 # Historically tags were cut by hand and the tap was bumped by hand, and
 # whenever either was forgotten `brew` kept serving an old version for days
@@ -33,6 +35,13 @@
 #   (fine-grained) GitHub PATs produced a multi-line header; GitHub saw a
 #   broken one, 401'd the push, and the job died on git's username prompt
 #   (v0.8.42 tagged but never mirrored).
+#
+# @joestump 10/13/2026 - Brought the tap bump back into this workflow, as a
+#   call to scripts/tap-bump.sh. 909196b (09/05) deleted the inline job as a
+#   duplicate of pipeline.yaml's, on the theory that the tag push triggers
+#   that pipeline. It does not (#428 had already found that), so the copy it
+#   deleted was the only one that ever ran: the tap froze on v0.8.25 while
+#   v0.8.26-v0.8.39 were built and released.
 
 name: Auto release
 
@@ -106,3 +115,32 @@ jobs:
             -d "{\"ref\":\"${TAG}\"}")
           echo "desktop dispatch on ${TAG}: HTTP ${code}"
           [ "$code" = "204" ]
+
+  # Not gated on the tag job succeeding. When the mirror push above fails the
+  # tap still has to converge on whatever IS installable, and the script's
+  # staleness check is what turns "tagged but never shipped" into a red run.
+  tap-bump:
+    name: Bump the Homebrew tap
+    needs: [tag]
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # The script compares the tap against the newest tag in this checkout.
+          fetch-depth: 0
+
+      - name: Converge the tap on the newest installable release
+        env:
+          TAP_PUSH_TOKEN: ${{ secrets.TAP_PUSH_TOKEN }}
+          TAG_RESULT: ${{ needs.tag.result }}
+          NEW_TAG: ${{ needs.tag.outputs.tag }}
+        run: |
+          set -euo pipefail
+          # Wait for this run's release only if it was actually handed to the
+          # mirror; otherwise there is nothing coming to wait for. Decided in
+          # shell, not in an expression — this runner has mangled those before.
+          if [ "$TAG_RESULT" = "success" ] && [ -n "$NEW_TAG" ]; then
+            export WAIT_FOR_TAG="$NEW_TAG"
+          fi
+          scripts/tap-bump.sh

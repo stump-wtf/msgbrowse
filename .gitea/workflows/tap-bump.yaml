@@ -1,0 +1,42 @@
+# Homebrew Tap Reconciler
+#
+# Runs scripts/tap-bump.sh every hour: make stump.wtf/homebrew-tap pin the
+# newest msgbrowse release that has both tap assets, and fail if the tap is
+# behind a tag that should have shipped by now. auto-release.yaml runs the same
+# script right after a release, which is the fast path; this is the one that
+# cannot be skipped, because it depends on nothing but the clock.
+#
+# That is the point of it. The bump has broken every time it was wired as the
+# last hop of a chain — a step on a GitHub runner that could not reach Gitea
+# (v0.6.0 on), a job behind a tag-push event that is never delivered (v0.8.26
+# on) — and each time it failed by not running, which shows up nowhere. A red
+# run on this workflow is the signal that brew users are being served an old
+# version.
+#
+# It runs here rather than on the GitHub mirror because this runner is the only
+# host that reaches both sides: Gitea over the LAN (gitea.stump.rocks is an
+# RFC1918 address) and github.com outbound.
+#
+# @joestump 10/13/2026 - Created.
+
+name: Tap bump
+
+on:
+  schedule:
+    - cron: "23 * * * *"
+  workflow_dispatch:
+
+jobs:
+  reconcile:
+    name: Converge the Homebrew tap
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # The script compares the tap against the newest tag in this checkout.
+          fetch-depth: 0
+
+      - name: Converge the tap on the newest installable release
+        env:
+          TAP_PUSH_TOKEN: ${{ secrets.TAP_PUSH_TOKEN }}
+        run: scripts/tap-bump.sh
