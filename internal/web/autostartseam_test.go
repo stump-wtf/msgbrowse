@@ -58,6 +58,7 @@ func TestAutostartHiddenInBrowserMode(t *testing.T) {
 
 	w2 := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, "/settings/autostart", strings.NewReader("enabled=on"))
+	req.Host = selfHost
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	srv.Handler().ServeHTTP(w2, req)
 	if w2.Code != http.StatusNotFound {

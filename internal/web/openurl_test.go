@@ -24,6 +24,7 @@ func openURLPost(t *testing.T, srv *Server, origin, raw string) *httptest.Respon
 		form.Set("url", raw)
 	}
 	req := httptest.NewRequest(http.MethodPost, "/desktop/open-url", strings.NewReader(form.Encode()))
+	req.Host = selfHost
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	if origin != "" {
 		req.Header.Set("Origin", origin)

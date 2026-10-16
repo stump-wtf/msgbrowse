@@ -209,6 +209,13 @@ type Server struct {
 	// CSP-safe --wails-draggable reader). Set by the embedded server via
 	// SetDesktopChrome before serving; browser mode never sets it.
 	desktopChrome bool
+	// boundNonLoopback records that Listen opened the listener on a non-loopback
+	// address — ADR-0010's operator opt-out of the loopback posture. It stands the
+	// mutating-request Host pin down (issue #526), which can name the expected
+	// Host in advance only while that posture holds. Set in Listen, which returns
+	// before Serve starts accepting; false (the default, and every test that
+	// drives Handler() directly) means the pin is enforced.
+	boundNonLoopback bool
 	// shellNotes supplies the desktop shell's startup diagnostics (systray
 	// registration, dock policy — issue #167) for the Logs page, so a tray
 	// that fails to render on real hardware is observable instead of silent.
@@ -672,7 +679,12 @@ func (s *Server) routes() http.Handler {
 	// than registering a "/" catch-all: a catch-all also swallows the mux's
 	// 405 Method Not Allowed responses, which the security tests pin. Only
 	// unmatched requests (empty pattern) pay the probe.
-	return gzipMiddleware(securityHeaders(sameOriginGuard(s.styledNotFound(mux))))
+	//
+	// Order matters on the security edge: the Host pin (#526) runs ahead of the
+	// origin guard (#41), because the guard's own baseline is derived from Host —
+	// a request that has to be refused for naming another host must never reach
+	// the check that asks it.
+	return gzipMiddleware(securityHeaders(s.hostAllowlistGuard(sameOriginGuard(s.styledNotFound(mux)))))
 }
 
 // styledNotFound serves mux but replaces net/http's bare-text 404 for unknown
@@ -723,6 +735,9 @@ func (s *Server) Listen(addr string) (net.Listener, error) {
 	}
 	bound := ln.Addr().String()
 	if !isLoopback(bound) {
+		// The same opt-out stands down the mutating-request Host pin (#526): with
+		// a non-loopback bind the address the user types is no longer knowable.
+		s.boundNonLoopback = true
 		s.log.Warn("listening on a non-loopback address; the UI has no authentication", "addr", bound)
 	}
 	s.log.Info("web UI listening", "addr", "http://"+bound)

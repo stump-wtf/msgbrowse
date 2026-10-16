@@ -14,6 +14,7 @@ import (
 func postWithHeaders(t *testing.T, srv *Server, path string, headers map[string]string) *httptest.ResponseRecorder {
 	t.Helper()
 	req := httptest.NewRequest(http.MethodPost, path, nil)
+	req.Host = selfHost
 	for k, v := range headers {
 		req.Header.Set(k, v)
 	}
@@ -193,6 +194,7 @@ func TestReadsUnguarded(t *testing.T) {
 func TestGuardRunsBeforeRouting(t *testing.T) {
 	srv, _, _ := newTestServer(t)
 	req := httptest.NewRequest(http.MethodPut, "/c/1/pin", nil)
+	req.Host = selfHost
 	req.Header.Set("Origin", "http://evil.example")
 	rec := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(rec, req)
@@ -233,13 +235,14 @@ func TestSameOriginOrUnknown(t *testing.T) {
 		{"cross-origin", map[string]string{"Sec-Fetch-Site": "cross-origin"}, false},
 		{"same-site", map[string]string{"Sec-Fetch-Site": "same-site"}, false},
 		{"unknown token falls back", map[string]string{"Sec-Fetch-Site": "from-network"}, true},
-		{"referer match", map[string]string{"Referer": "http://example.com/c/1"}, true},
+		{"referer match", map[string]string{"Referer": selfOrigin + "/c/1"}, true},
 		{"referer mismatch", map[string]string{"Referer": "http://evil.example/"}, false},
 		{"no provenance", nil, true},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			req := httptest.NewRequest(http.MethodPost, "/c/1/pin", nil)
+			req.Host = selfHost
 			for k, v := range tc.headers {
 				req.Header.Set(k, v)
 			}

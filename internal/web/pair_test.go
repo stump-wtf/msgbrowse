@@ -53,6 +53,7 @@ func pairPOST(t *testing.T, srv *Server, origin, token, code string) *httptest.R
 		form.Set(setupTokenField, token)
 	}
 	req := httptest.NewRequest(http.MethodPost, "/settings/devices/pair", strings.NewReader(form.Encode()))
+	req.Host = selfHost
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	if origin != "" {
 		req.Header.Set("Origin", origin)

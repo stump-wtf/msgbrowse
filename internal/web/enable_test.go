@@ -109,6 +109,7 @@ func enablePOST(t *testing.T, srv *Server, path, origin, token, src string) *htt
 		form.Set(setupTokenField, token)
 	}
 	req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(form.Encode()))
+	req.Host = selfHost
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	if origin != "" {
 		req.Header.Set("Origin", origin)
@@ -118,9 +119,15 @@ func enablePOST(t *testing.T, srv *Server, path, origin, token, src string) *htt
 	return rec
 }
 
-// selfOrigin is the origin httptest.NewRequest produces (Host = example.com,
-// scheme http on loopback), so a same-origin POST carries this Origin.
-const selfOrigin = "http://example.com"
+// selfHost is the Host a mutating test request must claim to look like a normal
+// local client: the Host allowlist (#526) refuses a state change addressed to any
+// other host, so requests that are meant to reach the origin layer name a loopback
+// form. selfOrigin is then that same origin — what a browser tab on this server
+// states as its Origin.
+const (
+	selfHost   = "127.0.0.1:8787"
+	selfOrigin = "http://" + selfHost
+)
 
 // TestEnableCrossOriginRejected: a cross-origin POST is rejected 403 and starts
 // NO job (SPEC-0013 §Security "WHEN a cross-origin page POSTs /setup/enable THEN
@@ -232,6 +239,7 @@ func TestEnableSecFetchSiteSameOrigin(t *testing.T) {
 	form := url.Values{}
 	form.Set("source", source.Signal)
 	req := httptest.NewRequest(http.MethodPost, "/setup/enable", strings.NewReader(form.Encode()))
+	req.Host = selfHost
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.Header.Set("Sec-Fetch-Site", "same-origin")
 	req.Header.Set(setupTokenHeader, tok) // token via the htmx header path
@@ -257,6 +265,7 @@ func TestEnableSecFetchSiteCrossSiteRejected(t *testing.T) {
 	form.Set("source", source.Signal)
 	form.Set(setupTokenField, tok)
 	req := httptest.NewRequest(http.MethodPost, "/setup/enable", strings.NewReader(form.Encode()))
+	req.Host = selfHost
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.Header.Set("Sec-Fetch-Site", "cross-site")
 	rec := httptest.NewRecorder()
@@ -296,6 +305,7 @@ func TestEnableOversizedBodyRejected(t *testing.T) {
 	form.Set(setupTokenField, tok)
 	form.Set("padding", strings.Repeat("x", setupBodyLimit+1)) // exceed the cap
 	req := httptest.NewRequest(http.MethodPost, "/setup/enable", strings.NewReader(form.Encode()))
+	req.Host = selfHost
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.Header.Set("Origin", selfOrigin)
 	rec := httptest.NewRecorder()

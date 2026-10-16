@@ -95,6 +95,7 @@ func journalPOSTMulti(t *testing.T, srv *Server, path, origin, token string, fie
 		}
 	}
 	req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(form.Encode()))
+	req.Host = selfHost
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	if origin != "" {
 		req.Header.Set("Origin", origin)

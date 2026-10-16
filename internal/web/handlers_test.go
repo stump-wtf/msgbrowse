@@ -75,6 +75,7 @@ func get(t *testing.T, srv *Server, path string) *httptest.ResponseRecorder {
 func post(t *testing.T, srv *Server, path string) *httptest.ResponseRecorder {
 	t.Helper()
 	req := httptest.NewRequest(http.MethodPost, path, nil)
+	req.Host = selfHost
 	rec := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(rec, req)
 	return rec

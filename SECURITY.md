@@ -149,6 +149,14 @@ the boundary is explicit:
   access. Privileged POSTs (Setup, backups, device pairing, contact merge) are
   stricter still — same-origin **and** a per-session token, with a header-less
   caller refused.
+- **State changes also name a loopback host.** The check above asks the request
+  who the server is, and a DNS-rebinding page can answer it: a name whose A
+  record points at `127.0.0.1` arrives with `Host:` and `Origin:` both set to that
+  name, so the two agree by construction. A mutating request is therefore refused
+  with `400` unless its `Host` is a loopback form (`127.0.0.1`, `localhost`,
+  `[::1]`, any port). Reads are unaffected. The pin stands down on an explicit
+  non-loopback bind, where the address the user types is no longer knowable and
+  access control is yours.
 - Everything the UI loads is **same-origin and self-hosted** — the stylesheet
   (Tailwind + daisyUI, built at dev time and committed), htmx, the theme-toggle
   script, and Hero Icons (inline SVG). No CDN, no external fonts/scripts, so the
