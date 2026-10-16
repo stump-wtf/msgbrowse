@@ -9,7 +9,9 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"time"
+	"unicode"
 
 	"github.com/joestump/msgbrowse/internal/devsync"
 	"github.com/joestump/msgbrowse/internal/mcp"
@@ -136,14 +138,20 @@ func isPartialRequest(r *http.Request) bool {
 // messageListData drives the transcript message list and its infinite-scroll
 // sentinel (used both in the full page and the HTMX partial).
 type messageListData struct {
-	ActiveID    int64
-	Source      string // active conversation's source (for media renderability checks)
-	ConvName    string // active conversation's name (for media path resolution)
-	Sort        string // display order: sortDesc (default) or sortAsc; carried on the load-more URL
-	Messages    []store.MessageView
-	HasMore     bool
-	NextTSUnix  int64
-	NextID      int64
+	ActiveID   int64
+	Source     string // active conversation's source (for media renderability checks)
+	ConvName   string // active conversation's name (for media path resolution)
+	Sort       string // display order: sortDesc (default) or sortAsc; carried on the load-more URL
+	Messages   []store.MessageView
+	HasMore    bool
+	NextTSUnix int64
+	NextID     int64
+	// PrevDate / PrevSender continue day-separator and sender grouping across
+	// scroll pages (#38): the day key and sender of the last row rendered on the
+	// page before this one, carried on the scroll cursor. Empty on a first page,
+	// where grouping has nothing to continue from.
+	PrevDate    string
+	PrevSender  string
 	HighlightID int64 // marks the jump-to-context target message (0 = none)
 }
 
@@ -227,6 +235,56 @@ func parseSort(r *http.Request) string {
 		return sortAsc
 	}
 	return sortDesc
+}
+
+// Grouping-cursor params (#38): the transcript renders day separators and
+// consecutive-sender runs by walking its rows, so an HTMX page appended at a
+// scroll seam has no memory of the row above it. The sentinel hands the day key
+// and sender of its last rendered row to the page it points at, which starts
+// its walk from that state instead of from nothing.
+const (
+	prevDateParam   = "prev_date"
+	prevSenderParam = "prev_sender"
+	// prevSenderMaxRunes bounds a cursor value that round-trips through the URL
+	// back into the next page's sentinel. Archive senders are addresses, so this
+	// sits far above any real one.
+	prevSenderMaxRunes = 128
+)
+
+// parsePrevDate accepts the day-separator half of the grouping cursor: exactly
+// the YYYY-MM-DD key dateKey produces, or empty. Anything else (a hand-edited
+// or stale cursor) reads as "no previous day", so the value is only ever
+// compared against another day key and never carries anything else.
+func parsePrevDate(raw string) string {
+	if len(raw) != 10 || raw[4] != '-' || raw[7] != '-' {
+		return ""
+	}
+	for i := 0; i < len(raw); i++ {
+		if c := raw[i]; (c < '0' || c > '9') && c != '-' {
+			return ""
+		}
+	}
+	return raw
+}
+
+// parsePrevSender accepts the sender half of the grouping cursor. It is only
+// ever compared for equality, never rendered, but it does ride back out into
+// the next page's sentinel URL, so it is capped and stripped of control
+// characters to keep that URL bounded and single-line.
+func parsePrevSender(raw string) string {
+	var b strings.Builder
+	count := 0
+	for _, r := range raw {
+		if count >= prevSenderMaxRunes {
+			break
+		}
+		count++
+		if unicode.IsControl(r) {
+			continue
+		}
+		b.WriteRune(r)
+	}
+	return b.String()
 }
 
 func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
@@ -511,6 +569,11 @@ func (s *Server) handleMessages(w http.ResponseWriter, r *http.Request) {
 	}
 	cursorTS, _ := strconv.ParseInt(r.URL.Query().Get(cursorTSParam), 10, 64)
 	cursorID, _ := strconv.ParseInt(r.URL.Query().Get(cursorIDParam), 10, 64)
+	// Grouping state travels beside the keyset cursor (#38): each appended page
+	// continues the day separator and sender run the previous page was in the
+	// middle of, rather than restarting both at its own first row.
+	prevDate := parsePrevDate(r.URL.Query().Get(prevDateParam))
+	prevSender := parsePrevSender(r.URL.Query().Get(prevSenderParam))
 	page, err := s.store.GetMessages(ctx, id, cursorTS, cursorID, pageSize, sort == sortDesc)
 	if err != nil {
 		s.serverError(w, err)
@@ -531,6 +594,8 @@ func (s *Server) handleMessages(w http.ResponseWriter, r *http.Request) {
 		ConvName:   convName,
 		Sort:       sort,
 		Messages:   page.Messages,
+		PrevDate:   prevDate,
+		PrevSender: prevSender,
 		HasMore:    page.HasMore,
 		NextTSUnix: page.NextTSUnix,
 		NextID:     page.NextID,

@@ -274,8 +274,12 @@
      no rail/gutter. Anchors (id="m{ID}") and the .target jump-to-context flash
      are preserved. */}}
 {{define "message_list"}}
-{{- $prevDate := "" }}
-{{- $prevSender := "" }}
+{{- /* Grouping state can arrive from the page above (#38): an appended scroll
+       page starts its walk with the previous page's last day key and sender, so
+       a seam neither re-emits a separator nor repeats a sender name. A first
+       page has no such state and starts fresh. */}}
+{{- $prevDate := .PrevDate }}
+{{- $prevSender := .PrevSender }}
 {{- range .Messages}}
   {{- $body := renderBody .Body}}
   {{- $date := dateKey .TS}}
@@ -393,16 +397,18 @@
   {{- end}}
 {{- end}}
 {{- if .HasMore}}
-{{/* Infinite-scroll sentinel: carries the sort order and the direction-correct
+{{/* Infinite-scroll sentinel: carries the sort order, the direction-correct
      keyset cursor (after_* continues an ascending walk, before_* a descending
-     one) so the next page keeps loading in the same display order. */}}
+     one) so the next page keeps loading in the same display order, and the
+     grouping state this page ended on (#38) so the next page continues the day
+     separator and sender run instead of restarting it at its first row. */}}
 {{- if eq .Sort "asc"}}
-<div class="load-more flex justify-center py-4" hx-get="/c/{{.ActiveID}}/messages?sort=asc&after_ts={{.NextTSUnix}}&after_id={{.NextID}}"
+<div class="load-more flex justify-center py-4" hx-get="/c/{{.ActiveID}}/messages?sort=asc&after_ts={{.NextTSUnix}}&after_id={{.NextID}}{{if $prevDate}}&prev_date={{$prevDate}}{{end}}{{if $prevSender}}&prev_sender={{urlquery $prevSender}}{{end}}"
      hx-trigger="revealed" hx-swap="outerHTML">
   <span class="loading loading-dots loading-md opacity-60"></span>
 </div>
 {{- else}}
-<div class="load-more flex justify-center py-4" hx-get="/c/{{.ActiveID}}/messages?sort=desc&before_ts={{.NextTSUnix}}&before_id={{.NextID}}"
+<div class="load-more flex justify-center py-4" hx-get="/c/{{.ActiveID}}/messages?sort=desc&before_ts={{.NextTSUnix}}&before_id={{.NextID}}{{if $prevDate}}&prev_date={{$prevDate}}{{end}}{{if $prevSender}}&prev_sender={{urlquery $prevSender}}{{end}}"
      hx-trigger="revealed" hx-swap="outerHTML">
   <span class="loading loading-dots loading-md opacity-60"></span>
 </div>
