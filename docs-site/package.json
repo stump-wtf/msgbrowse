@@ -34,7 +34,7 @@
     "typescript": "~5.9.0"
   },
   "overrides": {
-    "webpack": "5.111.1"
+    "webpack": "5.112.0"
   },
   "browserslist": {
     "production": [
