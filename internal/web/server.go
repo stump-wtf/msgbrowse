@@ -508,10 +508,13 @@ func (s *Server) SetDeviceSyncFeature(enabled bool) { s.deviceSyncFeature = enab
 func (s *Server) SetShellNotes(fn func() []ShellNote) { s.shellNotes = fn }
 
 // routes builds the mux and wraps it with the middleware stack: gzip outermost
-// (SPEC-0008 REQ-0008-007), then the security headers, then the mux. The order
-// is safe because securityHeaders only sets response headers before delegating
-// — the gzip wrapper still sees every body write and the headers land on the
-// same header map either way.
+// (SPEC-0008 REQ-0008-007), then the security headers, then the same-origin
+// guard, then the mux. The order is safe because securityHeaders only sets
+// response headers before delegating — the gzip wrapper still sees every body
+// write and the headers land on the same header map either way. The guard sits
+// outside styledNotFound on purpose: a rejected state change answers 403 before
+// routing, so a cross-origin probe cannot tell a registered POST route from an
+// unknown path.
 func (s *Server) routes() http.Handler {
 	mux := http.NewServeMux()
 
@@ -669,7 +672,7 @@ func (s *Server) routes() http.Handler {
 	// than registering a "/" catch-all: a catch-all also swallows the mux's
 	// 405 Method Not Allowed responses, which the security tests pin. Only
 	// unmatched requests (empty pattern) pay the probe.
-	return gzipMiddleware(securityHeaders(s.styledNotFound(mux)))
+	return gzipMiddleware(securityHeaders(sameOriginGuard(s.styledNotFound(mux))))
 }
 
 // styledNotFound serves mux but replaces net/http's bare-text 404 for unknown

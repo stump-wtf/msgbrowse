@@ -141,6 +141,14 @@ the boundary is explicit:
 - Strict `Content-Security-Policy: default-src 'none'` (plus `script-src 'self'`,
   `img-src 'self' data:`), `X-Content-Type-Options: nosniff`,
   `Referrer-Policy: no-referrer`, `X-Frame-Options: DENY`, `frame-ancestors 'none'`.
+- **State changes are same-origin.** A mutating request (`POST`, `PUT`, `PATCH`,
+  `DELETE`) whose `Sec-Fetch-Site` says `cross-site`/`cross-origin`/`same-site`,
+  or whose `Origin`/`Referer` names another origin, is rejected with `403` before
+  any handler runs. A caller that states no provenance at all (curl, a CLI) is
+  allowed: under ADR-0010 reaching the loopback socket already implies local
+  access. Privileged POSTs (Setup, backups, device pairing, contact merge) are
+  stricter still — same-origin **and** a per-session token, with a header-less
+  caller refused.
 - Everything the UI loads is **same-origin and self-hosted** — the stylesheet
   (Tailwind + daisyUI, built at dev time and committed), htmx, the theme-toggle
   script, and Hero Icons (inline SVG). No CDN, no external fonts/scripts, so the

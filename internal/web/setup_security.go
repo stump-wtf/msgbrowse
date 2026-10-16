@@ -27,7 +27,6 @@ import (
 	"crypto/subtle"
 	"encoding/hex"
 	"net/http"
-	"net/url"
 	"sync"
 	"time"
 )
@@ -208,46 +207,13 @@ func (s *Server) checkSetupPOST(w http.ResponseWriter, r *http.Request) bool {
 	return true
 }
 
-// sameOrigin reports whether a state-changing request originates from this
-// server's own loopback page. The check is layered to match browser behavior:
-//
-//   - Origin present: it must equal the request's own scheme://host (the address
-//     the client reached us on). A cross-origin page sending a form/fetch POST
-//     carries its OWN Origin, which will not match — that is exactly the attack
-//     this rejects.
-//   - No Origin (some same-origin GETs/navigations omit it) but
-//     Sec-Fetch-Site present: accept only "same-origin"/"none"; reject
-//     "cross-site"/"same-site". Modern browsers always send this on POSTs.
-//   - Neither header (a bare programmatic client): fall back to Referer, which
-//     must be same-origin. With no Origin, no Sec-Fetch-Site, and no Referer at
-//     all, reject — a privileged POST with zero provenance is not trusted.
-//
-// The server's own origin is derived from the request (Host + the always-http
-// loopback scheme, ADR-0010), so it is correct for both the desktop shell's
-// ephemeral port and `msgbrowse serve`'s configured loopback bind with no
-// mode-specific configuration.
+// sameOrigin is the privileged POST's provenance test: the request must state
+// where it came from, and state that it came from this server's own origin. The
+// layering itself lives in requestOrigin; the difference is the fallback — a
+// privileged POST with zero provenance headers is not trusted, while the blanket
+// same-origin guard (sameOriginGuard, issue #41) lets a header-less local caller
+// through. Both reject Sec-Fetch-Site: cross-site and a non-matching Origin.
 func sameOrigin(r *http.Request) bool {
-	self := "http://" + r.Host
-
-	if origin := r.Header.Get("Origin"); origin != "" {
-		return origin == self
-	}
-
-	switch r.Header.Get("Sec-Fetch-Site") {
-	case "same-origin", "none":
-		return true
-	case "cross-site", "same-site":
-		return false
-	}
-
-	if ref := r.Header.Get("Referer"); ref != "" {
-		u, err := url.Parse(ref)
-		if err != nil {
-			return false
-		}
-		return u.Scheme+"://"+u.Host == self
-	}
-
-	// No provenance headers at all: reject a privileged POST.
-	return false
+	same, stated := requestOrigin(r)
+	return stated && same
 }
