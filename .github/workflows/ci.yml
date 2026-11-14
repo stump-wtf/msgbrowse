@@ -17,11 +17,11 @@ jobs:
     env:
       CGO_ENABLED: "0"
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # check-latest so builds pick up Go patch releases (stdlib security
       # fixes land there — see security.yml) instead of the runner's cache.
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v7
         with:
           go-version: "1.25"
           check-latest: true
@@ -45,6 +45,6 @@ jobs:
     name: docker image builds
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Build image
         run: docker build -t msgbrowse:ci .

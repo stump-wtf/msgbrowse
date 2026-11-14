@@ -27,7 +27,7 @@ jobs:
     name: app.css is up to date
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Rebuild CSS
         run: make css
       - name: Fail if app.css is stale
